@@ -14,10 +14,10 @@ export default function RepresentanteModal({ open, onClose, onGuardar, onElimina
     const { data: empresas = [] } = useQuery({
         queryKey: ["maestra-clientes-nombres"],
         queryFn: async () => {
-            const { data } = await api.get("cotizaciones/clientes/");
-            return data.map(c => ({ 
-                id: String(c.codigo), 
-                nombre: c.nombre 
+            const { data } = await api.get("core/clientes/");
+            return data.map(c => ({
+                id: String(c.codigo),
+                nombre: c.nombre
             }));
         },
         enabled: open
@@ -37,8 +37,8 @@ export default function RepresentanteModal({ open, onClose, onGuardar, onElimina
                     .map(r => parseInt(r.codigo))
                     .filter(n => !isNaN(n));
 
-                const proximoCodigo = codigosNumericos.length > 0 
-                    ? Math.max(...codigosNumericos) + 1 
+                const proximoCodigo = codigosNumericos.length > 0
+                    ? Math.max(...codigosNumericos) + 1
                     : 1; // O el número base que prefieras para representantes
 
                 setFormData({
@@ -80,7 +80,7 @@ export default function RepresentanteModal({ open, onClose, onGuardar, onElimina
     return (
         <Dialog open={open} onOpenChange={onClose}>
             <DialogContent className="max-w-3xl bg-white rounded-2xl shadow-2xl border-none p-0 overflow-hidden font-sans">
-                
+
                 {/* HEADER */}
                 <div className="bg-slate-50/80 px-6 py-4 border-b border-slate-100">
                     <div className="flex items-center gap-3">
@@ -99,7 +99,7 @@ export default function RepresentanteModal({ open, onClose, onGuardar, onElimina
                 </div>
 
                 <div className="p-4 space-y-3 max-h-[75vh] overflow-y-auto custom-scrollbar">
-                
+
                     {/* BLOQUE 1: INFORMACIÓN PROFESIONAL */}
                     <div className="bg-slate-50/50 border border-slate-100 rounded-2xl p-4 space-y-4 shadow-inner">
                         <span className="text-[11px] font-black text-slate-700 uppercase tracking-tight block border-b border-slate-200 pb-2">
@@ -198,12 +198,12 @@ export default function RepresentanteModal({ open, onClose, onGuardar, onElimina
                                 Estado Activo:
                             </label>
                             <label className="relative inline-flex items-center cursor-pointer">
-                                <input 
-                                    type="checkbox" 
+                                <input
+                                    type="checkbox"
                                     name="activo"
                                     checked={formData.activo === "1"}
                                     onChange={handleChange}
-                                    className="sr-only peer" 
+                                    className="sr-only peer"
                                 />
                                 <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
                                 <span className={`ml-2 text-[10px] font-black uppercase ${formData.activo === "1" ? 'text-emerald-600' : 'text-slate-400'}`}>

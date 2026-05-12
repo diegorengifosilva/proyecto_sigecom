@@ -7,9 +7,12 @@ from django.conf.urls.static import static
 from cotizaciones_api.views_frontend import FrontendAppView
 
 urlpatterns = [
-    # API de Usuarios e Identidad (SIGECOM 5)
-    path('api/', include('users.urls')), 
-
+    # API de Usuarios e Identidad
+    path('api/users/', include('users.urls')),
+    
+    # API para generales
+    path('api/core/', include('core.urls')),
+ 
     # APIs de Negocio
     path('api/', include('cotizaciones_api.urls')),
     path('api/', include('logistica_api.urls')),

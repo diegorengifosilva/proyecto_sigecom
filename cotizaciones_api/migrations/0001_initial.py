@@ -471,7 +471,7 @@ class Migration(migrations.Migration):
             },
         ),
         migrations.CreateModel(
-            name='vc_tab_clientes_d',
+            name='Representante',
             fields=[
                 ('codigo', models.IntegerField(max_length=11, primary_key=True, serialize=False)),
                 ('representante', models.CharField(blank=True, max_length=70, null=True)),
@@ -484,7 +484,7 @@ class Migration(migrations.Migration):
                 ('activo', models.CharField(default='1', max_length=1)),
             ],
             options={
-                'db_table': 'vc_tab_clientes_d',
+                'db_table': 'Representante',
                 'ordering': ['codigo'],
                 'managed': False,
             },

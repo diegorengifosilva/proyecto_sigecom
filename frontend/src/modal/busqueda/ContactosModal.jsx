@@ -16,7 +16,7 @@ function ContactosModal({ open, onClose, tipo, onSelect }) {
     setLoading(true);
 
     try {
-      const { data } = await api.get("/usuarios-activos/", {
+      const { data } = await api.get("/users/usuarios-activos/", {
         params: { q }
       });
 

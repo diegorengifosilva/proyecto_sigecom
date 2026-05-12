@@ -69,8 +69,8 @@ const FilterCard = ({ onProcess, onReport, initialFilters = {}, dashboard = "cot
       try {
         setLoading(true);
         const [clientesRes, areasRes] = await Promise.all([
-          api.get("cotizaciones/clientes/"),
-          api.get("areas/"),
+          api.get("core/clientes/"),
+          api.get("users/areas/"),
         ]);
         setClientes(clientesRes.data || []);
         setAreas(areasRes.data || []);
@@ -134,24 +134,24 @@ const FilterCard = ({ onProcess, onReport, initialFilters = {}, dashboard = "cot
   return (
     <div className={`bg-white rounded-2xl border border-slate-200 shadow-sm p-4 ${className}`}>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <SelectBox label="Año" icon={<Calendar size={14} />} options={aniosOptions} value={filters.anio} onChange={(e) => setFilters({...filters, anio: e.target.value})} />
-        <SelectBox label="Mes" icon={<CalendarDays size={14} />} options={meses} value={filters.mes} onChange={(e) => setFilters({...filters, mes: e.target.value})} />
-        <SelectBox label="Cliente" icon={<Building2 size={14} />} options={[{value: "%", label: "-- Todos --"}, ...clientes.map(c => ({value: c.codigo, label: c.nombre}))]} value={filters.cliente} onChange={(e) => setFilters({...filters, cliente: e.target.value})} />
-        <SelectBox label="Estado" icon={<Info size={14} />} options={dashboard === "logistica" ? estadosLog : estadosCot} value={filters.estado} onChange={(e) => setFilters({...filters, estado: e.target.value})} />
-        
+        <SelectBox label="Año" icon={<Calendar size={14} />} options={aniosOptions} value={filters.anio} onChange={(e) => setFilters({ ...filters, anio: e.target.value })} />
+        <SelectBox label="Mes" icon={<CalendarDays size={14} />} options={meses} value={filters.mes} onChange={(e) => setFilters({ ...filters, mes: e.target.value })} />
+        <SelectBox label="Cliente" icon={<Building2 size={14} />} options={[{ value: "%", label: "-- Todos --" }, ...clientes.map(c => ({ value: c.codigo, label: c.nombre }))]} value={filters.cliente} onChange={(e) => setFilters({ ...filters, cliente: e.target.value })} />
+        <SelectBox label="Estado" icon={<Info size={14} />} options={dashboard === "logistica" ? estadosLog : estadosCot} value={filters.estado} onChange={(e) => setFilters({ ...filters, estado: e.target.value })} />
+
         {dashboard === "cotizaciones" && (
-          <SelectBox label="Envío" icon={<Send size={14} />} options={envios} value={filters.envio} onChange={(e) => setFilters({...filters, envio: e.target.value})} />
+          <SelectBox label="Envío" icon={<Send size={14} />} options={envios} value={filters.envio} onChange={(e) => setFilters({ ...filters, envio: e.target.value })} />
         )}
-        
-        <SelectBox label="Campo" icon={<Binoculars size={14} />} options={camposGenerales} value={filters.generalCampo} onChange={(e) => setFilters({...filters, generalCampo: e.target.value})} />
-        
+
+        <SelectBox label="Campo" icon={<Binoculars size={14} />} options={camposGenerales} value={filters.generalCampo} onChange={(e) => setFilters({ ...filters, generalCampo: e.target.value })} />
+
         <div className="flex flex-col gap-1.5 lg:col-span-1">
           <label className="flex items-center gap-1 text-[10px] font-bold text-slate-500 uppercase tracking-wider"><Search size={14} /> Buscador</label>
-          <input 
-            type="text" 
-            placeholder="Buscar..." 
-            value={filters.generalValor} 
-            onChange={(e) => setFilters({...filters, generalValor: e.target.value})}
+          <input
+            type="text"
+            placeholder="Buscar..."
+            value={filters.generalValor}
+            onChange={(e) => setFilters({ ...filters, generalValor: e.target.value })}
             className="h-9 w-full rounded-xl border border-slate-200 px-3 text-xs focus:ring-2 focus:ring-teal-500/20 transition-all shadow-sm"
           />
         </div>

@@ -5,8 +5,6 @@ from django.contrib.auth import get_user_model
 import uuid
 from .models import (
     DashboardCotizacion,
-    vc_tab_clientes,
-    vc_tab_clientes_d,
     vc_tab_estado,
     vc_tab_categorias,
     vc_tab_tproveedor,
@@ -253,8 +251,8 @@ class DashboardCotizacionModalSerializer(serializers.ModelSerializer):
         try:
             if not obj.cliente_codigo:
                 return obj.cargr or ""
-            from logistica_api.models import vc_tab_clientes_d
-            cliente = vc_tab_clientes_d.objects.get(codigo=obj.cliente_codigo)
+            from logistica_api.models import Representante
+            cliente = Representante.objects.get(codigo=obj.cliente_codigo)
             return cliente.cargo or obj.cargr or ""
         except Exception:
             return obj.cargr or ""
@@ -324,13 +322,6 @@ class CotiSeguimientoSerializer(serializers.ModelSerializer):
 ##================##
 ## DATOS DE BD_VC ##
 ##================##
-
-# vc_tab_clientes
-class ClientesSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = vc_tab_clientes
-        fields = "__all__"
-
 # vc_tab_estado
 class EstadoSerializer(serializers.ModelSerializer):
     class Meta:

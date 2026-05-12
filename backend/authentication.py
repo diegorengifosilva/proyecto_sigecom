@@ -3,7 +3,7 @@
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.contrib.auth import get_user_model
 
-from cotizaciones_api.models import Usuario
+from users.models import Usuario
 
 User = get_user_model()
 

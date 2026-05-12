@@ -40,7 +40,7 @@ function RegistroItemManoObraModal({ open, onClose, onConfirm, item, areaCotizac
   useEffect(() => {
     if (!open) return;
 
-    api.get("areas/")
+    api.get("users/areas/")
       .then(res => setAreas(Array.isArray(res.data) ? res.data : []))
       .catch(() => setAreas([]));
   }, [open]);

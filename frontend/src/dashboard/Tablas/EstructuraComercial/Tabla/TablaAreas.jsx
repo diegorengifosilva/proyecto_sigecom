@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import AreaModal from "../Modal/AreaModal";
 
 const fetchAreas = async () => {
-  const { data } = await api.get("areas/");
+  const { data } = await api.get("users/areas/");
   return data;
 };
 
@@ -33,9 +33,9 @@ export default function TablaAreas() {
   const saveMutation = useMutation({
     mutationFn: async (formData) => {
       if (formData.codigo === "Auto") {
-        return await api.post("areas/", formData);
+        return await api.post("users/areas/", formData);
       } else {
-        return await api.put(`areas/${formData.codigo}/`, formData);
+        return await api.put(`users/areas/${formData.codigo}/`, formData);
       }
     },
     onSuccess: () => {
@@ -139,8 +139,8 @@ export default function TablaAreas() {
 
             <div className="flex justify-center">
               <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase border ${area.activo
-                  ? "bg-emerald-50 text-emerald-700 border-emerald-100"
-                  : "bg-slate-50 text-slate-500 border-slate-100"
+                ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+                : "bg-slate-50 text-slate-500 border-slate-100"
                 }`}>
                 {area.activo ? "Activo" : "Inactivo"}
               </span>

@@ -8,11 +8,11 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { 
-  Package, 
-  Trash2, 
-  Plus, 
-  X 
+import {
+  Package,
+  Trash2,
+  Plus,
+  X
 } from "lucide-react";
 
 export default function NuevaLogisticaModal({ open, onClose, logistica, operacion = "E", modo = "N" }) {
@@ -112,7 +112,7 @@ export default function NuevaLogisticaModal({ open, onClose, logistica, operacio
       fetchLogisticaDetalle(logistica.num_reg);
     } else {
       fetchNextNumReg();
-      setForm(prev => ({...prev, operacion}));
+      setForm(prev => ({ ...prev, operacion }));
     }
   }, [open, logistica?.num_reg, operacion]);
 
@@ -152,7 +152,7 @@ export default function NuevaLogisticaModal({ open, onClose, logistica, operacio
   const fetchClientes = async (q) => {
     setLoadingCliente(true);
     try {
-      const res = await api.get("cotizaciones/clientes/", { params: { q } });
+      const res = await api.get("core/clientes/", { params: { q } });
       setClienteLista(res.data || []);
     } finally {
       setLoadingCliente(false);
@@ -236,7 +236,7 @@ export default function NuevaLogisticaModal({ open, onClose, logistica, operacio
             <div className="col-span-8 space-y-1">
               <label className="text-[10px] font-bold text-slate-500 uppercase">Razón Social</label>
               <div className="relative">
-                <input type="text" value={form.razon_social || ""} onChange={(e) => setForm({...form, razon_social: e.target.value})} className="w-full text-xs font-semibold border border-slate-200 rounded-lg px-3 py-2 pr-10" />
+                <input type="text" value={form.razon_social || ""} onChange={(e) => setForm({ ...form, razon_social: e.target.value })} className="w-full text-xs font-semibold border border-slate-200 rounded-lg px-3 py-2 pr-10" />
                 <button onClick={() => setOpenCliente(true)} className="absolute right-2 top-1/2 -translate-y-1/2 text-teal-600">🔍</button>
               </div>
             </div>
@@ -333,7 +333,7 @@ export default function NuevaLogisticaModal({ open, onClose, logistica, operacio
               <div className="p-4"><input autoFocus type="text" value={clienteQuery} onChange={(e) => setClienteQuery(e.target.value)} className="w-full border p-2 text-xs rounded-lg" placeholder="Nombre o RUC..." /></div>
               <div className="flex-1 overflow-y-auto px-4 pb-4">
                 {clienteLista.map(c => (
-                  <div key={c.codigo} onClick={() => { setForm({...form, razon_social: c.nombre}); setOpenCliente(false); }} className="p-2 border-b text-xs hover:bg-teal-50 cursor-pointer flex justify-between">
+                  <div key={c.codigo} onClick={() => { setForm({ ...form, razon_social: c.nombre }); setOpenCliente(false); }} className="p-2 border-b text-xs hover:bg-teal-50 cursor-pointer flex justify-between">
                     <span className="font-bold">{c.ruc || "-"}</span>
                     <span>{c.nombre}</span>
                   </div>

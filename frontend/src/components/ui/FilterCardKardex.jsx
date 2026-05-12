@@ -106,8 +106,8 @@ const FilterCardKardex = ({ onProcess, onReport, onClear, initialFilters = {}, r
       try {
         setLoading(true);
         const [clientesRes, areasRes] = await Promise.all([
-          api.get("cotizaciones/clientes/"),
-          api.get("areas/"),
+          api.get("core/clientes/"),
+          api.get("users/areas/"),
         ]);
         setClientes(clientesRes.data || []);
         setAreas(areasRes.data || []);

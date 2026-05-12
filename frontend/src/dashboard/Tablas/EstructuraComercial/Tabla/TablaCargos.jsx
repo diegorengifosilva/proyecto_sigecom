@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { 
-  Loader, Search, MoreHorizontal, ChartSpline, Plus, Edit2, Trash2 
+import {
+  Loader, Search, MoreHorizontal, ChartSpline, Plus, Edit2, Trash2
 } from "lucide-react";
 import api from "@/services/api";
 
@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import CargoModal from "../Modal/CargoModal";
 
 const fetchCargos = async () => {
-  const { data } = await api.get("cotizaciones/cargos/");
+  const { data } = await api.get("cotizaciones/users/cargos/");
   // Filtramos: que exista 'nombre' Y que no sea solo espacios en blanco
   return data.filter(cargo => cargo.nombre !== null && cargo.nombre.trim() !== "");
 };
@@ -19,7 +19,7 @@ const fetchCargos = async () => {
 export default function TablaCargos() {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
-  
+
   // ESTADOS PARA EL MODAL
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedCargo, setSelectedCargo] = useState(null);
@@ -34,11 +34,11 @@ export default function TablaCargos() {
     mutationFn: async (formData) => {
       // Si el cargo ya existe (estamos editando), usamos PUT
       const existe = cargos.some(c => c.codigo === formData.codigo && formData.codigo !== "NUEVO");
-      
+
       if (existe) {
-        return await api.put(`cotizaciones/cargos/`, formData);
+        return await api.put(`cotizaciones/users/cargos/`, formData);
       } else {
-        return await api.post("cotizaciones/cargos/", formData);
+        return await api.post("cotizaciones/users/cargos/", formData);
       }
     },
     onSuccess: () => {
@@ -57,7 +57,7 @@ export default function TablaCargos() {
     setModalOpen(true);
   };
 
-  const cargosFiltrados = cargos.filter(c => 
+  const cargosFiltrados = cargos.filter(c =>
     c.nombre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     c.nom?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     String(c.codigo).includes(searchTerm)
@@ -70,15 +70,15 @@ export default function TablaCargos() {
         <div className="flex items-center gap-3">
           <div className="relative w-full md:w-64">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <Input 
-              placeholder="Buscar cargo..." 
+            <Input
+              placeholder="Buscar cargo..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-9 bg-slate-50 border-slate-200 focus:bg-white transition-all h-9 text-sm rounded-md shadow-sm"
             />
           </div>
 
-          <Button 
+          <Button
             onClick={handleNew}
             className="bg-cyan-600 hover:bg-cyan-700 text-white h-9 px-4 text-xs font-bold uppercase tracking-wider rounded-lg transition-all shadow-lg shadow-cyan-100 flex gap-2 items-center"
           >
@@ -116,9 +116,9 @@ export default function TablaCargos() {
               {h}
             </span>
           ))}
-          
+
           data={cargosFiltrados}
-          onRowClick={(cargo) => handleEdit(cargo)} 
+          onRowClick={(cargo) => handleEdit(cargo)}
 
           renderRow={(cargo) => [
             <span className="text-xs font-bold text-slate-600 text-center block">
@@ -134,11 +134,10 @@ export default function TablaCargos() {
             </span>,
 
             <div className="flex justify-center">
-              <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase border ${
-                cargo.activo 
-                  ? "bg-emerald-50 text-emerald-700 border-emerald-100" 
+              <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase border ${cargo.activo
+                  ? "bg-emerald-50 text-emerald-700 border-emerald-100"
                   : "bg-slate-50 text-slate-500 border-slate-100"
-              }`}>
+                }`}>
                 {cargo.activo ? "Activo" : "Inactivo"}
               </span>
             </div>,
@@ -146,7 +145,7 @@ export default function TablaCargos() {
         />
       </div>
 
-      <CargoModal 
+      <CargoModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         cargoData={selectedCargo}

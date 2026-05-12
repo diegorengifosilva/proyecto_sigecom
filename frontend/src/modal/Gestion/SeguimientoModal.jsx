@@ -24,7 +24,7 @@ export default function SeguimientoModal({ open, onClose, num_reg }) {
   const cargarUsuario = async () => {
     try {
       const token = localStorage.getItem("access_token");
-      const res = await axios.get("/api/usuario-actual/", {
+      const res = await axios.get("/api/users/usuario-actual/", {
         headers: { Authorization: `Bearer ${token}` },
       });
       setUsuario(res.data.usuario);
@@ -158,7 +158,7 @@ export default function SeguimientoModal({ open, onClose, num_reg }) {
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-3xl bg-white rounded-2xl shadow-2xl border-none p-0 overflow-hidden font-sans">
-        
+
         {/* HEADER IDENTICO AL SISTEMA GESTIÓN (Color Purple) */}
         <div className="bg-slate-50/80 px-6 py-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
@@ -178,7 +178,7 @@ export default function SeguimientoModal({ open, onClose, num_reg }) {
 
         {/* CONTENIDO PRINCIPAL */}
         <div className="p-2 space-y-2">
-          
+
           {/* INPUT + ACCIÓN EN PANEL PROTEGIDO */}
           <div className="bg-slate-50/50 border border-slate-100 rounded-2xl p-4 shadow-inner">
             <div className="flex items-center gap-3">
@@ -274,7 +274,7 @@ export default function SeguimientoModal({ open, onClose, num_reg }) {
           >
             Cancelar
           </Button>
-          
+
           <Button
             onClick={handleGuardar}
             disabled={saving}

@@ -12,153 +12,153 @@ import { MessageSquare, ChevronsRight, Trash2, Calendar, User, SendHorizonal } f
 import axios from "axios";
 
 export default function MensajesModal({ open, onClose, num_reg, onActualizarData }) {
-    const [mensaje, setMensaje] = useState("");
-    const [registros, setRegistros] = useState([]);
-    const [loading, setLoading] = useState(false);
-    const [saving, setSaving] = useState(false);
-    const [usuario, setUsuario] = useState(null);
+  const [mensaje, setMensaje] = useState("");
+  const [registros, setRegistros] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [usuario, setUsuario] = useState(null);
 
-    // ================
-    // Cargar Usuario
-    // ================
-    const cargarUsuario = async () => {
+  // ================
+  // Cargar Usuario
+  // ================
+  const cargarUsuario = async () => {
     try {
-        const token = localStorage.getItem("access_token");
-        const res = await axios.get("/api/usuario-actual/", {
+      const token = localStorage.getItem("access_token");
+      const res = await axios.get("/api/users/usuario-actual/", {
         headers: {
-            Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${token}`,
         },
-        });
+      });
 
-        setUsuario(res.data.usuario);
+      setUsuario(res.data.usuario);
     } catch (err) {
-        console.error("Error cargando usuario actual", err);
-        setUsuario("desconocido");
+      console.error("Error cargando usuario actual", err);
+      setUsuario("desconocido");
     }
-    };
+  };
 
-    // ========================
-    // Cargar mensajes desde DB
-    // ========================
-    const cargarMensajes = async () => {
+  // ========================
+  // Cargar mensajes desde DB
+  // ========================
+  const cargarMensajes = async () => {
     if (!num_reg) return;
 
     try {
-        setLoading(true);
+      setLoading(true);
 
-        const token = localStorage.getItem("access_token");
-        const res = await axios.get(`/api/cotizacion/${num_reg}/mensajes/`, {
+      const token = localStorage.getItem("access_token");
+      const res = await axios.get(`/api/cotizacion/${num_reg}/mensajes/`, {
         headers: { Authorization: `Bearer ${token}` },
-        });
+      });
 
-        // Mapear los datos para usar en el modal
-        const mapped = res.data.map((m) => ({
+      // Mapear los datos para usar en el modal
+      const mapped = res.data.map((m) => ({
         id: m.dat + m.cod, // clave única temporal
         dat: new Date(m.dat).toLocaleString(),
         msj: m.msj,
         cod: m.cod,
-        }));
+      }));
 
-        setRegistros(mapped);
+      setRegistros(mapped);
     } catch (err) {
-        console.error("Error cargando mensajes:", err);
-        setRegistros([]);
+      console.error("Error cargando mensajes:", err);
+      setRegistros([]);
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
-    };
+  };
 
-    // ========================
-    // Agregar Mensaje
-    // ========================
-    const handleAgregar = () => {
+  // ========================
+  // Agregar Mensaje
+  // ========================
+  const handleAgregar = () => {
     if (!mensaje.trim()) return;
 
     const nuevoMensaje = {
-        id: Date.now(),
-        dat: new Date().toLocaleString("sv-SE"),
-        msj: mensaje,
-        cod: usuario,
-        act: "1",
-        nuevo: true, // 🔑 clave
+      id: Date.now(),
+      dat: new Date().toLocaleString("sv-SE"),
+      msj: mensaje,
+      cod: usuario,
+      act: "1",
+      nuevo: true, // 🔑 clave
     };
 
     setRegistros(prev => [nuevoMensaje, ...prev]);
     setMensaje("");
-    };
+  };
 
-    // ==========
-    // Guardar
-    // ==========
-    const handleGuardar = async () => {
+  // ==========
+  // Guardar
+  // ==========
+  const handleGuardar = async () => {
     if (!num_reg) return;
 
     const nuevos = registros.filter(r => r.nuevo);
     if (nuevos.length === 0) {
-        onClose();
-        return;
+      onClose();
+      return;
     }
 
     if (saving) return;
     setSaving(true);
 
     try {
-        const token = localStorage.getItem("access_token");
+      const token = localStorage.getItem("access_token");
 
-        for (const m of nuevos) {
+      for (const m of nuevos) {
         const payload = {
-            num_reg,
-            mensaje: {
+          num_reg,
+          mensaje: {
             msj: m.msj,
             act: m.act,
-            },
+          },
         };
 
         await axios.post(
-            `${import.meta.env.VITE_API_URL}/cotizaciones/guardar/`,
-            payload,
-            { headers: { Authorization: `Bearer ${token}` } }
+          `${import.meta.env.VITE_API_URL}/cotizaciones/guardar/`,
+          payload,
+          { headers: { Authorization: `Bearer ${token}` } }
         );
-        }
+      }
 
-        cargarMensajes();
-        onClose();
+      cargarMensajes();
+      onClose();
     } catch (err) {
-        console.error(err);
-        alert("Error guardando mensajes");
+      console.error(err);
+      alert("Error guardando mensajes");
     } finally {
-        setSaving(false);
+      setSaving(false);
     }
-    };
+  };
 
-    // ========================
-    // Eliminar mensaje
-    // ========================
-    const handleEliminar = async (id) => {
-        try {
-        setLoading(true);
-        // Endpoint de eliminación, ajusta según tu backend
-        await axios.delete(`/api/cotizaciones/${num_reg}/mensajes/${id}/`);
-        setRegistros((prev) => prev.filter((r) => r.id !== id));
-        } catch (error) {
-        console.error("Error eliminando mensaje", error);
-        } finally {
-        setLoading(false);
-        }
-    };
+  // ========================
+  // Eliminar mensaje
+  // ========================
+  const handleEliminar = async (id) => {
+    try {
+      setLoading(true);
+      // Endpoint de eliminación, ajusta según tu backend
+      await axios.delete(`/api/cotizaciones/${num_reg}/mensajes/${id}/`);
+      setRegistros((prev) => prev.filter((r) => r.id !== id));
+    } catch (error) {
+      console.error("Error eliminando mensaje", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    useEffect(() => {
-        if (open) {
-        setMensaje("");
-        cargarMensajes();
-        cargarUsuario();
-        }
-    }, [open]);
+  useEffect(() => {
+    if (open) {
+      setMensaje("");
+      cargarMensajes();
+      cargarUsuario();
+    }
+  }, [open]);
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-3xl bg-white rounded-2xl shadow-2xl border-none p-0 overflow-hidden font-sans">
-        
+
         {/* HEADER IDENTICO AL SISTEMA GESTIÓN */}
         <div className="bg-slate-50/80 px-6 py-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
@@ -178,7 +178,7 @@ export default function MensajesModal({ open, onClose, num_reg, onActualizarData
 
         {/* CONTENIDO PRINCIPAL */}
         <div className="p-2 space-y-2">
-          
+
           {/* INPUT + ACCIÓN EN PANEL PROTEGIDO */}
           <div className="bg-slate-50/50 border border-slate-100 rounded-2xl p-4 shadow-inner">
             <div className="flex items-center gap-3">
@@ -271,7 +271,7 @@ export default function MensajesModal({ open, onClose, num_reg, onActualizarData
           >
             Cerrar
           </Button>
-          
+
           <Button
             onClick={handleGuardar}
             disabled={saving}
