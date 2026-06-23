@@ -6,7 +6,7 @@ from decimal import Decimal
 from simple_history.models import HistoricalRecords
 from django.contrib.auth.hashers import check_password, make_password
 import datetime
-from users.models import Usuario
+from core.models import Representante
 
 #========================================================================================
 
@@ -108,11 +108,11 @@ class DashboardCotizacion(models.Model):
     @property
     def cliente_nombre(self):
         try:
-            from cotizaciones_api.models import vc_tab_clientes
-            if not self.cliente_codigo:
+            from cotizaciones_api.models import Cliente
+            if not self.id_cliente:
                 return self.nombr or "Sin Cliente"
             
-            cliente = vc_tab_clientes.objects.filter(codigo=self.cliente_codigo).first()
+            cliente = Cliente.objects.filter(codigo=self.id_cliente).first()
             if cliente:
                 return cliente.nombre
             return self.nombr or ""
@@ -444,82 +444,7 @@ class Notificacion(models.Model):
 ##================##
 ## DATOS DE BD_VC ##
 ##================##
-
-# vc_tab_clientes
-class vc_tab_clientes(models.Model):
-    codigo = models.AutoField(primary_key=True)
-    nombre = models.CharField(max_length=150)
-    iniciales = models.CharField(max_length=50, blank=True, null=True)
-    ruc = models.CharField(max_length=20, blank=True, null=True)
-    dir = models.CharField(max_length=200, blank=True, null=True)
-    tipo = models.CharField(max_length=2, blank=True, null=True)
-    fpago = models.CharField(max_length=20, blank=True, null=True)
-    fecha = models.DateField(default=timezone.now)
-    web = models.CharField(max_length=200, blank=True, null=True)
-    rleg = models.CharField(max_length=100, blank=True, null=True)
-    ubic = models.CharField(max_length=100, blank=True, null=True)
-    logo = models.CharField(max_length=20, blank=True, null=True)
-    activo = models.CharField(max_length=1) # En la DB es varchar(1)
-    
-    # Campos de Evaluación / Extra
-    eva = models.CharField(max_length=100, blank=True, null=True)
-    fec = models.DateField(blank=True, null=True)
-    pro = models.CharField(max_length=100, blank=True, null=True)
-    rub = models.CharField(max_length=100, blank=True, null=True)
-    det = models.CharField(max_length=100, blank=True, null=True)
-    
-    # Campos Numéricos (li1 al li8)
-    li1 = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    li2 = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    li3 = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    li4 = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    li5 = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    li6 = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    li7 = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    li8 = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    
-    # Campos de observaciones o adicionales (o1 al o8)
-    o1 = models.CharField(max_length=100, blank=True, null=True)
-    o2 = models.CharField(max_length=100, blank=True, null=True)
-    o3 = models.CharField(max_length=100, blank=True, null=True)
-    o4 = models.CharField(max_length=100, blank=True, null=True)
-    o5 = models.CharField(max_length=100, blank=True, null=True)
-    o6 = models.CharField(max_length=100, blank=True, null=True)
-    o7 = models.CharField(max_length=100, blank=True, null=True)
-    o8 = models.CharField(max_length=100, blank=True, null=True)
-    
-    # Totales y resultados
-    tot = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    res = models.CharField(max_length=80, blank=True, null=True)
-
-    class Meta:
-        managed = False
-        db_table = "vc_tab_clientes"
-        ordering = ["codigo"]
-
-    def __str__(self):
-        return self.nombre
-
-# vc_tab_clientes_d
-class vc_tab_clientes_d(models.Model):
-    codigo = models.IntegerField(max_length=11, primary_key=True)  # Código del cliente o registro
-    representante = models.CharField(max_length=70, blank=True, null=True)
-    cargo = models.CharField(max_length=70, blank=True, null=True)
-    telefono = models.CharField(max_length=30, blank=True, null=True)
-    movil = models.CharField(max_length=30, blank=True, null=True)
-    email = models.CharField(max_length=50, blank=True, null=True)
-    empresa = models.CharField(max_length=5, blank=True, null=True)
-    direccion = models.CharField(max_length=50, blank=True, null=True)
-    activo = models.CharField(max_length=1, default="1")
-
-    class Meta:
-        managed = False
-        db_table = "vc_tab_clientes_d"
-        ordering = ["codigo"]
-
-    def __str__(self):
-        return f"{self.representante} ({self.empresa})"
-    
+  
 # vc_tab_estado
 class vc_tab_estado(models.Model):
     codigo = models.CharField(max_length=5, primary_key=True)
@@ -628,12 +553,12 @@ class vc_mov_cotizaciones(models.Model):
     @property
     def cliente_nombre(self):
         try:
-            from cotizaciones_api.models import vc_tab_clientes_d
+            from cotizaciones_api.models import Representante
             if not self.empre:
                 return self.nombr or ""
-            cliente = vc_tab_clientes_d.objects.get(codigo=self.empre)
+            cliente = Representante.objects.get(codigo=self.empre)
             return cliente.representante or self.nombr or ""
-        except vc_tab_clientes_d.DoesNotExist:
+        except Representante.DoesNotExist:
             return self.nombr or ""
         except Exception:
             return self.nombr or ""

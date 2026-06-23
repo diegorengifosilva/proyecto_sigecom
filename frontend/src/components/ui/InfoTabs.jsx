@@ -300,7 +300,7 @@ export default function InfoTabs({
     setClienteLoading(true);
     try {
       // Usamos la nueva ruta de búsqueda rápida
-      const { data: res } = await api.get("/cotizaciones/clientes/search/", {
+      const { data: res } = await api.get("/core/clientes/buscar/", {
         params: { q }
       });
       setClienteResults(Array.isArray(res) ? res : []);
@@ -366,7 +366,7 @@ export default function InfoTabs({
       if (data.cliente_codigo && !clienteQuery) {
         try {
           // Buscamos el cliente específico por su código usando el nuevo endpoint
-          const { data: res } = await api.get("/cotizaciones/clientes/search/", {
+          const { data: res } = await api.get("/core/clientes/buscar/", {
             params: { q: data.cliente_codigo }
           });
 
@@ -512,7 +512,7 @@ export default function InfoTabs({
     setComercialLoading(true);
 
     try {
-      const { data } = await api.get("/usuarios-activos/", {
+      const { data } = await api.get("/users/usuarios-activos/", {
         params: { q }
       });
 
@@ -636,7 +636,7 @@ export default function InfoTabs({
     setTecnicoLoading(true);
 
     try {
-      const { data } = await api.get("/usuarios-activos/", {
+      const { data } = await api.get("/users/usuarios-activos/", {
         params: { q }
       });
 

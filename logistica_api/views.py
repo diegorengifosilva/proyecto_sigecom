@@ -89,16 +89,15 @@ from django.conf import settings
 from datetime import date, datetime, timedelta
 from django.utils.timezone import now
 from .models import (
+    AlmacenNew,
     LogisticaDashboard,
     LogisticaDashboardDetalle,
     VcMovOrdenSoli,
     AlmTabUmed,
     DashboardCotizacion,
-    vc_tab_clientes,
     vc_tab_estado,
     vc_mov_cotizaciones,
     cont_cias,
-    vc_tab_clientes_d,
     CotiSuministros,
     CotiServicios,
     CotiMensajes,
@@ -123,10 +122,11 @@ from users.models import (
     Area,
     Cargo,
     )
+from core.models import Cliente, Representante
+
 from .serializers import (
     DashboardCotizacionTablaSerializer,
     OrdenOCSerializer,
-    ClientesSerializer,
     EstadoSerializer,
     CotizacionesSerializer,
     ContCiasSerializer,
@@ -403,239 +403,6 @@ def reporte_kardex_pdf(request):
         return HttpResponse("Error generando PDF", status=500)
 
 #=========================#
-# APROBACION COTIZACIONES #
-#=========================#
-# ——— Dashboard Cotizaciones (versión moderna) —————————————————————
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def cotizaciones_dashboard_view(request):
-    """
-    Dashboard + Tabla para cotizaciones con filtros flexibles.
-    Estilo moderno equivalente al dashboard de CAJA CHICA.
-    """
-    try:
-        from datetime import date
-        from unidecode import unidecode
-        from django.db.models import Func, F, Value, TextField
-        from django.db.models.functions import Lower
-        import re
-
-        # ============================================================
-        # 1) Parámetros principales
-        # ============================================================
-        anno = request.GET.get("anno", "%")
-        mes = request.GET.get("mes", "%")
-
-        cliente = request.GET.get("cliente", "%")
-        estado = request.GET.get("estado", "%")
-        area = request.GET.get("area", "%")
-        envio = request.GET.get("envio", "%")
-
-        CAMPOS_BUSQUEDA = {
-            "num_reg": "num_reg",
-            "cotin": "numero",
-            "cotif": "fecha",
-            "cliente_nombre": "cliente_nombre",
-            "refef": "referencia",
-            "nombr": "nombr",
-            "nombc": "nombc",
-            "nombt": "nombt",
-            "tot_c": "tot_c",
-            "tot_d": "tot_d",
-            "prob": "prob",
-            "regus": "regus",
-        }
-
-        # Búsqueda flexible
-        campo = request.GET.get("campo")
-        valor = request.GET.get("valor")
-
-        fecha_inicio = request.GET.get("fechaInicio")
-        fecha_fin = request.GET.get("fechaFin")
-
-        # ============================================================
-        # 2) Query base
-        # ============================================================
-        qs = DashboardCotizacion.objects.all()
-        
-        if anno != "%":
-            qs = qs.filter(fecha__year=anno)
-
-        if mes != "%":
-            qs = qs.filter(fecha__month=mes)
-
-        if cliente != "%":
-            qs = qs.filter(cliente_codigo=cliente)
-
-        if estado != "%":
-            estados = [e for e in estado.split(",") if e]
-
-            if len(estados) == 1:
-                qs = qs.filter(estado_codigo=estados[0])
-            else:
-                qs = qs.filter(estado_codigo__in=estados)
-
-        if area != "%":
-            qs = qs.filter(area_codigo=area)
-
-        if envio != "%":
-            qs = qs.filter(envio=envio)
-
-        # Rango de fechas
-        if fecha_inicio:
-            qs = qs.filter(fecha__gte=fecha_inicio)
-        if fecha_fin:
-            qs = qs.filter(fecha__lte=fecha_fin)
-
-        # ============================================================
-        # 3) Normalización de búsqueda flexible
-        # ============================================================
-        def normalizar(texto):
-            if not texto:
-                return None
-            t = unidecode(texto.lower().strip())
-            return re.sub(r"\s+", " ", t)
-
-        class Replace(Func):
-            function = "REPLACE"
-            arity = 3
-
-        if campo and valor not in (None, "", " "):
-            campo_real = CAMPOS_BUSQUEDA.get(campo)
-
-            if campo_real:
-                valor_norm = normalizar(valor)
-
-                qs = qs.annotate(
-                    campo_clean=Replace(
-                        Replace(
-                            Lower(F(campo_real)),
-                            Value("  ", output_field=TextField()),
-                            Value(" ", output_field=TextField()),
-                            output_field=TextField()
-                        ),
-                        Value("  ", output_field=TextField()),
-                        Value(" ", output_field=TextField()),
-                        output_field=TextField()
-                    )
-                ).filter(campo_clean__icontains=valor_norm)
-
-        # ============================================================
-        # 4) Dashboard Stats mejorado
-        # ============================================================
-        total = qs.count()
-
-        estados_db = vc_tab_estado.objects.filter(activo=True).values_list("nombre", flat=True)
-        estado_map = {e: 0 for e in estados_db}
-
-        meses = [0] * 12
-        monto_total_soles = 0
-        monto_total_dolares = 0
-        este_mes = 0
-
-        hoy = date.today()
-
-        # Diccionario para stats por cliente
-        clientes_stats = {}
-
-        for c in qs:
-            # ===== Estados =====
-            estado_nombre = c.estado_nombre or "Pendiente"
-            estado_map[estado_nombre] = estado_map.get(estado_nombre, 0) + 1
-
-            # ===== Monto por moneda =====
-            if hasattr(c, "tmone"):
-                if c.tmone == "S":
-                    monto_total_soles += float(c.tot_c or 0)
-                elif c.tmone == "D":
-                    monto_total_dolares += float(c.tot_c or 0)
-            else:
-                monto_total_soles += float(c.tot_c or 0)
-
-            # ===== Conteo por mes =====
-            if c.fecha:
-                fec_obj = c.fecha
-                if isinstance(fec_obj, str):
-                    from django.utils.dateparse import parse_date
-                    fec_obj = parse_date(fec_obj)
-                
-                if fec_obj and hasattr(fec_obj, 'month'):
-                    idx = fec_obj.month - 1
-                    meses[idx] += 1
-                    if fec_obj.month == hoy.month:
-                        este_mes += 1
-
-            # ===== Stats por cliente =====
-            codigo = c.cliente_codigo  # cÃ³digo del cliente
-            nombre = c.cliente_nombre or "-"
-            
-            if codigo not in clientes_stats:
-                clientes_stats[codigo] = {
-                    "cliente_codigo": codigo,
-                    "nombre": nombre,
-                    "cantidad": 0,
-                    "totalSoles": 0,
-                    "totalDolares": 0,
-                }
-
-            clientes_stats[codigo]["cantidad"] += 1
-            if hasattr(c, "tmone"):
-                if c.tmone == "S":
-                    clientes_stats[codigo]["totalSoles"] += float(c.tot_c or 0)
-                elif c.tmone == "D":
-                    clientes_stats[codigo]["totalDolares"] += float(c.tot_c or 0)
-            else:
-                clientes_stats[codigo]["totalSoles"] += float(c.tot_c or 0)
-
-        # Calcular porcentaje de uso por cliente
-        for cliente in clientes_stats.values():
-            cliente["porcentaje"] = round((cliente["cantidad"] / total) * 100, 2) if total else 0
-
-        # Convertir a lista para enviar al frontend
-        clientes_list = list(clientes_stats.values())
-
-        # ===== Dashboard final =====
-        dashboard_data = {
-            "total": total,
-            "esteMes": este_mes,
-            "montoTotalSoles": round(monto_total_soles, 2),
-            "montoTotalDolares": round(monto_total_dolares, 2),
-            "promedioSoles": round(monto_total_soles / total, 2) if total else 0,
-            "promedioDolares": round(monto_total_dolares / total, 2) if total else 0,
-            "estados": estado_map,
-            "porMes": meses,
-            "clientes": clientes_list,  # âœ… aquÃ­ agregamos los stats de clientes
-        }
-
-        # ============================================================
-        # 5) Tabla de registros
-        # ============================================================
-        tabla_data = DashboardCotizacionTablaSerializer(
-            qs.order_by(
-                F("envio").asc(nulls_last=True),
-                F("fecha").desc(),
-                F("num_reg").desc(),
-            ),
-            many=True
-        ).data
-
-        # ============================================================
-        # 6) Respuesta final
-        # ============================================================
-        return Response({
-            "dashboard": dashboard_data,
-            "tabla": tabla_data,
-            "anno": anno
-        })
-
-    except Exception:
-        import traceback
-        print(traceback.format_exc())
-        return Response({"error": "Error interno en el servidor."}, status=500)
-
-from django.db.models.functions import Cast
-from django.db.models import CharField
-#=========================#
 # LOGISTICA #
 #=========================#
 @api_view(['GET'])
@@ -677,27 +444,30 @@ def logistica_dashboard_view(request):
         # ======================================================
         # 2) Query base
         # ======================================================
-        qs = LogisticaDashboard.objects.all()
-
-        # Filtra por columnas dedicadas anno/mes (más eficiente que extraer de fec)
-        if anno != "%" and anno:
-            qs = qs.filter(anno=anno)
-
-        qs = qs.annotate(
+        from django.db.models import F, Q, CharField
+        from django.db.models.functions import Cast
+        qs = LogisticaDashboard.objects.annotate(
+            dor=F('cor__nombre'),
             sol_str=Cast('sol', CharField()),
-            dol_str=Cast('dol', CharField())
+            dol_str=Cast('dol', CharField()),
+            nom_alm=F('alm__nombre')
         )
+
+        if anno != "%" and anno:
+            qs = qs.filter(fec__year=anno)
+
         if razon_social != "%":
-            qs = qs.filter(dor=razon_social)
+            qs = qs.filter(dor__icontains=razon_social)
 
         if operacion != "%":
-            qs = qs.filter(ope=operacion)   # E = Entradas, S = Salidas
+            qs = qs.filter(ope=operacion)
 
         if orden_compra != "%":
             qs = qs.filter(oco=orden_compra)
 
+        # tipo_movimiento en bd_nueva es mov
         if tipo_movimiento != "%":
-            qs = qs.filter(tip=tipo_movimiento)
+            qs = qs.filter(mov=tipo_movimiento)
 
         if referencia != "%":
             qs = qs.filter(mov=referencia)
@@ -706,13 +476,13 @@ def logistica_dashboard_view(request):
             qs = qs.filter(ngu=nro_guia)
 
         if obs_doc != "%":
-            qs = qs.filter(nom2=obs_doc)
+            qs = qs.filter(nom2__icontains=obs_doc)
 
         if codigo != "%":
-            qs = qs.filter(cod=codigo)
+            pass # cod no está en cabecera
 
         if responsable != "%":
-            qs = qs.filter(nom1=responsable)
+            qs = qs.filter(nom1__icontains=responsable)
 
         if numero_doc != "%":
             qs = qs.filter(nfa=numero_doc)
@@ -727,18 +497,17 @@ def logistica_dashboard_view(request):
             qs = qs.filter(alm=almacen)
 
         if mes != "%" and mes:
-            qs = qs.filter(mes=mes.zfill(2))   # normalizar: "3" -> "03"
+            qs = qs.filter(fec__month=mes.zfill(2))
 
         if proveedor != "%":
-            qs = qs.filter(cor=proveedor)
+            qs = qs.filter(cor_id=proveedor)
 
         if estado != "%":
             if estado == "ANULADO":
-                qs = qs.filter(anulado="S")
+                qs = qs.filter(est="2") # Asumiendo 2 o 0 es anulado
             elif estado == "ACTIVO":
-                qs = qs.exclude(anulado="S")
+                qs = qs.exclude(est="2")
 
-        
         if general:
             qs = qs.filter(
                 Q(num_reg__icontains=general) |
@@ -746,15 +515,12 @@ def logistica_dashboard_view(request):
                 Q(oco__icontains=general) |
                 Q(nfa__icontains=general) |
                 Q(ngu__icontains=general) |
-                Q(cor__icontains=general) |
                 Q(dor__icontains=general) |
-                Q(tip__icontains=general) |
                 Q(alm__icontains=general) |
                 Q(tmo__icontains=general) |
                 Q(sol_str__icontains=general) |
-               Q(dol_str__icontains=general) |
+                Q(dol_str__icontains=general) |
                 Q(reg__icontains=general) |
-                Q(obs__icontains=general) |
                 Q(ope__icontains=general) |
                 Q(nom1__icontains=general) |
                 Q(nom2__icontains=general) |
@@ -762,7 +528,6 @@ def logistica_dashboard_view(request):
                 Q(mov__icontains=general)
             )
 
-            
         # ======================================================
         # 3) Dashboard Stats
         # ======================================================
@@ -778,7 +543,6 @@ def logistica_dashboard_view(request):
         proveedores_stats = {}
 
         for r in qs:
-
             # Conteo por mes
             if r.fec:
                 fec_obj = r.fec
@@ -797,21 +561,21 @@ def logistica_dashboard_view(request):
             total_dolares += float(r.dol or 0)
 
             # Stats proveedor
-            codigo = r.cor or "-"
-            nombre = r.dor or "SIN NOMBRE"
+            codigo_prov = str(r.cor_id) if r.cor_id else "-"
+            nombre_prov = r.dor or "SIN NOMBRE"
 
-            if codigo not in proveedores_stats:
-                proveedores_stats[codigo] = {
-                    "codigo": codigo,
-                    "nombre": nombre,
+            if codigo_prov not in proveedores_stats:
+                proveedores_stats[codigo_prov] = {
+                    "codigo": codigo_prov,
+                    "nombre": nombre_prov,
                     "cantidad": 0,
                     "soles": 0,
                     "dolares": 0,
                 }
 
-            proveedores_stats[codigo]["cantidad"] += 1
-            proveedores_stats[codigo]["soles"] += float(r.sol or 0)
-            proveedores_stats[codigo]["dolares"] += float(r.dol or 0)
+            proveedores_stats[codigo_prov]["cantidad"] += 1
+            proveedores_stats[codigo_prov]["soles"] += float(r.sol or 0)
+            proveedores_stats[codigo_prov]["dolares"] += float(r.dol or 0)
 
         # porcentajes
         for p in proveedores_stats.values():
@@ -838,23 +602,32 @@ def logistica_dashboard_view(request):
                 "oco",
                 "nfa",
                 "ngu",
-                "cor",
+                "cor_id", # cor changed to cor_id
                 "dor",
-                "tip",
                 "alm",
+                "nom_alm",
                 "tmo",
+                "tc",
                 "sol",
                 "dol",
                 "reg",
-                "obs",
-                "ope",
                 "nom1",
                 "nom2",
+                "ope",
                 "est",
-                "mov",
-
+                "mov"
             )
         )
+        
+        # Format table for frontend compatibility
+        for row in tabla:
+            row["cor"] = row.pop("cor_id", None)
+            row["nom_alm"] = row.get("nom_alm", "")
+            row["tc"] = float(row.get("tc") or 0)
+            # Reconstruct missing fields with defaults so frontend doesn't crash
+            row["tip"] = ""
+            row["obs"] = row.get("nom2", "")
+            row["anulado"] = "S" if row.get("est") == "2" else "N"
 
         # ======================================================
         # 5) Respuesta
@@ -864,12 +637,10 @@ def logistica_dashboard_view(request):
             "tabla": tabla,
             "anno": anno,
             "mes": mes,
-            "almacen":almacen,
-            "referencia":referencia,
+            "almacen": almacen,
+            "referencia": referencia,
             "general": general,
-             "general": general,
-             "operacion":operacion,
-
+            "operacion": operacion,
         })
 
     except Exception as e:
@@ -895,7 +666,8 @@ def logistica_modal_view(request, num_reg):
         # ==========================
         # 1ï¸âƒ£ CABECERA
         # ==========================
-        cabecera = LogisticaDashboard.objects.filter(num_reg=num_reg).first()
+        from django.db.models import F
+        cabecera = LogisticaDashboard.objects.annotate(dor=F('cor__nombre')).filter(num_reg=num_reg).first()
 
         if not cabecera:
             return Response(
@@ -927,7 +699,7 @@ def logistica_modal_view(request, num_reg):
                 "soles": float(d.sol or 0),
                 "dolares": float(d.dol or 0),
                 "observacion": d.obs,
-                "operacion": d.ope,
+                "operacion": cabecera.ope,
             })
 
         # ==========================
@@ -941,19 +713,19 @@ def logistica_modal_view(request, num_reg):
                 "referencia": cabecera.mov,
                 "numero_doc": cabecera.nfa,
                 "orden_compra": cabecera.oco,
-                "almacen": cabecera.alm,
-                "proveedor_codigo": cabecera.cor,
+                "almacen": cabecera.alm_id,
+                "proveedor_codigo": cabecera.cor_id,
                 "responsable": cabecera.nom1,
                 "obs_doc": cabecera.nom2,
                 "moneda": cabecera.tmo,
                 "tipo_cambio": float(cabecera.tc or 0),
                 "usuario": cabecera.reg,
-                "observacion": cabecera.obs,
+                "observacion": cabecera.nom2,
                 "nro_guia": cabecera.ngu,
                 "estado": cabecera.est,
-                "anulado": cabecera.anulado,
-                "tipo_movimiento": cabecera.tip,
-                "razon_social": cabecera.dor,
+                "anulado": "S" if cabecera.est == "2" else "N",
+                "tipo_movimiento": "",
+                "razon_social": getattr(cabecera, 'dor', "SIN NOMBRE"),
 
 
             },
@@ -1032,7 +804,7 @@ def logistica_modal_view_sal(request, num_reg):
                 "referencia": cabecera.mov,
                 "numero_doc": cabecera.nfa,
                 "orden_compra": cabecera.oco,
-                "almacen": cabecera.alm,
+                "almacen": cabecera.alm_id,
                 "proveedor_codigo": cabecera.cor,
                 "responsable": cabecera.nom1,
                 "obs_doc": cabecera.nom2,
@@ -1687,262 +1459,6 @@ def detalle_orden_compra(request, reg):
         )
 
 
-
-
-@api_view(["GET", "POST", "PUT"])
-@permission_classes([IsAuthenticated])
-def listar_suministros(request, num_reg):
-    try:
-        # ======================
-        # ðŸ“„ LISTAR
-        # ======================
-        if request.method == "GET":
-            suministros = CotiSuministros.objects.filter(
-                num_reg=num_reg
-            ).order_by("num")
-
-            serializer = CotiSuministrosSerializer(suministros, many=True)
-            return Response(serializer.data)
-
-        # ======================
-        # âž• CREAR
-        # ======================
-        if request.method == "POST":
-            data = request.data.copy()
-            data["num_reg"] = num_reg
-
-            serializer = CotiSuministrosSerializer(data=data)
-            if serializer.is_valid():
-                serializer.save()
-                return Response(serializer.data, status=201)
-
-            return Response(serializer.errors, status=400)
-
-        # ======================
-        # âœï¸ ACTUALIZAR
-        # ======================
-        if request.method == "PUT":
-            item_id = request.data.get("id")
-
-            try:
-                item_id = int(item_id)
-            except (TypeError, ValueError):
-                return Response({"error": "ID invÃ¡lido"}, status=400)
-
-            suministro = CotiSuministros.objects.get(
-                id=item_id,
-                num_reg=num_reg
-            )
-
-            data = request.data.copy()
-            data.pop("id", None)
-            data.pop("num_reg", None)
-
-            serializer = CotiSuministrosSerializer(
-                suministro,
-                data=data,
-                partial=True
-            )
-
-            if serializer.is_valid():
-                serializer.save()
-                return Response(serializer.data)
-
-            return Response(serializer.errors, status=400)
-
-    except CotiSuministros.DoesNotExist:
-        return Response({"error": "Suministro no encontrado"}, status=404)
-
-    except Exception as e:
-        return Response({"error": str(e)}, status=500)
-
-def clean_text(text):
-    """Limpia espacios, tabulaciones, saltos de lÃ­nea y decodifica HTML."""
-    if not text:
-        return ""
-    # Decodifica entidades HTML
-    text = unescape(text)
-    # Reemplaza cualquier secuencia de espacios o saltos de lÃ­nea por un solo espacio
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
-
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def listar_servicios(request, num_reg):
-    try:
-        # 1) OBTENER TODOS LOS SERVICIOS (nig = 0)
-        servicios_qs = CotiServicios.objects.filter(
-            num_reg=num_reg,
-            nig=0
-        ).order_by("num")
-
-        resultado = []
-
-        tipo_map = {
-            "4": "MANO DE OBRA",
-            "5": "GASTOS DE SERVICIOS",
-            "6": "OTROS",
-        }
-
-        for servicio in servicios_qs:
-            servicio_data = CotiServiciosSerializer(servicio).data
-            titulo_general = clean_text(servicio_data.get("nog"))
-
-            pref_servicio = servicio.cog[:2]
-
-            # 2) FILAS DEL SERVICIO (subgrupos + items)
-            rows = CotiServicios.objects.filter(
-                num_reg=num_reg,
-                cog__startswith=pref_servicio,
-                nig__gt=0
-            ).order_by("num")
-
-            subgrupos = []
-
-            # 3) CREAR SUBGRUPOS (nig = 1)
-            for row in rows.filter(nig=1):
-                tipo_digito = row.cog[3]  # 4,5,6
-                subgrupo = {
-                    "titulo": clean_text(row.nog),       # ðŸ”¹ tÃ­tulo real de DB
-                    "tipoCodigo": f"0{tipo_digito}",     # "04", "05", "06"
-                    "tipoNombre": tipo_map.get(tipo_digito, "DESCONOCIDO"),
-                    "items": []
-                }
-                subgrupos.append(subgrupo)
-
-            # 4) ASIGNAR ITEMS (nig = 2)
-            for row in rows.filter(nig=2):
-                # Buscar el subgrupo correspondiente segÃºn los primeros 4 dÃ­gitos del cog
-                prefijo = row.cog[:4]
-                for sg in subgrupos:
-                    if sg["tipoCodigo"] == f"0{row.cog[3]}":
-                        item = CotiServiciosSerializer(row).data
-                        for f in ["des", "cod", "nog", "pro"]:
-                            item[f] = clean_text(item.get(f))
-                        sg["items"].append(item)
-                        break
-
-            resultado.append({
-                "tituloGeneral": titulo_general,
-                "cantidad": str(servicio.can or "1"),   # ðŸ”¹ can (nig = 0)
-                "detalle": servicio.tog or "",           # ðŸ”¹ tog (HTML)
-                "subgrupos": subgrupos
-            })
-
-        return Response(resultado)
-
-    except Exception as e:
-        return Response({"error": str(e)}, status=500)
-
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def listar_mensajes(request, num_reg):
-    """
-    Lista todos los mensajes asociados a un num_reg.
-    """
-    try:
-        mensajes = CotiMensajes.objects.filter(
-            num_reg=num_reg,
-            act="1"  # Solo activos
-        ).order_by("dat")  # Orden cronolÃ³gico, mÃ¡s antiguos primero
-
-        serializer = CotiMensajesSerializer(mensajes, many=True)
-        return Response(serializer.data)
-
-    except Exception as e:
-        return Response({"error": str(e)}, status=500)
-
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def listar_seguimientos(request, num_reg):
-    """
-    Lista todos los seguimientos asociados a un num_reg.
-    """
-    try:
-        seguimientos = CotiSeguimiento.objects.filter(
-            num_reg=num_reg,
-            act="1"  # Solo activos
-        ).order_by("dat")  # Orden cronolÃ³gico, mÃ¡s antiguos primero
-
-        serializer = CotiSeguimientoSerializer(seguimientos, many=True)
-        return Response(serializer.data)
-
-    except Exception as e:
-        return Response({"error": str(e)}, status=500)
-
-@api_view(["GET"])
-def totales_descuento_view(request, num_reg):
-    cot = DashboardCotizacion.objects.get(num_reg=num_reg)
-
-    total = cot.tot_c or 0
-    descuento_monto = cot.des_m or 0  # <-- descuento guardado
-
-    total_suministros = (
-        CotiSuministros.objects
-        .filter(num_reg=num_reg, nig=0)
-        .aggregate(
-            total=Sum(F("tot") * F("can"))
-        )["total"] or 0
-    )
-
-    total_servicios = (
-        CotiServicios.objects
-        .filter(num_reg=num_reg, nig=0)
-        .aggregate(
-            total=Sum(F("tot") * F("can"))
-        )["total"] or 0
-    )
-
-    return Response({
-        "total": total,
-        "suministros": total_suministros,
-        "servicios": total_servicios,
-        "tot_c": total,             # total base
-        "des_m": descuento_monto,   # descuento guardado
-    })
-
-@api_view(["PATCH"])
-@permission_classes([IsAuthenticated])
-def recalcular_totales_cotizacion(request, num_reg):
-    """
-    Recalcula el total de la cotizaciÃ³n basado en suministros y servicios.
-    Retorna el total actualizado.
-    """
-    try:
-        cotizacion = DashboardCotizacion.objects.get(num_reg=num_reg)
-
-        # Totales suministros
-        total_suministros = (
-            CotiSuministros.objects
-            .filter(num_reg=num_reg, nig=0)
-            .aggregate(total=Sum(F("tot") * F("can")))["total"] or 0
-        )
-
-        # Totales servicios
-        total_servicios = (
-            CotiServicios.objects
-            .filter(num_reg=num_reg, nig=0)
-            .aggregate(total=Sum(F("tot") * F("can")))["total"] or 0
-        )
-
-        total_general = total_suministros + total_servicios
-
-        # Guardar total
-        cotizacion.tot_c = total_general
-        cotizacion.save(update_fields=["tot_c"])
-
-        return Response({
-            "tot_c": total_general,
-            "suministros": total_suministros,
-            "servicios": total_servicios,
-        })
-
-    except DashboardCotizacion.DoesNotExist:
-        return Response({"error": "CotizaciÃ³n no encontrada"}, status=404)
-
-#========================================================================================
-
-
 #========================================================================================
 
 ##===========##
@@ -1953,7 +1469,7 @@ def recalcular_totales_cotizacion(request, num_reg):
 def buscar_encargados_por_empresa(request, empresa):
     q = request.GET.get("q", "").strip()
 
-    encargados = vc_tab_clientes_d.objects.filter(
+    encargados = Representante.objects.filter(
         empresa=empresa,
         activo=True
     ).filter(
@@ -2122,87 +1638,6 @@ def generar_codigo_view(request, numero):
 ## DATOS DE BD_VC ##
 ##================##
 
-# vc_tab_clientes
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def lista_clientes(request):
-    q = (request.GET.get("q", "") or "").strip()
-    activo_param = (request.GET.get("activo", "1") or "").strip()  # default = activos
-    tipo_param = (request.GET.get("tipo", "") or "").strip()
-
-    clientes = vc_tab_clientes.objects.all()
-
-    # Filtro activo/inactivo:
-    if activo_param not in ("", "%", "todos", "ALL", "all", "Todos"):
-        if str(activo_param).lower() in ("1", "true", "t", "activo"):
-            clientes = clientes.filter(activo=True)
-        elif str(activo_param).lower() in ("0", "false", "f", "inactivo"):
-            clientes = clientes.filter(activo=False)
-
-    # Filtro por tipo:
-    if tipo_param:
-        clientes = clientes.filter(tipo=tipo_param)
-
-    if q:
-        clientes = clientes.filter(
-            Q(codigo__icontains=q)
-            | Q(nombre__icontains=q)
-            | Q(iniciales__icontains=q)
-            | Q(ruc__icontains=q)
-            | Q(tipo__icontains=q)
-            | Q(pro__icontains=q)
-        )
-
-    clientes = clientes.order_by("nombre")[:100]
-    serializer = ClientesSerializer(clientes, many=True)
-    return Response(serializer.data)
-
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-def crear_cliente(request):
-    data = request.data.copy()
-    
-    # Autogenerar correlativo si no envian codigo
-    if not data.get('codigo'):
-        max_cod = 0
-        todos = vc_tab_clientes.objects.values_list('codigo', flat=True)
-        for c in todos:
-            if c and str(c).isdigit():
-                val = int(c)
-                if val > max_cod:
-                    max_cod = val
-        data['codigo'] = str(max_cod + 1).zfill(5)
-
-    serializer = ClientesSerializer(data=data)
-    if serializer.is_valid():
-        serializer.save()
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-@api_view(["PUT", "PATCH"])
-@permission_classes([IsAuthenticated])
-def actualizar_cliente(request, codigo):
-    try:
-        cliente = vc_tab_clientes.objects.get(codigo=codigo)
-    except vc_tab_clientes.DoesNotExist:
-        return Response({"detail": "No encontrado"}, status=status.HTTP_404_NOT_FOUND)
-    
-    serializer = ClientesSerializer(cliente, data=request.data, partial=(request.method == "PATCH"))
-    if serializer.is_valid():
-        serializer.save()
-        return Response(serializer.data)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-@api_view(["DELETE"])
-@permission_classes([IsAuthenticated])
-def eliminar_cliente(request, codigo):
-    try:
-        cliente = vc_tab_clientes.objects.get(codigo=codigo)
-        cliente.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
-    except vc_tab_clientes.DoesNotExist:
-        return Response({"detail": "No encontrado"}, status=status.HTTP_404_NOT_FOUND)
-
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def exportar_excel_proveedores(request):
@@ -2210,7 +1645,7 @@ def exportar_excel_proveedores(request):
     activo_param = (request.GET.get("activo", "todos") or "").strip()
     tipo_param = (request.GET.get("tipo", "") or "").strip()
 
-    clientes = vc_tab_clientes.objects.all()
+    clientes = Cliente.objects.all()
 
     # Filtros igual que lista_clientes
     if activo_param not in ("", "%", "todos", "ALL", "all", "Todos"):
@@ -2543,6 +1978,13 @@ def html_to_text(html):
 ##===============##
 ##   ALMACENES   ##
 ##===============##
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def lista_almacenes_new(request):
+    almacenes = AlmacenNew.objects.filter(activo="1").order_by("idalmacen")
+    data = [{"idalmacen": a.idalmacen, "nombre": a.nombre} for a in almacenes]
+    return Response(data)
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])

@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'users',
+    'core',
     'cotizaciones_api',
     'logistica_api',
     'rest_framework',
@@ -65,7 +66,7 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [os.path.join(BASE_DIR, "frontend", "dist")],
+        'DIRS': [BASE_DIR / "frontend" / "dist"], # Más limpio
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -79,9 +80,43 @@ TEMPLATES = [
 ]
 
 # =====================================================
-# CONFIGURACIÓN DE BASE DE DATOS (SOLO LECTURA)
+# CONFIGURACIÓN DE BASE DE DATOS
 # =====================================================
 import pymysql
+import datetime
+from pymysql.constants import FIELD_TYPE
+from pymysql.converters import conversions
+
+def safe_mysql_datetime(value):
+    """
+    Solución definitiva al error 'str' object has no attribute 'utcoffset'.
+    Maneja fechas 'zero' (0000-00-00) y formatos inconsistentes de MySQL.
+    """
+    if not value or value in (b'0000-00-00 00:00:00', b'0000-00-00', '0000-00-00 00:00:00', '0000-00-00'):
+        return None
+    
+    try:
+        # Intento de conversión estándar de pymysql
+        return pymysql.converters.convert_datetime(value)
+    except Exception:
+        # Si falla (ej: formato '2025-06.12'), intentamos limpieza manual
+        try:
+            if isinstance(value, bytes):
+                value = value.decode('utf-8')
+            
+            # Limpieza básica: cambiar puntos por guiones
+            clean_value = value.replace('.', '-').replace('/', '-')
+            
+            # Intentar parsear solo la parte de la fecha (primeros 10 caracteres)
+            return datetime.datetime.strptime(clean_value[:10], '%Y-%m-%d')
+        except:
+            return None
+
+# Mapeamos los tipos de fecha de MySQL a nuestro conversor seguro
+dict_conv = conversions.copy()
+dict_conv[FIELD_TYPE.DATETIME] = safe_mysql_datetime
+dict_conv[FIELD_TYPE.TIMESTAMP] = safe_mysql_datetime
+
 pymysql.install_as_MySQLdb()
 
 DATABASES = {
@@ -94,6 +129,8 @@ DATABASES = {
         "PORT": "3306",
         "OPTIONS": {
             "charset": "utf8mb4",
+            "conv": dict_conv,
+            "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
         },
     }
 }
@@ -157,24 +194,24 @@ AUTH_PASSWORD_VALIDATORS = [
 # -----------------------
 # Internacionalización
 # -----------------------
-LANGUAGE_CODE = 'en-us'
-TIME_ZONE = 'UTC'
+LANGUAGE_CODE = 'es-pe'  # Para que los mensajes y formatos sean en español de Perú
+TIME_ZONE = 'America/Lima' # Define la zona horaria base como Lima
 USE_I18N = True
-USE_TZ = True
+USE_TZ = True # Lo mantenemos en True para la futura expansión
 
 # -----------------------------
 # Archivos estáticos / Media
 # -----------------------------
 STATIC_URL = '/static/'
 STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, "frontend", "dist"),
-    os.path.join(BASE_DIR, "frontend", "src", "assets"),
+    BASE_DIR / "frontend" / "dist",
+    BASE_DIR / "frontend" / "src" / "assets",
 ]
-STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+MEDIA_ROOT = BASE_DIR / 'media'
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 os.makedirs(MEDIA_ROOT, exist_ok=True)
 
 # -------------------

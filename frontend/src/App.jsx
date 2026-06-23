@@ -22,6 +22,7 @@ import CotizacionesHome from "./dashboard/comercial/Home/CotizacionesHome";
 import AprobacionCotizacion from "./dashboard/comercial/AprobacionCotizacion";
 import CotizacionDetallePage from "./dashboard/comercial/CotizacionDetallePage";
 import LogisticaDashboard from "./dashboard/logistica/LogisticaDashboard";
+import AlmacenDashboard from "./dashboard/almacen/AlmacenDashboard";
 
 // TABLAS
 import EstructuraComercial from "./dashboard/Tablas/EstructuraComercial/EstructuraComercial";
@@ -112,7 +113,7 @@ export default function App() {
               />
               {/* Otros Módulos */}
               <Route path="compras" element={<MockModulePage title="Compras" icon={Icons.ShoppingCart} />} />
-              <Route path="almacen" element={<MockModulePage title="Almacén" icon={Icons.Package} />} />
+              <Route path="almacen" element={<AlmacenDashboard />} />
               <Route path="finanzas" element={<MockModulePage title="Finanzas" icon={Icons.DollarSign} />} />
               <Route path="proyectos" element={<MockModulePage title="Proyectos" icon={Icons.Briefcase} />} />
               <Route path="audit" element={<MockModulePage title="Auditoría" icon={Icons.ShieldCheck} />} />

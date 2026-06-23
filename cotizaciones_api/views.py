@@ -76,12 +76,9 @@ from .models import (
     DashboardCotizacion,
     DashboardOportunidad,
     CotizacionAdjunto,
-    vc_tab_clientes,
-    vc_tab_clientes_d,
     vc_tab_estado,
     vc_mov_cotizaciones,
     cont_cias,
-    vc_tab_clientes_d,
     CotiSuministros,
     CotiServicios,
     CotiMensajes,
@@ -108,12 +105,12 @@ from users.models import (
     Cargo,
     )
 
+from core.models import Cliente, Representante
+
 from .serializers import (
     DashboardCotizacionTablaSerializer,
     DashboardOportunidadTablaSerializer,
     DashboardOportunidadSerializer,
-    ClientesSerializer,
-    RepresentantesSerializer,
     EstadoSerializer,
     CotizacionesSerializer,
     ContCiasSerializer,
@@ -1046,7 +1043,7 @@ def guardar_cotizacion(request):
         # 3️⃣ SNAPSHOT CLIENTE
         # =========================
         if cotizacion.cliente_codigo:
-            cliente = vc_tab_clientes_d.objects.filter(
+            cliente = Representante.objects.filter(
                 codigo=cotizacion.cliente_codigo
             ).first()
 
@@ -1423,8 +1420,8 @@ def obtener_siguiente_num_reg_oportunidad(request):
 def buscar_encargados_por_empresa(request, empresa):
     q = request.GET.get("q", "").strip()
 
-    # Filtramos en vc_tab_clientes_d
-    encargados = vc_tab_clientes_d.objects.filter(
+    # Filtramos en Representante
+    encargados = Representante.objects.filter(
         empresa=empresa,    # El campo 'empresa' de la DB coincide con el ID del cliente
         activo="1"          # IMPORTANTE: En tu modelo es CharField, usamos "1" no True
     ).filter(
@@ -1567,7 +1564,7 @@ def generar_codigo_cotizacion(request, num_reg):
         # =========================
         # CLIENTE
         # =========================
-        cliente = vc_tab_clientes.objects.get(codigo=cot.cliente_codigo)
+        cliente = Cliente.objects.get(codigo=cot.cliente_codigo)
         iniciales = cliente.iniciales
 
         # =========================
@@ -3400,7 +3397,7 @@ def tendencias_dashboard(request):
     # Extraemos los códigos y evitamos errores si hay Nones
     codigos_top = [item["cliente_codigo"].strip() for item in agrupados_qs if item["cliente_codigo"]]
     
-    clientes_db = vc_tab_clientes.objects.filter(codigo__in=codigos_top)
+    clientes_db = Cliente.objects.filter(codigo__in=codigos_top)
     
     # IMPORTANTE: Convertimos c.codigo a str() antes de hacer .strip()
     mapa_nombres = {
@@ -3665,181 +3662,6 @@ def alertas_sin_respuesta():
 ##================##
 ## DATOS DE BD_VC ##
 ##================##
-# vc_tab_clientes
-@api_view(["GET", "POST", "PUT", "DELETE"])
-@permission_classes([IsAuthenticated])
-def lista_clientes(request):
-    
-    # 1. GET:
-    if request.method == "GET":
-        clientes = vc_tab_clientes.objects.all() 
-        serializer = ClientesSerializer(clientes, many=True)
-        return Response(serializer.data)
-
-    # 2. POST:
-    elif request.method == "POST":
-        serializer = ClientesSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response({
-                "message": "Empresa registrada correctamente",
-                "data": serializer.data
-            }, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    # 3. PUT:
-    elif request.method == "PUT":
-        codigo = request.data.get("codigo")
-        try:
-            cliente = vc_tab_clientes.objects.get(pk=codigo)
-            serializer = ClientesSerializer(cliente, data=request.data, partial=True)
-            if serializer.is_valid():
-                serializer.save()
-                return Response({
-                    "message": "Empresa actualizada correctamente",
-                    "data": serializer.data
-                }, status=status.HTTP_200_OK)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        except vc_tab_clientes.DoesNotExist:
-            return Response({"error": "Empresa no encontrada"}, status=status.HTTP_404_NOT_FOUND)
-
-    # 4. DELETE:
-    elif request.method == "DELETE":
-        codigo = request.data.get("codigo") or request.query_params.get("codigo")
-        
-        if not codigo:
-             return Response({"error": "Debe proporcionar el código"}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            cliente = vc_tab_clientes.objects.get(pk=codigo)
-            cliente.delete()
-            return Response({"message": "Empresa eliminada correctamente"}, status=status.HTTP_200_OK)
-        except vc_tab_clientes.DoesNotExist:
-            return Response({"error": "Empresa no encontrada"}, status=status.HTTP_404_NOT_FOUND)
-        except Exception:
-            return Response({"error": "No se puede eliminar: el registro tiene datos asociados"}, status=status.HTTP_400_BAD_REQUEST)
-
-# Busqueda de clientes
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def buscar_clientes_inline(request):
-    """
-    Endpoint de alto rendimiento para autocompletado de clientes.
-    Usa los campos reales del modelo vc_tab_clientes.
-    """
-    try:
-        # 1. Obtener parámetro de búsqueda
-        query = request.query_params.get('q', '').strip()
-        
-        # 2. Filtrar solo activos
-        # OJO: Usamos 'activo="1"' porque en tu modelo es CharField
-        clientes_qs = vc_tab_clientes.objects.filter(activo="1")
-        
-        # 3. Búsqueda multi-campo
-        if query:
-            clientes_qs = clientes_qs.filter(
-                Q(nombre__icontains=query) | 
-                Q(ruc__icontains=query) |
-                Q(codigo__icontains=query) # AutoField permite icontains en Django
-            )
-        
-        # 4. Selección de campos y límite
-        # Traemos solo lo necesario para el buscador de cotizaciones
-        resultados = clientes_qs.order_by('nombre').values('codigo', 'nombre', 'ruc')[:20]
-        
-        return Response(list(resultados), status=status.HTTP_200_OK)
-
-    except Exception as e:
-        # Esto imprimirá el error real en tu consola de Django para que lo veas
-        print(f"❌ Error en buscar_clientes_inline: {str(e)}")
-        return Response(
-            {"error": "Error interno al buscar clientes", "detail": str(e)}, 
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-
-# vc_tab_clientes_d
-@api_view(["GET", "POST", "PUT", "DELETE"])
-@permission_classes([IsAuthenticated])
-def lista_representantes(request):
-    
-    # 1. GET: Listar todos
-    if request.method == "GET":
-        representantes = vc_tab_clientes_d.objects.all()
-        serializer = RepresentantesSerializer(representantes, many=True)
-        return Response(serializer.data)
-    
-    # 2. POST: Registro simple (Igual que Clientes)
-    elif request.method == "POST":
-        # Ya no calculamos el Max('codigo') aquí. 
-        # Usamos directamente request.data que ya trae el código desde el Modal.
-        serializer = RepresentantesSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response({
-                "message": "Representante registrado correctamente",
-                "data": serializer.data
-            }, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    # 3. PUT: Actualizar
-    elif request.method == "PUT":
-        codigo = request.data.get("codigo")
-        try:
-            representante = vc_tab_clientes_d.objects.get(pk=codigo)
-            serializer = RepresentantesSerializer(representante, data=request.data, partial=True)
-            if serializer.is_valid():
-                serializer.save()
-                return Response({
-                    "message": "Representante actualizado correctamente",
-                    "data": serializer.data
-                }, status=status.HTTP_200_OK)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        except vc_tab_clientes_d.DoesNotExist:
-            return Response({"error": "Representante no encontrado"}, status=status.HTTP_404_NOT_FOUND)
-
-    # 4. DELETE: Eliminar
-    elif request.method == "DELETE":
-        codigo = request.data.get("codigo") or request.query_params.get("codigo")
-        
-        if not codigo:
-            return Response({"error": "Debe proporcionar el código"}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            representante = vc_tab_clientes_d.objects.get(pk=codigo)
-            representante.delete()
-            return Response({"message": "Representante eliminado correctamente"}, status=status.HTTP_200_OK)
-        except vc_tab_clientes_d.DoesNotExist:
-            return Response({"error": "Representante no encontrado"}, status=status.HTTP_404_NOT_FOUND)
-        except Exception as e:
-            return Response({"error": f"Error al eliminar: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
-
-# Busqueda de Representante
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def buscar_representantes_inline(request):
-    try:
-        # 1. 'cliente_codigo' es el valor que viene de la columna 'empre' de la cotización
-        cliente_id = request.query_params.get('cliente_codigo', '').strip()
-        query = request.query_params.get('q', '').strip()
-
-        if not cliente_id:
-            return Response([], status=status.HTTP_200_OK)
-
-        # 2. Buscamos en vc_tab_clientes_d donde la columna 'empresa' coincida
-        qs = vc_tab_clientes_d.objects.filter(empresa=cliente_id, activo="1")
-
-        if query:
-            qs = qs.filter(representante__icontains=query)
-
-        # 3. Retornamos los datos limpios
-        resultados = qs.order_by('representante').values(
-            'codigo', 'representante', 'cargo', 'telefono', 'movil', 'email'
-        )[:20]
-
-        return Response(list(resultados), status=status.HTTP_200_OK)
-    except Exception as e:
-        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
 # vc_tab_estado
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])

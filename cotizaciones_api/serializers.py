@@ -6,8 +6,6 @@ import uuid
 from .models import (
     DashboardCotizacion,
     DashboardOportunidad,
-    vc_tab_clientes,
-    vc_tab_clientes_d,
     vc_tab_estado,
     vc_tab_categorias,
     vc_tab_tproveedor,
@@ -214,8 +212,8 @@ class DashboardCotizacionModalSerializer(serializers.ModelSerializer):
         try:
             if not obj.cliente_codigo:
                 return obj.cargr or ""
-            from cotizaciones_api.models import vc_tab_clientes_d
-            cliente = vc_tab_clientes_d.objects.get(codigo=obj.cliente_codigo)
+            from cotizaciones_api.models import Representante
+            cliente = Representante.objects.get(codigo=obj.cliente_codigo)
             return cliente.cargo or obj.cargr or ""
         except Exception:
             return obj.cargr or ""
@@ -377,53 +375,6 @@ class DashboardOportunidadSerializer(serializers.ModelSerializer):
 ##================##
 ## DATOS DE BD_VC ##
 ##================##     
-# vc_tab_clientes
-class ClientesSerializer(serializers.ModelSerializer):
-    # Definimos activo como CharField normal para que sea de lectura/escritura
-    activo = serializers.CharField(max_length=1, required=False)
-
-    class Meta:
-        model = vc_tab_clientes
-        fields = "__all__"
-
-    # --- LÓGICA DE SALIDA (Para el GET) ---
-    def to_representation(self, instance):
-        """Aquí personalizamos cómo se ven los datos al salir (JSON)"""
-        representation = super().to_representation(instance)
-        
-        # 1. Relleno de ceros en el código (00256)
-        representation['codigo'] = str(instance.codigo).zfill(5)
-        
-        # 2. Convertimos el "1"/"0" de la DB a booleano para el Switch de React
-        representation['activo'] = instance.activo == "1" or instance.activo is True
-        
-        return representation
-
-    # --- LÓGICA DE ENTRADA (Para POST/PUT) ---
-    def to_internal_value(self, data):
-        """Aquí procesamos lo que viene de React antes de validar"""
-        # Hacemos una copia para poder modificar los datos
-        resource_data = data.copy()
-        
-        if 'activo' in resource_data:
-            val = resource_data['activo']
-            # Convertimos true o "1" en "1", cualquier otra cosa en "0"
-            resource_data['activo'] = "1" if val is True or val == "1" else "0"
-            
-        return super().to_internal_value(resource_data)
-
-# vc_tab_clientes_d
-class RepresentantesSerializer(serializers.ModelSerializer):
-    # Formateamos el código a 5 dígitos para la respuesta
-    codigo_display = serializers.SerializerMethodField()
-
-    class Meta:
-        model = vc_tab_clientes_d
-        fields = "__all__"
-
-    def get_codigo_display(self, obj):
-        # Usamos zfill por si quieres mostrarlo con ceros en la tabla
-        return str(obj.codigo).zfill(5)
 
 # vc_tab_estado
 class EstadoSerializer(serializers.ModelSerializer):

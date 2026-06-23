@@ -30,7 +30,7 @@ urlpatterns = [
     path('cotizaciones/oportunidades', views.oportunidades_dashboard_view, name="oportunidades_dashboard_view"),
     path('oportunidades/modal/<str:num_reg>/', views.oportunidad_detalle_view, name='oportunidad_detalle_view'),
     # BUSQUEDA
-    path('clientes/<str:empresa>/encargados/', views.buscar_encargados_por_empresa, name='buscar_encargados_por_empresa'),
+    path('core/clientes/<str:empresa>/encargados/', views.buscar_encargados_por_empresa, name='buscar_encargados_por_empresa'),
 
     # GESTION
     path("cotizaciones/<str:num_reg>/condiciones-generales/", views.condiciones_generales, name="condiciones_generales"),
@@ -68,10 +68,6 @@ urlpatterns = [
     path("alertas/generar/", views.generar_alertas, name="generar_alertas"),
 
     # DB_VC
-    path("cotizaciones/clientes/", views.lista_clientes, name="lista_clientes"),
-    path('cotizaciones/clientes/search/', views.buscar_clientes_inline, name='buscar_clientes_inline'),
-    path("cotizaciones/representantes/", views.lista_representantes, name="lista_representantes"),
-    path('cotizaciones/representantes/search/', views.buscar_representantes_inline, name='buscar_representantes_inline'),
     path("cotizaciones/estados/", views.lista_estados, name="lista_estados"),
     path("cotizaciones/proveedores/", views.lista_proveedores, name="lista_proveedores"),
     path("cotizaciones/categorias/", views.lista_categorias, name="lista_categorias"),

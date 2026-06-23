@@ -15,7 +15,7 @@ function EncargadosModal({ open, onClose, empresa, onSelect }) {
     setLoading(true);
     try {
       const { data } = await api.get(
-        `/clientes/${empresa}/encargados/`,
+        `/core/clientes/${empresa}/encargados/`,
         { params: { q } }
       );
       setResults(Array.isArray(data) ? data : []);
@@ -51,7 +51,7 @@ function EncargadosModal({ open, onClose, empresa, onSelect }) {
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-md bg-white rounded-2xl shadow-2xl border-none p-0 overflow-hidden">
-        
+
         {/* HEADER MODERNO */}
         <div className="bg-slate-50/80 px-6 py-4 border-b border-slate-100">
           <div className="flex items-center gap-3">

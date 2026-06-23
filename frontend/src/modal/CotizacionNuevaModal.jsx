@@ -240,7 +240,7 @@ export default function CotizacionNuevaModal({ open, onClose, cotizacion, modo, 
     const prepararModal = async () => {
       try {
         // 1. Cargamos datos del usuario actual
-        const { data: usuario } = await api.get("usuario-actual/");
+        const { data: usuario } = await api.get("users/usuario-actual/");
 
         if (tipo === "N") {
           // 🆕 ES NUEVA: Calculamos el siguiente num_reg

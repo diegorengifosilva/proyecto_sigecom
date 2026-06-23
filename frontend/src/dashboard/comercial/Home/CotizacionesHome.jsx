@@ -127,7 +127,7 @@ export default function CotizacionesHome() {
   useEffect(() => {
     if (!open) return;
 
-    api.get("areas/")
+    api.get("users/areas/")
       .then(res => setAreas(Array.isArray(res.data) ? res.data : []))
       .catch(() => setAreas([]));
   }, [open]);
@@ -137,7 +137,7 @@ export default function CotizacionesHome() {
   // ===========
   useEffect(() => {
     const fetchClientes = async () => {
-      const res = await api.get("/cotizaciones/clientes/");
+      const res = await api.get("/core/clientes/");
       setClientes(res.data);
     };
     fetchClientes();
@@ -146,7 +146,7 @@ export default function CotizacionesHome() {
   // Mapeo  de Clientes
   useEffect(() => {
     const fetchClientes = async () => {
-      const res = await api.get("/cotizaciones/clientes/");
+      const res = await api.get("/core/clientes/");
       const map = {};
       res.data.forEach(c => {
         map[c.codigo] = c.nombre;
@@ -359,8 +359,8 @@ export default function CotizacionesHome() {
                   key={tab.id}
                   onClick={() => setTabActiva(tab.id)}
                   className={`group relative flex items-center gap-2 px-3 pb-3 text-sm font-medium transition-all outline-none ${isActive
-                      ? "text-cyan-600"
-                      : "text-slate-600 hover:bg-slate-50 rounded-t-sm"
+                    ? "text-cyan-600"
+                    : "text-slate-600 hover:bg-slate-50 rounded-t-sm"
                     }`}
                 >
                   {/* Icono con color dinámico */}

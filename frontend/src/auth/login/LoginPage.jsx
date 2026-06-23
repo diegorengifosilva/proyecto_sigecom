@@ -1,4 +1,4 @@
-// src/auth/login/LoginPage.jsx
+// src/auth/users/login/LoginPage.jsx
 
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -34,7 +34,7 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const response = await api.post("/login/", form);
+      const response = await api.post("/users/login/", form);
       const { access, refresh, user } = response.data;
 
       if (!access || !refresh) {

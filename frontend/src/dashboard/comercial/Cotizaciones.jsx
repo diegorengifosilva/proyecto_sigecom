@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
 import api from "@/services/api";
-import { BriefcaseBusiness, FilePlus, Eye, TrendingUp, DollarSign, BarChart3, Filter, Loader, PieChart, Calculator, FileSpreadsheet, Wallet2, Landmark, Scale, Coins, User, MoreHorizontal, ClipboardCheck, LayoutDashboard , History, Globe, ListTodo, Layout, Plus } from "lucide-react";
+import { BriefcaseBusiness, FilePlus, Eye, TrendingUp, DollarSign, BarChart3, Filter, Loader, PieChart, Calculator, FileSpreadsheet, Wallet2, Landmark, Scale, Coins, User, MoreHorizontal, ClipboardCheck, LayoutDashboard, History, Globe, ListTodo, Layout, Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { toast } from "react-toastify";
@@ -25,7 +25,7 @@ const fetchCotizacionesAprobacion = async ({ queryKey }) => {
 
   const token = localStorage.getItem("access_token");
 
-  const usuarioRes = await api.get("usuario-actual/", {
+  const usuarioRes = await api.get("users/usuario-actual/", {
     headers: { Authorization: `Bearer ${token}` },
   });
 
@@ -123,7 +123,7 @@ export default function Cotizaciones() {
   // Mapeo  de Clientes
   useEffect(() => {
     const fetchClientes = async () => {
-      const res = await api.get("/cotizaciones/clientes/");
+      const res = await api.get("/core/clientes/");
       const map = {};
       res.data.forEach(c => {
         map[c.codigo] = c.nombre;
@@ -243,17 +243,16 @@ export default function Cotizaciones() {
                 <button
                   key={tab.id}
                   onClick={() => setTabActiva(tab.id)}
-                  className={`group relative flex items-center gap-2 px-3 pb-3 text-sm font-medium transition-all outline-none ${
-                    isActive 
-                      ? "text-cyan-600" 
-                      : "text-slate-600 hover:bg-slate-50 rounded-t-sm"
-                  }`}
+                  className={`group relative flex items-center gap-2 px-3 pb-3 text-sm font-medium transition-all outline-none ${isActive
+                    ? "text-cyan-600"
+                    : "text-slate-600 hover:bg-slate-50 rounded-t-sm"
+                    }`}
                 >
                   {/* Icono con color dinámico */}
                   <span className={`${isActive ? "text-cyan-600" : "text-slate-400 group-hover:text-slate-600"}`}>
                     {tab.icon}
                   </span>
-                  
+
                   <span>{tab.label}</span>
 
                   {/* Indicador Activo (Línea azul de Jira) */}
@@ -267,7 +266,7 @@ export default function Cotizaciones() {
                 </button>
               );
             })}
-            
+
             {/* Botón "+" de Jira para añadir más tabs */}
             <button className="p-1.5 mb-2 ml-1 text-slate-500 hover:bg-slate-100 rounded transition-colors">
               <Plus size={18} />
@@ -278,7 +277,7 @@ export default function Cotizaciones() {
         {/* CONTENIDO DINÁMICO */}
         <div className="p-6 flex flex-col flex-1 gap-6">
           {tabActiva === "resumen" && (
-            <KpisCotizaciones 
+            <KpisCotizaciones
               stats={stats}
               isFetching={isFetching}
             />
@@ -295,10 +294,10 @@ export default function Cotizaciones() {
               }}
               getEnvioColor={getEnvioColor}
               getEnvioNombre={getEnvioNombre}
-              
+
               // 1. Cálculo de filtros activos para el Badge del botón
               activeFiltersCount={Object.values(currentFilters).filter(v => v !== "%" && v !== "" && v !== annoActual).length}
-              
+
               // 2. Acción de limpiar
               onClearFilters={() => setCurrentFilters({
                 anno: new Date().getFullYear(),
@@ -306,7 +305,7 @@ export default function Cotizaciones() {
                 campo: "", valor: "", generalCampo: "", generalValor: "",
                 index: 1, num_regs: 10
               })}
-              
+
               // 3. El componente inyectado (Desnudado para el Popover)
               filterComponent={
                 <FilterCard
@@ -328,9 +327,9 @@ export default function Cotizaciones() {
                         envio: filters.envio || "%",
                         ...(filters.campo && filters.valor
                           ? {
-                              campo: filters.campo,
-                              valor: filters.valor,
-                            }
+                            campo: filters.campo,
+                            valor: filters.valor,
+                          }
                           : {}),
                         ...(filters.fechaInicio ? { fechaInicio: filters.fechaInicio } : {}),
                         ...(filters.fechaFin ? { fechaFin: filters.fechaFin } : {}),
@@ -346,7 +345,7 @@ export default function Cotizaciones() {
             />
           )}
 
-          {tabActiva === "historial" &&<TablaHistorial />}
+          {tabActiva === "historial" && <TablaHistorial />}
         </div>
 
         {/* SECCIÓN KPIs - V&C BUSINESS INTELLIGENCE */}
@@ -441,8 +440,8 @@ export default function Cotizaciones() {
                 </p>
                 <div className="flex items-baseline gap-2">
                   <h3 className={`text-3xl font-[950] tracking-tighter leading-none ${kpi.text}`}>
-                    {typeof kpi.value === 'number' 
-                      ? kpi.value.toLocaleString('es-PE', { minimumFractionDigits: kpi.label.includes('Promedio') ? 2 : 0 }) 
+                    {typeof kpi.value === 'number'
+                      ? kpi.value.toLocaleString('es-PE', { minimumFractionDigits: kpi.label.includes('Promedio') ? 2 : 0 })
                       : kpi.value}
                   </h3>
                   <span className={`text-[10px] font-black uppercase tracking-wider ${kpi.text} opacity-40`}>
@@ -480,9 +479,9 @@ export default function Cotizaciones() {
                   envio: filters.envio || "%",
                   ...(filters.campo && filters.valor
                     ? {
-                        campo: filters.campo,
-                        valor: filters.valor,
-                      }
+                      campo: filters.campo,
+                      valor: filters.valor,
+                    }
                     : {}),
                   ...(filters.fechaInicio ? { fechaInicio: filters.fechaInicio } : {}),
                   ...(filters.fechaFin ? { fechaFin: filters.fechaFin } : {}),

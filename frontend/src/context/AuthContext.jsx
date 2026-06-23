@@ -114,7 +114,7 @@ export const AuthProvider = ({ children }) => {
       const refresh = localStorage.getItem("refresh_token");
       if (!refresh) throw new Error("No hay refresh token");
 
-      const res = await api.post("token/refresh/", { refresh });
+      const res = await api.post("token/users/refresh/", { refresh });
       const { access } = res.data;
 
       localStorage.setItem("access_token", access);
