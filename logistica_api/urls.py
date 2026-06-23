@@ -8,6 +8,7 @@ router = DefaultRouter()
 urlpatterns = [
     # DASHBOARD LOGÍSTICA
     path('logistica/dashboard/', views.logistica_dashboard_view, name="logistica_dashboard_view"),
+    path('logistica/dashboard/almacenes/', views.lista_almacenes_new, name="lista_almacenes_new"),
     path('logistica/dashboard/modal/<str:num_reg>/', views.logistica_modal_view, name="logistica_modal_view"),
     
     # KARDEX Y REPORTES LOGÍSTICA

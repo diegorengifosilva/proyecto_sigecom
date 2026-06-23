@@ -23,6 +23,7 @@ export default function NuevaLogisticaModal({ open, onClose, logistica, operacio
     operacion: operacion,
   });
   const [items, setItems] = useState([]);
+  const [almacenes, setAlmacenes] = useState([]);
   const [saving, setSaving] = useState(false);
   const [newItem, setNewItem] = useState({ codigo: "", descripcion: "", um: "", cant: "", valor: "" });
 
@@ -106,8 +107,19 @@ export default function NuevaLogisticaModal({ open, onClose, logistica, operacio
     }
   };
 
+  const fetchAlmacenes = async () => {
+    try {
+      const { data } = await api.get("logistica/dashboard/almacenes/");
+      setAlmacenes(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Error cargando almacenes:", err);
+      setAlmacenes([]);
+    }
+  };
+
   useEffect(() => {
     if (!open) return;
+    fetchAlmacenes();
     if (logistica?.num_reg) {
       fetchLogisticaDetalle(logistica.num_reg);
     } else {
@@ -176,19 +188,42 @@ export default function NuevaLogisticaModal({ open, onClose, logistica, operacio
     setOpenBuscador(false);
   };
 
-  const almacenesOptions = [
-    { id: "000", nombre: "Almacen Principal" },
-    { id: "001", nombre: "Almacen Equipos de Proteccion" },
-  ];
+  const almacenesOptions = Array.isArray(almacenes) ? almacenes.map((a) => ({
+    id: a.idalmacen.toString(),
+    nombre: a.nombre,
+  })) : [];
 
   const ReferenciaOptions = [
     { id: "P", nombre: "Proveedor/Cliente" },
     { id: "D", nombre: "Dependencia" },
+    { id: "C", nombre: "Centro de Costo" },
+    { id: "A", nombre: "Apertura" },
+    { id: "O", nombre: "Otro" },
+    { id: "DON", nombre: "Donacion" },
+    { id: "U", nombre: "Colaborador" },
   ];
 
-  const movimientoOptions = [
+  const movimientoOptions = operacion === "E" ? [
     { id: "01", nombre: "Orden de Compra" },
+    { id: "02", nombre: "Orden de Servicio" },
+    { id: "03", nombre: "O.C./G Internamiento" },
+    { id: "04", nombre: "Pecosa" },
     { id: "05", nombre: "Nota de Entrada" },
+    { id: "06", nombre: "Ingreso x devolucion" },
+    { id: "07", nombre: "Ingreso x Donacion" },
+    { id: "08", nombre: "Ingreso x Transferencia" },
+    { id: "12", nombre: "Ingreso por Ajuste de Inventario" },
+    { id: "13", nombre: "Orden de Requerimiento" },
+    { id: "99", nombre: "Saldo Inicial..." },
+    { id: "14", nombre: "Préstamo para Ejecución de Servicio" },
+    { id: "15", nombre: "Nota de Credito" },
+    { id: "16", nombre: "Nota de Debito" },
+    { id: "17", nombre: "OC Venta Almacen" },
+  ] : [
+    { id: "09", nombre: "Salida de Ajuste de Inventario" },
+    { id: "10", nombre: "Salida x Transferencia" },
+    { id: "11", nombre: "Salida por Perdida" },
+    // Agrega más si son salidas
   ];
 
   return (
@@ -208,36 +243,78 @@ export default function NuevaLogisticaModal({ open, onClose, logistica, operacio
           </span>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/50">
-          <div className="grid grid-cols-12 gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-            <div className="col-span-3 space-y-1">
-              <label className="text-[10px] font-bold text-slate-500 uppercase">Fecha</label>
-              <input type="date" name="fecha" value={form.fecha || ""} onChange={handleInputChange} className="w-full text-xs font-semibold border border-slate-200 rounded-lg px-3 py-2" />
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50/50">
+          <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-2.5">
+            {/* Fila 1 */}
+            <div className="grid grid-cols-12 gap-2.5">
+              <div className="col-span-3 space-y-0.5">
+                <label className="text-[9px] font-bold text-slate-500 uppercase">Fecha de Registro</label>
+                <input type="date" name="fecha" value={form.fecha || ""} onChange={handleInputChange} className="w-full text-[11px] font-semibold border border-slate-200 rounded-lg px-2 py-1.5 bg-white" />
+              </div>
+              <div className="col-span-5 space-y-0.5">
+                <label className="text-[9px] font-bold text-slate-500 uppercase">Almacén</label>
+                <SelectField id="almacen" value={form.almacen || ""} onChange={handleInputChange} options={almacenesOptions} />
+              </div>
+              <div className="col-span-2 space-y-0.5">
+                <label className="text-[9px] font-bold text-slate-500 uppercase">Moneda</label>
+                <select name="moneda" value={form.moneda || "Soles"} onChange={handleInputChange} className="w-full text-[11px] font-semibold border border-slate-200 rounded-lg px-2 py-1.5 bg-white">
+                  <option value="Soles">Soles</option>
+                  <option value="Dolares">Dólares</option>
+                </select>
+              </div>
+              <div className="col-span-2 space-y-0.5">
+                <label className="text-[9px] font-bold text-slate-500 uppercase">T.C.</label>
+                <input type="number" step="0.001" name="tc" value={form.tc || ""} onChange={handleInputChange} className="w-full text-[11px] font-semibold border border-slate-200 rounded-lg px-2 py-1.5 bg-white" placeholder="0.000" />
+              </div>
             </div>
-            <div className="col-span-3 space-y-1">
-              <label className="text-[10px] font-bold text-slate-500 uppercase">Almacén</label>
-              <SelectField id="almacen" value={form.almacen || ""} onChange={handleInputChange} options={almacenesOptions} />
+
+            {/* Fila 2 */}
+            <div className="grid grid-cols-12 gap-2.5">
+              <div className="col-span-3 space-y-0.5">
+                <label className="text-[9px] font-bold text-slate-500 uppercase">Tipo Movimiento</label>
+                <SelectField id="tipo_movimiento" value={form.tipo_movimiento || ""} onChange={handleInputChange} options={movimientoOptions} />
+              </div>
+              <div className="col-span-3 space-y-0.5">
+                <label className="text-[9px] font-bold text-slate-500 uppercase">Número</label>
+                <input type="text" name="orden_compra" value={form.orden_compra || ""} onChange={handleInputChange} className="w-full text-[11px] font-semibold border border-slate-200 rounded-lg px-2 py-1.5 bg-white" placeholder="Ej. 251098A-PREC-01" />
+              </div>
+              <div className="col-span-6 space-y-0.5">
+                <label className="text-[9px] font-bold text-slate-500 uppercase">Código / Razón Social</label>
+                <div className="relative">
+                  <input type="text" value={form.razon_social || ""} onChange={(e) => setForm({ ...form, razon_social: e.target.value })} className="w-full text-[11px] font-semibold border border-slate-200 rounded-lg px-2 py-1.5 pr-8 bg-white" placeholder="Buscar Proveedor/Cliente..." />
+                  <button onClick={() => setOpenCliente(true)} className="absolute right-2 top-1/2 -translate-y-1/2 text-teal-600 text-xs">🔍</button>
+                </div>
+              </div>
             </div>
-            <div className="col-span-3 space-y-1">
-              <label className="text-[10px] font-bold text-slate-500 uppercase">Moneda</label>
-              <select name="moneda" value={form.moneda || "Soles"} onChange={handleInputChange} className="w-full text-xs font-semibold border border-slate-200 rounded-lg px-3 py-2 bg-white">
-                <option value="Soles">Soles</option>
-                <option value="Dolares">Dólares</option>
-              </select>
+
+            {/* Fila 3 */}
+            <div className="grid grid-cols-12 gap-2.5">
+              <div className="col-span-3 space-y-0.5">
+                <label className="text-[9px] font-bold text-slate-500 uppercase">Referencia</label>
+                <SelectField id="referencia" value={form.referencia || ""} onChange={handleInputChange} options={ReferenciaOptions} />
+              </div>
             </div>
-            <div className="col-span-3 space-y-1">
-              <label className="text-[10px] font-bold text-slate-500 uppercase">Referencia</label>
-              <SelectField id="referencia" value={form.referencia || ""} onChange={handleInputChange} options={ReferenciaOptions} />
-            </div>
-            <div className="col-span-4 space-y-1">
-              <label className="text-[10px] font-bold text-slate-500 uppercase">Tipo Movimiento</label>
-              <SelectField id="tipo_movimiento" value={form.tipo_movimiento || ""} onChange={handleInputChange} options={movimientoOptions} />
-            </div>
-            <div className="col-span-8 space-y-1">
-              <label className="text-[10px] font-bold text-slate-500 uppercase">Razón Social</label>
-              <div className="relative">
-                <input type="text" value={form.razon_social || ""} onChange={(e) => setForm({ ...form, razon_social: e.target.value })} className="w-full text-xs font-semibold border border-slate-200 rounded-lg px-3 py-2 pr-10" />
-                <button onClick={() => setOpenCliente(true)} className="absolute right-2 top-1/2 -translate-y-1/2 text-teal-600">🔍</button>
+
+            <div className="border-t border-slate-200 mt-1 pt-3 relative">
+              <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-white px-2 text-[9px] font-bold text-slate-500 uppercase">Documentos</span>
+              <div className="grid grid-cols-12 gap-2.5">
+                <div className="col-span-3 space-y-0.5">
+                  <label className="text-[9px] font-bold text-slate-500 uppercase">Nro. Factura</label>
+                  <input type="text" name="numero_doc" value={form.numero_doc || ""} onChange={handleInputChange} className="w-full text-[11px] font-semibold border border-slate-200 rounded-lg px-2 py-1.5 bg-white" />
+                </div>
+                <div className="col-span-9 space-y-0.5">
+                  <label className="text-[9px] font-bold text-slate-500 uppercase">Recibido Por</label>
+                  <input type="text" name="responsable" value={form.responsable || ""} onChange={handleInputChange} className="w-full text-[11px] font-semibold border border-slate-200 rounded-lg px-2 py-1.5 bg-white" />
+                </div>
+                
+                <div className="col-span-3 space-y-0.5">
+                  <label className="text-[9px] font-bold text-slate-500 uppercase">Nro. Guía</label>
+                  <input type="text" name="nro_guia" value={form.nro_guia || ""} onChange={handleInputChange} className="w-full text-[11px] font-semibold border border-slate-200 rounded-lg px-2 py-1.5 bg-white" />
+                </div>
+                <div className="col-span-9 space-y-0.5">
+                  <label className="text-[9px] font-bold text-slate-500 uppercase">Observación</label>
+                  <input type="text" name="observacion" value={form.observacion || ""} onChange={handleInputChange} className="w-full text-[11px] font-semibold border border-slate-200 rounded-lg px-2 py-1.5 bg-white" />
+                </div>
               </div>
             </div>
           </div>

@@ -19,7 +19,7 @@ rem ---- Coleccionar archivos estáticos (para que Django sirva CSS/JS en produc
 python manage.py collectstatic --noinput
 
 echo [1/2] Iniciando Backend Django...
-start "Backend SIGECOM 5.0" cmd /k "python manage.py runserver 0.0.0.0:8000"
+start "Backend SIGECOM 5.0" cmd /k "python manage.py runserver 127.0.0.1:8000"
 
 echo [2/2] Iniciando Frontend React/Vite...
 start "Frontend SIGECOM 5.0" cmd /k "cd frontend && npm run dev"
