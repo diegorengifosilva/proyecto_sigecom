@@ -668,7 +668,9 @@ const EditableGroupRow = ({
   unidadesMedida = [],
   setUnidadesMedida,
   handleTriggerCreateProduct,
-  renderInlineProductCreateForm
+  renderInlineProductCreateForm,
+  handleTriggerCreatePersonal,
+  renderInlinePersonalCreateForm
 }) => {
   const isSavingRef = useRef(false);
   const [tempData, setTempData] = useState({ titulo: '', cantidad: 1, costoEnvio: 0, detalle: '' });
@@ -676,7 +678,7 @@ const EditableGroupRow = ({
   const [manoObraCostError, setManoObraCostError] = useState("");
   const [descError, setDescError] = useState({ category: null, message: "" });
   const [isDetailExpanded, setIsDetailExpanded] = useState(false);
-  const [categoryTitles, setCategoryTitles] = useState({ "04": "MANO DE OBRA", "05": "GASTOS SERVICIO", "06": "OTROS" });
+  const [categoryTitles, setCategoryTitles] = useState({ "04": "", "05": "", "06": "" });
   const categoryTitleInputRef = useRef(null);
   const quillSrvRef = useRef(null);
 
@@ -782,6 +784,72 @@ const EditableGroupRow = ({
       codigo_item: codigo
     }));
   };
+
+  const handlePersonalCreatedLocal = (registro) => {
+    const cMin = parseFloat(registro.costo_min || 0);
+    const cMax = parseFloat(registro.costo_max || 0);
+    const cAvg = cMin && cMax ? (cMin + cMax) / 2 : (cMax || cMin || 0);
+    setNewManoObraItem(prev => {
+      const next = {
+        ...prev,
+        codigo_item: `${registro.codigo}-${registro.nombre}`,
+        descripcion_item: '',
+        costo_hombre_dia: cAvg,
+        costo_min: cMin,
+        costo_max: cMax,
+        costType: 'avg'
+      };
+      return recalculateServiceItem(next, 'costo_hombre_dia');
+    });
+
+    setTimeout(() => {
+      const descInput = document.getElementById("new-group-mano-obra-desc");
+      if (descInput) {
+        descInput.focus();
+        if (descInput.select) descInput.select();
+      }
+    }, 100);
+  };
+
+  const handlePersonalCancelLocal = () => {};
+
+  const handleGastoCreatedLocal = (registro, codePrefix) => {
+    if (codePrefix === '05') {
+      setNewGastosServicioItem(prev => {
+        const next = {
+          ...prev,
+          codigo_item: registro.codigo,
+          descripcion_item: registro.nombre
+        };
+        return recalculateServiceItem(next, 'cotizado_hombre_dia');
+      });
+      setTimeout(() => {
+        const descInput = document.getElementById("new-group-gastos-desc");
+        if (descInput) {
+          descInput.focus();
+          if (descInput.select) descInput.select();
+        }
+      }, 100);
+    } else if (codePrefix === '06') {
+      setNewOtrosItem(prev => {
+        const next = {
+          ...prev,
+          codigo_item: registro.codigo,
+          descripcion_item: registro.nombre
+        };
+        return recalculateServiceItem(next, 'costo_hombre_dia');
+      });
+      setTimeout(() => {
+        const descInput = document.getElementById("new-group-otros-desc");
+        if (descInput) {
+          descInput.focus();
+          if (descInput.select) descInput.select();
+        }
+      }, 100);
+    }
+  };
+
+  const handleGastoCancelLocal = () => {};
 
   const formatMoneySymbolSafe = formatMoneySymbol || ((val) => `$ ${Number(val || 0).toFixed(2)}`);
 
@@ -1408,10 +1476,11 @@ const EditableGroupRow = ({
                       
                       <div className="w-80 flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 rounded-lg focus-within:border-indigo-400 transition-colors">
                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight whitespace-nowrap">
-                          Título Personalizado:
+                          Título:
                         </span>
                         <input
                           type="text"
+                          data-field="subgroup-custom-title"
                           className="w-full bg-transparent border-none outline-none text-[11px] font-bold text-slate-700 focus:ring-0 p-0 uppercase"
                           value={categoryTitles["04"] || ""}
                           onChange={(e) => setCategoryTitles(prev => ({ ...prev, "04": e.target.value.toUpperCase() }))}
@@ -1485,6 +1554,8 @@ const EditableGroupRow = ({
                               <TipoPersonalAutocomplete
                                 value={newManoObraItem.codigo_item || ""}
                                 idArea={idArea}
+                                catalogoVersion={catalogoVersion}
+                                onTriggerCreatePersonal={(name) => handleTriggerCreatePersonal(name, 'new', handlePersonalCreatedLocal, handlePersonalCancelLocal)}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') {
                                     e.preventDefault();
@@ -1508,14 +1579,17 @@ const EditableGroupRow = ({
                                     return;
                                   }
                                   setNewManoObraItem(prev => {
+                                    const cMin = parseFloat(item.costo_min || 0);
+                                    const cMax = parseFloat(item.costo_max || 0);
+                                    const cAvg = cMin && cMax ? (cMin + cMax) / 2 : (cMax || cMin || 0);
                                     const next = {
                                       ...prev,
                                       codigo_item: `${item.codigo}-${item.nombre}`,
                                       descripcion_item: '',
-                                      costo_hombre_dia: parseFloat(item.costo_max || item.costo_min || 0),
-                                      costo_min: parseFloat(item.costo_min || 0),
-                                      costo_max: parseFloat(item.costo_max || 0),
-                                      costType: 'max'
+                                      costo_hombre_dia: cAvg,
+                                      costo_min: cMin,
+                                      costo_max: cMax,
+                                      costType: 'avg'
                                     };
                                     return recalculateServiceItem(next, 'costo_hombre_dia');
                                   });
@@ -1525,6 +1599,7 @@ const EditableGroupRow = ({
                             <td className="px-3 py-1.5">
                               <div className="flex flex-col w-full">
                                 <input
+                                  id="new-group-mano-obra-desc"
                                   type="text"
                                   className={cn(
                                     "w-full text-[11px] border rounded px-1.5 py-1 font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white text-left",
@@ -1666,6 +1741,7 @@ const EditableGroupRow = ({
                               </button>
                             </td>
                           </tr>
+                          {renderInlinePersonalCreateForm && renderInlinePersonalCreateForm('new', handlePersonalCreatedLocal, handlePersonalCancelLocal)}
                         </tbody>
                       </table>
                     </div>
@@ -1688,10 +1764,11 @@ const EditableGroupRow = ({
                       
                       <div className="w-80 flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 rounded-lg focus-within:border-teal-400 transition-colors">
                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight whitespace-nowrap">
-                          Título Personalizado:
+                          Título:
                         </span>
                         <input
                           type="text"
+                          data-field="subgroup-custom-title"
                           className="w-full bg-transparent border-none outline-none text-[11px] font-bold text-slate-700 focus:ring-0 p-0 uppercase"
                           value={categoryTitles["05"] || ""}
                           onChange={(e) => setCategoryTitles(prev => ({ ...prev, "05": e.target.value.toUpperCase() }))}
@@ -1750,6 +1827,7 @@ const EditableGroupRow = ({
                               <TipoGastoDetalleAutocomplete
                                 value={newGastosServicioItem.codigo_item || ""}
                                 codePrefix="05"
+                                onTriggerCreateGasto={(name) => handleTriggerCreateGasto(name, 'new', '05', handleGastoCreatedLocal, handleGastoCancelLocal)}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') {
                                     e.preventDefault();
@@ -1784,6 +1862,7 @@ const EditableGroupRow = ({
                             <td className="px-3 py-1.5">
                               <div className="flex flex-col w-full">
                                 <input
+                                  id="new-group-gastos-desc"
                                   type="text"
                                   className={cn(
                                     "w-full text-[11px] border rounded px-1.5 py-1 font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white text-left",
@@ -1866,6 +1945,7 @@ const EditableGroupRow = ({
                               </button>
                             </td>
                           </tr>
+                          {renderInlineGastoCreateForm && renderInlineGastoCreateForm('new', handleGastoCreatedLocal, handleGastoCancelLocal)}
                         </tbody>
                       </table>
                     </div>
@@ -1888,10 +1968,11 @@ const EditableGroupRow = ({
                       
                       <div className="w-80 flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 rounded-lg focus-within:border-amber-400 transition-colors">
                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight whitespace-nowrap">
-                          Título Personalizado:
+                          Título:
                         </span>
                         <input
                           type="text"
+                          data-field="subgroup-custom-title"
                           className="w-full bg-transparent border-none outline-none text-[11px] font-bold text-slate-700 focus:ring-0 p-0 uppercase"
                           value={categoryTitles["06"] || ""}
                           onChange={(e) => setCategoryTitles(prev => ({ ...prev, "06": e.target.value.toUpperCase() }))}
@@ -1957,6 +2038,7 @@ const EditableGroupRow = ({
                               <TipoGastoDetalleAutocomplete
                                 value={newOtrosItem.codigo_item || ""}
                                 codePrefix="06"
+                                onTriggerCreateGasto={(name) => handleTriggerCreateGasto(name, 'new', '06', handleGastoCreatedLocal, handleGastoCancelLocal)}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') {
                                     e.preventDefault();
@@ -1991,6 +2073,7 @@ const EditableGroupRow = ({
                             <td className="px-3 py-1.5">
                               <div className="flex flex-col w-full">
                                 <input
+                                  id="new-group-otros-desc"
                                   type="text"
                                   className={cn(
                                     "w-full text-[11px] border rounded px-1.5 py-1 font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white text-left",
@@ -2082,6 +2165,7 @@ const EditableGroupRow = ({
                               </button>
                             </td>
                           </tr>
+                          {renderInlineGastoCreateForm && renderInlineGastoCreateForm('new', handleGastoCreatedLocal, handleGastoCancelLocal)}
                         </tbody>
                       </table>
                     </div>
@@ -2563,6 +2647,267 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     }
   }, [data?.codigo, data?.numero]);
 
+  useEffect(() => {
+    const isDropdownOrPortalOpen = () => {
+      return !!document.querySelector(
+        '.autocomplete-dropdown-portal, ' +
+        '[data-radix-popper-content-wrapper], ' +
+        '[data-radix-portal], ' +
+        '.react-datepicker-popper, ' +
+        '[role="listbox"], ' +
+        '[role="menu"]'
+      );
+    };
+
+    const navigateFocusGeometrically = (currentElement, direction) => {
+      const container = document.getElementById('section-servicios');
+      if (!container) return false;
+
+      const selector = 'input:not([type="hidden"]):not(:disabled), select:not(:disabled), textarea:not(:disabled), [contenteditable="true"]';
+      const allInputs = Array.from(container.querySelectorAll(selector))
+        .filter(el => {
+          const rect = el.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0 && !el.readOnly;
+        });
+
+      const currentRect = currentElement.getBoundingClientRect();
+      const currentCenterX = currentRect.left + currentRect.width / 2;
+
+      let targetElement = null;
+
+      if (direction === 'down') {
+        const belowInputs = allInputs.filter(el => {
+          const r = el.getBoundingClientRect();
+          return r.top > currentRect.top + 5;
+        });
+
+        if (belowInputs.length > 0) {
+          belowInputs.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+          const nextRowTop = belowInputs[0].getBoundingClientRect().top;
+
+          const nextRowInputs = belowInputs.filter(el => {
+            const r = el.getBoundingClientRect();
+            return Math.abs(r.top - nextRowTop) < 15;
+          });
+
+          nextRowInputs.sort((a, b) => {
+            const rA = a.getBoundingClientRect();
+            const rB = b.getBoundingClientRect();
+            const centerA = rA.left + rA.width / 2;
+            const centerB = rB.left + rB.width / 2;
+            return Math.abs(centerA - currentCenterX) - Math.abs(centerB - currentCenterX);
+          });
+
+          targetElement = nextRowInputs[0];
+        }
+      } else if (direction === 'up') {
+        const aboveInputs = allInputs.filter(el => {
+          const r = el.getBoundingClientRect();
+          return r.top < currentRect.top - 5;
+        });
+
+        if (aboveInputs.length > 0) {
+          aboveInputs.sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top);
+          const prevRowTop = aboveInputs[0].getBoundingClientRect().top;
+
+          const prevRowInputs = aboveInputs.filter(el => {
+            const r = el.getBoundingClientRect();
+            return Math.abs(r.top - prevRowTop) < 15;
+          });
+
+          prevRowInputs.sort((a, b) => {
+            const rA = a.getBoundingClientRect();
+            const rB = b.getBoundingClientRect();
+            const centerA = rA.left + rA.width / 2;
+            const centerB = rB.left + rB.width / 2;
+            return Math.abs(centerA - currentCenterX) - Math.abs(centerB - currentCenterX);
+          });
+
+          targetElement = prevRowInputs[0];
+        }
+      } else if (direction === 'right') {
+        const row = currentElement.closest('tr');
+        if (row) {
+          const rowInputs = Array.from(row.querySelectorAll(selector))
+            .filter(el => {
+              const rect = el.getBoundingClientRect();
+              return rect.width > 0 && rect.height > 0 && !el.readOnly;
+            });
+          const idx = rowInputs.indexOf(currentElement);
+          if (idx !== -1 && idx < rowInputs.length - 1) {
+            targetElement = rowInputs[idx + 1];
+          }
+        }
+        if (!targetElement) {
+          const rowInputs = allInputs.filter(el => {
+            if (el === currentElement) return false;
+            const r = el.getBoundingClientRect();
+            return Math.abs(r.top - currentRect.top) < 15 && r.left > currentRect.left + 5;
+          });
+          if (rowInputs.length > 0) {
+            rowInputs.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
+            targetElement = rowInputs[0];
+          }
+        }
+      } else if (direction === 'left') {
+        const row = currentElement.closest('tr');
+        if (row) {
+          const rowInputs = Array.from(row.querySelectorAll(selector))
+            .filter(el => {
+              const rect = el.getBoundingClientRect();
+              return rect.width > 0 && rect.height > 0 && !el.readOnly;
+            });
+          const idx = rowInputs.indexOf(currentElement);
+          if (idx > 0) {
+            targetElement = rowInputs[idx - 1];
+          }
+        }
+        if (!targetElement) {
+          const rowInputs = allInputs.filter(el => {
+            if (el === currentElement) return false;
+            const r = el.getBoundingClientRect();
+            return Math.abs(r.top - currentRect.top) < 15 && r.left < currentRect.left - 5;
+          });
+          if (rowInputs.length > 0) {
+            rowInputs.sort((a, b) => b.getBoundingClientRect().left - a.getBoundingClientRect().left);
+            targetElement = rowInputs[0];
+          }
+        }
+      }
+
+      if (targetElement) {
+        if (targetElement.hasAttribute('contenteditable') || targetElement.classList.contains('ql-editor')) {
+          targetElement.focus();
+          const selection = window.getSelection();
+          if (selection) {
+            const range = document.createRange();
+            range.selectNodeContents(targetElement);
+            range.collapse(direction === 'up' || direction === 'left');
+            selection.removeAllRanges();
+            selection.addRange(range);
+          }
+        } else {
+          targetElement.focus();
+          if (typeof targetElement.select === 'function') {
+            targetElement.select();
+          }
+        }
+        return true;
+      }
+      return false;
+    };
+
+    const handleGlobalKeyDown = (e) => {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') {
+        return;
+      }
+
+      const target = e.target;
+      if (!target) return;
+
+      const isInput = target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA';
+      const isContentEditable = target.hasAttribute('contenteditable') || target.getAttribute('contenteditable') === 'true' || target.classList.contains('ql-editor');
+
+      if (!isInput && !isContentEditable) {
+        return;
+      }
+
+      const isInsideServicios = !!target.closest('#section-servicios');
+      if (!isInsideServicios) {
+        return;
+      }
+
+      if (isDropdownOrPortalOpen()) {
+        return;
+      }
+
+      const isTextarea = target.tagName === 'TEXTAREA';
+      const isNumberInput = target.type === 'number';
+      const supportsSelection = ["text", "search", "url", "tel", "password"].includes(target.type) || isTextarea;
+
+      let direction = '';
+      if (e.key === 'ArrowUp') direction = 'up';
+      if (e.key === 'ArrowDown') direction = 'down';
+      if (e.key === 'ArrowLeft') direction = 'left';
+      if (e.key === 'ArrowRight') direction = 'right';
+
+      if (target.getAttribute('data-field') === 'subgroup-custom-title') {
+        if (direction === 'down') {
+          const card = target.closest('.bg-white') || target.closest('.border') || target.closest('div');
+          if (card) {
+            const firstInput = card.querySelector('tbody input:not([type="hidden"]):not(:disabled)');
+            if (firstInput) {
+              e.preventDefault();
+              e.stopPropagation();
+              firstInput.focus();
+              if (typeof firstInput.select === 'function') {
+                firstInput.select();
+              }
+              return;
+            }
+          }
+        }
+      }
+
+      if (isContentEditable) {
+        const selection = window.getSelection();
+        if (selection && selection.rangeCount > 0) {
+          const range = selection.getRangeAt(0);
+
+          const preRange = range.cloneRange();
+          preRange.selectNodeContents(target);
+          preRange.setEnd(range.startContainer, range.startOffset);
+          const startOffset = preRange.toString().length;
+
+          const postRange = range.cloneRange();
+          postRange.selectNodeContents(target);
+          postRange.setStart(range.endContainer, range.endOffset);
+          const endOffset = postRange.toString().length;
+
+          if (direction === 'up' && startOffset > 0) return;
+          if (direction === 'down' && endOffset > 0) return;
+          if (direction === 'left' && startOffset > 0) return;
+          if (direction === 'right' && endOffset > 0) return;
+        }
+      }
+
+      if (isTextarea) {
+        if (direction === 'up' && target.selectionStart !== 0) return;
+        if (direction === 'down' && target.selectionEnd !== target.value.length) return;
+      }
+
+      if (supportsSelection && !isTextarea && !isNumberInput && !isContentEditable) {
+        let selStart = 0;
+        let selEnd = 0;
+        try {
+          selStart = target.selectionStart;
+          selEnd = target.selectionEnd;
+        } catch (err) {
+          selStart = 0;
+          selEnd = target.value.length;
+        }
+
+        if (direction === 'left' && selStart !== 0) return;
+        if (direction === 'right' && selEnd !== target.value.length) return;
+      }
+
+      if (target.tagName === 'SELECT') {
+        if (direction === 'up' || direction === 'down') return;
+      }
+
+      const success = navigateFocusGeometrically(target, direction);
+      if (success) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown, true);
+    };
+  }, []);
+
   const [loading, setLoading] = useState(true);
   const isReadOnly = Number(data?.estado_envio ?? 0) === 2;
   const isVenta = data?.id_tipo === "V";
@@ -2593,6 +2938,52 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
   const [productCreateCreating, setProductCreateCreating] = useState(false);
   const inlineProductFormRef = useRef(null);
   const inlineProductNombreInputRef = useRef(null);
+
+  const [personalCreateState, setPersonalCreateState] = useState({
+    isOpen: false,
+    targetGroup: null,
+    nombre: "",
+    costo_min: "0.00",
+    costo_max: "0.00",
+    onSuccess: null,
+    onCancel: null
+  });
+  const [personalCreateCreating, setPersonalCreateCreating] = useState(false);
+  const inlinePersonalFormRef = useRef(null);
+  const inlinePersonalCostoMinInputRef = useRef(null);
+  const inlinePersonalNombreInputRef = useRef(null);
+
+  const [gastoCreateState, setGastoCreateState] = useState({
+    isOpen: false,
+    targetGroup: null,
+    nombre: "",
+    codePrefix: "",
+    onSuccess: null,
+    onCancel: null
+  });
+  const [gastoCreateCreating, setGastoCreateCreating] = useState(false);
+  const inlineGastoFormRef = useRef(null);
+  const inlineGastoNombreInputRef = useRef(null);
+
+  useEffect(() => {
+    if (personalCreateState.isOpen) {
+      setTimeout(() => {
+        if (inlinePersonalFormRef.current) {
+          inlinePersonalFormRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }, 150);
+    }
+  }, [personalCreateState.isOpen]);
+
+  useEffect(() => {
+    if (gastoCreateState.isOpen) {
+      setTimeout(() => {
+        if (inlineGastoFormRef.current) {
+          inlineGastoFormRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }, 150);
+    }
+  }, [gastoCreateState.isOpen]);
 
   useEffect(() => {
     if (productCreateState.isOpen) {
@@ -2772,6 +3163,362 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     } finally {
       setProductCreateCreating(false);
     }
+  };
+
+  const handleTriggerCreatePersonal = (name, targetGroup, onSuccess, onCancel) => {
+    setPersonalCreateState({
+      isOpen: true,
+      targetGroup,
+      nombre: name.toUpperCase(),
+      costo_min: "0.00",
+      costo_max: "0.00",
+      onSuccess,
+      onCancel
+    });
+
+    setTimeout(() => {
+      if (inlinePersonalNombreInputRef.current) {
+        inlinePersonalNombreInputRef.current.focus();
+        inlinePersonalNombreInputRef.current.select();
+      }
+    }, 150);
+  };
+
+  const handleCancelCreatePersonal = (onCancel) => {
+    const { onCancel: stateOnCancel } = personalCreateState;
+    setPersonalCreateState(prev => ({ ...prev, isOpen: false }));
+    const activeCancel = onCancel || stateOnCancel;
+    if (activeCancel) {
+      activeCancel();
+    }
+  };
+
+  const handleSavePersonalInline = async (onSuccess) => {
+    const { targetGroup, nombre, costo_min, costo_max, onSuccess: stateOnSuccess } = personalCreateState;
+    const activeSuccess = onSuccess || stateOnSuccess;
+
+    if (!nombre.trim()) {
+      toast.error("El nombre/cargo del personal es requerido.");
+      return;
+    }
+
+    setPersonalCreateCreating(true);
+    try {
+      const { data: res } = await api.post("core/tipo_personal/", {
+        nombre: nombre.trim().toUpperCase(),
+        id_area: data?.id_area,
+        costo_min: parseFloat(costo_min || 0),
+        costo_max: parseFloat(costo_max || 0)
+      });
+
+      if (res.ok && res.registro) {
+        toast.success(`Tipo de personal "${nombre.trim().toUpperCase()}" creado con éxito.`);
+        setCatalogoVersion(prev => prev + 1);
+
+        if (activeSuccess) {
+          activeSuccess(res.registro);
+        }
+
+        setPersonalCreateState(prev => ({ ...prev, isOpen: false }));
+      } else {
+        toast.error("Error al crear el tipo de personal.");
+      }
+    } catch (err) {
+      console.error("Error al crear personal:", err);
+      toast.error(err.response?.data?.error || "Error al crear el tipo de personal");
+    } finally {
+      setPersonalCreateCreating(false);
+    }
+  };
+
+  const renderInlinePersonalCreateForm = (targetGroup, onSuccess, onCancel) => {
+    if (!personalCreateState.isOpen) return null;
+
+    let isMatch = false;
+    if (personalCreateState.targetGroup === targetGroup) {
+      isMatch = true;
+    } else if (typeof personalCreateState.targetGroup === 'string' && personalCreateState.targetGroup.startsWith('edit-')) {
+      const idServicioItem = personalCreateState.targetGroup.split('-')[1];
+      // For editing personal inside an inline edit row
+      if (targetGroup.startsWith('edit-') && targetGroup === personalCreateState.targetGroup) {
+        isMatch = true;
+      }
+    }
+
+    if (!isMatch) return null;
+
+    const colCount = 10;
+
+    const handleFormKeyDown = (e) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        handleCancelCreatePersonal(onCancel);
+      } else if (e.key === "Enter" && !e.shiftKey) {
+        e.stopPropagation();
+        e.preventDefault();
+        handleSavePersonalInline(onSuccess);
+      } else if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
+        let isAtStart = true;
+        let isAtEnd = true;
+        try {
+          if (e.target.selectionStart !== null && e.target.selectionStart !== undefined) {
+            isAtStart = e.target.selectionStart === 0;
+            isAtEnd = e.target.selectionStart === e.target.value?.length;
+          }
+        } catch (err) {}
+        const fieldKey = e.target.getAttribute('data-inline-field');
+        const navMap = {
+          nombre: {
+            ArrowRight: "costo_min"
+          },
+          costo_min: {
+            ArrowLeft: "nombre",
+            ArrowRight: "costo_max"
+          },
+          costo_max: {
+            ArrowLeft: "costo_min"
+          }
+        };
+
+        if (fieldKey && navMap[fieldKey]) {
+          const directions = navMap[fieldKey];
+          const targetField = directions[e.key];
+          if (targetField) {
+            let shouldGo = false;
+            if (e.key === 'ArrowLeft' && isAtStart) shouldGo = true;
+            if (e.key === 'ArrowRight' && isAtEnd) shouldGo = true;
+            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') shouldGo = true;
+
+            if (shouldGo) {
+              e.preventDefault();
+              const input = inlinePersonalFormRef.current?.querySelector(`[data-inline-field="${targetField}"]`);
+              if (input) {
+                input.focus();
+                if (typeof input.select === 'function') {
+                  input.select();
+                }
+              }
+            }
+          }
+        }
+      }
+    };
+
+    return (
+      <tr 
+        ref={inlinePersonalFormRef}
+        className="bg-indigo-50/30 border-y-2 border-indigo-500/20 animate-fadeIn"
+        onKeyDown={handleFormKeyDown}
+      >
+        <td colSpan={colCount} className="p-3">
+          <div className="flex flex-col gap-2.5 font-sans">
+            {/* Cabecera Informativa */}
+            <div className="flex items-center justify-between border-b border-indigo-150 pb-1.5 mb-0.5 text-[10px] font-black uppercase text-indigo-800 tracking-wider">
+              <div className="flex items-center gap-1.5">
+                <Icon name="plus-circle" className="h-4 w-4 text-indigo-600" />
+                <span>Registrar Personal</span>
+              </div>
+              <span className="text-indigo-700 bg-indigo-100/50 px-2 py-0.5 rounded border border-indigo-200/50 font-bold">
+                [ENTER] Guardar • [ESC] Cancelar
+              </span>
+            </div>
+
+            {/* Campos en horizontal */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+              <div className="col-span-2">
+                <label className="block text-[9.5px] font-black text-slate-650 uppercase mb-1">Nombre / Cargo *</label>
+                <input
+                  ref={inlinePersonalNombreInputRef}
+                  type="text"
+                  data-inline-field="nombre"
+                  value={personalCreateState.nombre}
+                  onChange={(e) => setPersonalCreateState(prev => ({ ...prev, nombre: e.target.value }))}
+                  placeholder="NOMBRE DEL CARGO (EJ. MAESTRO DE OBRA)"
+                  required
+                  className="border border-slate-300 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-2.5 py-1.5 w-full text-[11px] uppercase outline-none text-slate-700 font-semibold transition-all bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[9.5px] font-black text-slate-650 uppercase mb-1">Costo Mínimo *</label>
+                <input
+                  ref={inlinePersonalCostoMinInputRef}
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  data-inline-field="costo_min"
+                  value={personalCreateState.costo_min}
+                  onChange={(e) => setPersonalCreateState(prev => ({ ...prev, costo_min: e.target.value }))}
+                  placeholder="0.00"
+                  className="border border-slate-300 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-2.5 py-1.5 w-full text-[11px] outline-none text-slate-700 font-semibold transition-all bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[9.5px] font-black text-slate-650 uppercase mb-1">Costo Máximo *</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  data-inline-field="costo_max"
+                  value={personalCreateState.costo_max}
+                  onChange={(e) => setPersonalCreateState(prev => ({ ...prev, costo_max: e.target.value }))}
+                  placeholder="0.00"
+                  className="border border-slate-300 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-2.5 py-1.5 w-full text-[11px] outline-none text-slate-700 font-semibold transition-all bg-white"
+                />
+              </div>
+            </div>
+          </div>
+        </td>
+      </tr>
+    );
+  };
+
+  const handleTriggerCreateGasto = (name, targetGroup, codePrefix, onSuccess, onCancel) => {
+    setGastoCreateState({
+      isOpen: true,
+      targetGroup,
+      nombre: name.toUpperCase(),
+      codePrefix,
+      onSuccess,
+      onCancel
+    });
+
+    setTimeout(() => {
+      if (inlineGastoNombreInputRef.current) {
+        inlineGastoNombreInputRef.current.focus();
+        inlineGastoNombreInputRef.current.select();
+      }
+    }, 150);
+  };
+
+  const handleCancelCreateGasto = (onCancel) => {
+    const { onCancel: stateOnCancel } = gastoCreateState;
+    setGastoCreateState(prev => ({ ...prev, isOpen: false }));
+    const activeCancel = onCancel || stateOnCancel;
+    if (activeCancel) {
+      activeCancel();
+    }
+  };
+
+  const handleSaveGastoInline = async (onSuccess) => {
+    const { targetGroup, nombre, codePrefix, onSuccess: stateOnSuccess } = gastoCreateState;
+    const activeSuccess = onSuccess || stateOnSuccess;
+
+    if (!nombre.trim()) {
+      toast.error("El nombre/concepto del gasto es requerido.");
+      return;
+    }
+
+    setGastoCreateCreating(true);
+    try {
+      const { data: res } = await api.post("core/tipo_gasto_detalle/", {
+        nombre: nombre.trim().toUpperCase(),
+        code_prefix: codePrefix
+      });
+
+      if (res.ok && res.registro) {
+        toast.success(`Tipo de Gasto "${nombre.trim().toUpperCase()}" creado con éxito.`);
+        setCatalogoVersion(prev => prev + 1);
+
+        if (activeSuccess) {
+          activeSuccess(res.registro);
+        }
+
+        setGastoCreateState(prev => ({ ...prev, isOpen: false }));
+      } else {
+        toast.error("Error al crear el tipo de gasto.");
+      }
+    } catch (err) {
+      console.error("Error al crear gasto:", err);
+      toast.error(err.response?.data?.error || "Error al crear el tipo de gasto");
+    } finally {
+      setGastoCreateCreating(false);
+    }
+  };
+
+  const renderInlineGastoCreateForm = (targetGroup, onSuccess, onCancel) => {
+    if (!gastoCreateState.isOpen) return null;
+
+    let isMatch = false;
+    if (gastoCreateState.targetGroup === targetGroup) {
+      isMatch = true;
+    } else if (typeof gastoCreateState.targetGroup === 'string' && gastoCreateState.targetGroup.startsWith('edit-')) {
+      const idServicioItem = Number(gastoCreateState.targetGroup.split('-')[1]);
+      if (targetGroup.startsWith('edit-') && targetGroup === gastoCreateState.targetGroup) {
+        isMatch = true;
+      }
+    }
+
+    if (!isMatch) return null;
+
+    const gp = Object.values(gruposServicios || {}).find(g => g.id_servicio === targetGroup) || {};
+    const colCount = gp.tipoCodigo?.endsWith("05") ? 8 : 9;
+
+    const handleFormKeyDown = (e) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        handleCancelCreateGasto(onCancel);
+      } else if (e.key === "Enter" && !e.shiftKey) {
+        e.stopPropagation();
+        e.preventDefault();
+        handleSaveGastoInline(onSuccess);
+      }
+    };
+
+    return (
+      <tr 
+        ref={inlineGastoFormRef}
+        className="bg-indigo-50/30 border-y-2 border-indigo-500/20 animate-fadeIn"
+        onKeyDown={handleFormKeyDown}
+      >
+        <td colSpan={colCount} className="p-3">
+          <div className="flex flex-col gap-2.5 font-sans">
+            {/* Cabecera Informativa */}
+            <div className="flex items-center justify-between border-b border-indigo-150 pb-1.5 mb-0.5 text-[10px] font-black uppercase text-indigo-800 tracking-wider">
+              <div className="flex items-center gap-1.5">
+                <Icon name="plus-circle" className="h-4 w-4 text-indigo-600" />
+                <span>Registrar Gasto</span>
+              </div>
+              <span className="text-indigo-700 bg-indigo-100/50 px-2 py-0.5 rounded border border-indigo-200/50 font-bold">
+                [ENTER] Guardar • [ESC] Cancelar
+              </span>
+            </div>
+
+            {/* Campo Nombre */}
+            <div className="flex flex-col gap-1">
+              <label className="block text-[9.5px] font-black text-slate-650 uppercase mb-1">Nombre / Concepto *</label>
+              <div className="flex gap-2">
+                <input
+                  ref={inlineGastoNombreInputRef}
+                  type="text"
+                  value={gastoCreateState.nombre}
+                  onChange={(e) => setGastoCreateState(prev => ({ ...prev, nombre: e.target.value }))}
+                  placeholder="CONCEPTO DEL GASTO (EJ. VIÁTICOS, PAGO TERCEROS)"
+                  required
+                  className="border border-slate-300 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-2.5 py-1.5 w-full text-[11px] uppercase outline-none text-slate-700 font-semibold transition-all bg-white"
+                />
+                <button
+                  type="button"
+                  disabled={gastoCreateCreating}
+                  onClick={() => handleSaveGastoInline(onSuccess)}
+                  className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-750 disabled:bg-indigo-300 text-white rounded-lg text-[11px] font-bold uppercase transition-all shrink-0 shadow-sm"
+                >
+                  {gastoCreateCreating ? "Guardando..." : "Guardar"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleCancelCreateGasto(onCancel)}
+                  className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[11px] font-bold uppercase transition-all shrink-0 border border-slate-200"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </td>
+      </tr>
+    );
   };
 
   const renderInlineProductCreateForm = (targetGroup, onSuccess, onCancel) => {
@@ -3902,19 +4649,17 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
   };
 
   const handleSaveSubgrupoTitle = (grupoId, subgrupoId) => {
-    if (editingSubgrupoValue.trim()) {
-      setGruposServicios(prev => {
-        const next = JSON.parse(JSON.stringify(prev));
-        const srv = next[grupoId];
-        if (srv) {
-          const subg = srv.subgrupos?.find(sg => sg.id_servicio === subgrupoId);
-          if (subg) {
-            subg.titulo = editingSubgrupoValue.toUpperCase();
-          }
+    setGruposServicios(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      const srv = next[grupoId];
+      if (srv) {
+        const subg = srv.subgrupos?.find(sg => sg.id_servicio === subgrupoId);
+        if (subg) {
+          subg.titulo = (editingSubgrupoValue || "").trim().toUpperCase();
         }
-        return next;
-      });
-    }
+      }
+      return next;
+    });
     setEditingSubgrupoId(null);
   };
 
@@ -4675,6 +5420,10 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
   const handleConfirmManoObraInline = async (form, grupoId, subgrupoId) => {
     if (!form.descripcion_item || !form.descripcion_item.trim()) {
       setInlineDescError({ subgrupoId, message: "Por favor ingrese la descripción." });
+      setTimeout(() => {
+        const descInput = document.getElementById(`quick-add-srv-desc-${subgrupoId}`);
+        if (descInput) descInput.focus();
+      }, 50);
       return;
     }
 
@@ -4716,6 +5465,10 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
   const handleConfirmGastosServicioInline = async (form, grupoId, subgrupoId) => {
     if (!form.descripcion_item || !form.descripcion_item.trim()) {
       setInlineDescError({ subgrupoId, message: "Por favor ingrese la descripción." });
+      setTimeout(() => {
+        const descInput = document.getElementById(`quick-add-srv-desc-${subgrupoId}`);
+        if (descInput) descInput.focus();
+      }, 50);
       return;
     }
 
@@ -4745,6 +5498,10 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
   const handleConfirmOtrosInline = async (form, grupoId, subgrupoId) => {
     if (!form.descripcion_item || !form.descripcion_item.trim()) {
       setInlineDescError({ subgrupoId, message: "Por favor ingrese la descripción." });
+      setTimeout(() => {
+        const descInput = document.getElementById(`quick-add-srv-desc-${subgrupoId}`);
+        if (descInput) descInput.focus();
+      }, 50);
       return;
     }
 
@@ -4768,6 +5525,79 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       setEditingItemServicioId(null);
       setActiveEditServicioField(null);
       setInlineDescError({ subgrupoId: null, message: "" });
+    }
+  };
+
+  const handleQuickAddKeyDown = (e, grupoId, subgrupoId, type) => {
+    // Escape
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      setAddingServicioForm(prev => {
+        const next = { ...prev };
+        delete next[subgrupoId];
+        return next;
+      });
+      const rowEl = e.currentTarget;
+      const firstInput = rowEl.querySelector('input');
+      if (firstInput) firstInput.focus();
+      return;
+    }
+
+    // Enter
+    if (e.key === 'Enter') {
+      const dropdownOpen = document.querySelector('.autocomplete-dropdown-portal');
+      if (dropdownOpen) {
+        return;
+      }
+      
+      e.preventDefault();
+      const form = addingServicioForm[subgrupoId] || {
+        codigo_item: "",
+        descripcion_item: "",
+        cantidad_hombres: 1,
+        cantidad_dias: 1,
+        horas: 8,
+        costo_hombre_dia: 0,
+        porcentaje: 20
+      };
+      if (type === '04') {
+        handleConfirmManoObraInline(form, grupoId, subgrupoId);
+      } else if (type === '05') {
+        handleConfirmGastosServicioInline(form, grupoId, subgrupoId);
+      } else if (type === '06') {
+        handleConfirmOtrosInline(form, grupoId, subgrupoId);
+      }
+      return;
+    }
+
+    // Arrow Navigation
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      const isSelectOrNumber = e.target.tagName === 'SELECT' || e.target.type === 'number';
+      const isAtStart = isSelectOrNumber || e.target.selectionStart === 0;
+      const isAtEnd = isSelectOrNumber || e.target.selectionEnd === e.target.value.length;
+
+      if ((e.key === 'ArrowRight' && isAtEnd) || (e.key === 'ArrowLeft' && isAtStart)) {
+        const rowEl = e.currentTarget;
+        const inputs = Array.from(rowEl.querySelectorAll('input, select, textarea'))
+          .filter(el => el.type !== 'hidden' && !el.disabled);
+        const idx = inputs.indexOf(e.target);
+
+        if (e.key === 'ArrowRight' && idx < inputs.length - 1) {
+          e.preventDefault();
+          const nextInput = inputs[idx + 1];
+          nextInput.focus();
+          if (typeof nextInput.select === 'function') {
+            nextInput.select();
+          }
+        } else if (e.key === 'ArrowLeft' && idx > 0) {
+          e.preventDefault();
+          const prevInput = inputs[idx - 1];
+          prevInput.focus();
+          if (typeof prevInput.select === 'function') {
+            prevInput.select();
+          }
+        }
+      }
     }
   };
 
@@ -5491,6 +6321,44 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       });
     };
 
+    const handlePersonalCreatedQuickLocal = (registro) => {
+      const cMin = parseFloat(registro.costo_min || 0);
+      const cMax = parseFloat(registro.costo_max || 0);
+      const cAvg = cMin && cMax ? (cMin + cMax) / 2 : (cMax || cMin || 0);
+      setForm({
+        codigo_item: `${registro.codigo}-${registro.nombre}`,
+        descripcion_item: '',
+        costo_hombre_dia: cAvg,
+        costo_min: cMin,
+        costo_max: cMax
+      });
+      setTimeout(() => {
+        const descInput = document.getElementById(`quick-add-srv-desc-${subgrupoId}`);
+        if (descInput) {
+          descInput.focus();
+          if (descInput.select) descInput.select();
+        }
+      }, 50);
+    };
+
+    const handlePersonalCancelQuickLocal = () => {};
+
+    const handleGastoCreatedQuickLocal = (registro) => {
+      setForm({
+        codigo_item: registro.codigo,
+        descripcion_item: registro.nombre
+      });
+      setTimeout(() => {
+        const descInput = document.getElementById(`quick-add-srv-desc-${subgrupoId}`);
+        if (descInput) {
+          descInput.focus();
+          if (descInput.select) descInput.select();
+        }
+      }, 50);
+    };
+
+    const handleGastoCancelQuickLocal = () => {};
+
     const gripPlaceholder = (
       <td className="px-2 text-center align-middle">
         <Icon name="grip-vertical" className="h-3.5 w-3.5 text-gray-200 mx-auto" />
@@ -5508,22 +6376,19 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       const calculatedCotizadoTotal = calculatedCostoTotal + calculatedUtilidad;
       const calculatedCotizadoHD = formCosto * (1 + formPorcentaje / 100);
 
-      const handleKeyDown = (e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          handleConfirmManoObraInline(form, grupo.id_servicio, sg.id_servicio);
-        }
-      };
-
       return (
-        <tr className="bg-teal-50/10">
+        <tr 
+          className="bg-teal-50/10"
+          onKeyDown={e => handleQuickAddKeyDown(e, grupo.id_servicio, sg.id_servicio, '04')}
+        >
           {gripPlaceholder}
           {/* CÓDIGO PERSONAL */}
           <td className="px-2 py-1">
             <TipoPersonalAutocomplete
               value={form.codigo_item || ""}
               idArea={data?.id_area}
-              onKeyDown={handleKeyDown}
+              catalogoVersion={catalogoVersion}
+              onTriggerCreatePersonal={(name) => handleTriggerCreatePersonal(name, sg.id_servicio, handlePersonalCreatedQuickLocal, handlePersonalCancelQuickLocal)}
               onSelect={(personal) => {
                 if (!personal) {
                   setForm({
@@ -5535,13 +6400,25 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                   });
                   return;
                 }
+                const cMin = parseFloat(personal.costo_min || 0);
+                const cMax = parseFloat(personal.costo_max || 0);
+                const cAvg = cMin && cMax ? (cMin + cMax) / 2 : (cMax || cMin || 0);
                 setForm({
                   codigo_item: `${personal.codigo}-${personal.nombre}`,
                   descripcion_item: '',
-                  costo_hombre_dia: parseFloat(personal.costo_max || personal.costo_min || 0),
-                  costo_min: parseFloat(personal.costo_min || 0),
-                  costo_max: parseFloat(personal.costo_max || 0)
+                  costo_hombre_dia: cAvg,
+                  costo_min: cMin,
+                  costo_max: cMax
                 });
+                if (!personal.isCustom) {
+                  setTimeout(() => {
+                    const descInput = document.getElementById(`quick-add-srv-desc-${subgrupoId}`);
+                    if (descInput) {
+                      descInput.focus();
+                      if (descInput.select) descInput.select();
+                    }
+                  }, 50);
+                }
               }}
             />
           </td>
@@ -5549,8 +6426,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           <td className="px-2 py-1">
             <div className="flex flex-col w-full">
               <input
+                id={`quick-add-srv-desc-${subgrupoId}`}
                 type="text"
-                onKeyDown={handleKeyDown}
                 className={cn(
                   "w-full text-[10.5px] border rounded px-1.5 py-0.5 uppercase font-semibold text-gray-700 bg-white",
                   inlineDescError.subgrupoId === sg.id_servicio ? "border-red-400 ring-1 ring-red-100" : "border-gray-300"
@@ -5575,7 +6452,6 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           <td className="px-2 py-1 text-center">
             <input
               type="number"
-              onKeyDown={handleKeyDown}
               className="w-full text-center text-[10.5px] border border-gray-300 text-center rounded px-1 py-0.5 font-bold bg-white"
               value={form.cantidad_hombres === undefined || form.cantidad_hombres === null ? "" : form.cantidad_hombres}
               onChange={(e) => setForm({ cantidad_hombres: parseInt(e.target.value) || 0 })}
@@ -5586,7 +6462,6 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           <td className="px-2 py-1 text-center">
             <input
               type="number"
-              onKeyDown={handleKeyDown}
               className="w-full text-center text-[10.5px] border border-gray-300 text-center rounded px-1 py-0.5 font-semibold bg-white"
               value={form.cantidad_dias === undefined || form.cantidad_dias === null ? "" : form.cantidad_dias}
               onChange={(e) => setForm({ cantidad_dias: parseInt(e.target.value) || 0 })}
@@ -5597,7 +6472,6 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           <td className="px-2 py-1 text-center">
             <input
               type="number"
-              onKeyDown={handleKeyDown}
               className="w-full text-center text-[10.5px] border border-gray-300 text-center rounded px-1 py-0.5 bg-white"
               value={form.horas === undefined || form.horas === null ? "" : form.horas}
               onChange={(e) => setForm({ horas: parseInt(e.target.value) || 0 })}
@@ -5608,7 +6482,6 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           <td className="px-2 py-1 text-center">
             <input
               type="number"
-              onKeyDown={handleKeyDown}
               className="w-full text-[10.5px] border border-gray-300 text-center rounded px-1 py-0.5 bg-white"
               value={form.costo_hombre_dia === undefined || form.costo_hombre_dia === null ? "" : form.costo_hombre_dia}
               onChange={(e) => setForm({ costo_hombre_dia: parseFloat(e.target.value) || 0 })}
@@ -5625,7 +6498,6 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 <input
                   type="number"
                   step="0.1"
-                  onKeyDown={handleKeyDown}
                   className="w-full text-[10px] border border-gray-300 text-center rounded px-1 py-0.5 font-medium text-gray-500 bg-white"
                   value={form.porcentaje === undefined || form.porcentaje === null ? "" : form.porcentaje}
                   onChange={(e) => setForm({ porcentaje: parseFloat(e.target.value) || 0 })}
@@ -5664,22 +6536,18 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       const formPrecio = Number(form.cotizado_hombre_dia || 0);
       const calculatedCotizadoTotal = formHombres * formDias * formPrecio;
 
-      const handleKeyDown = (e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          handleConfirmGastosServicioInline(form, grupo.id_servicio, sg.id_servicio);
-        }
-      };
-
       return (
-        <tr className="bg-teal-50/10">
+        <tr 
+          className="bg-teal-50/10"
+          onKeyDown={e => handleQuickAddKeyDown(e, grupo.id_servicio, sg.id_servicio, '05')}
+        >
           {gripPlaceholder}
           {/* CÓDIGO GASTO */}
           <td className="px-2 py-1">
             <TipoGastoDetalleAutocomplete
               value={form.codigo_item || ""}
               codePrefix="05"
-              onKeyDown={handleKeyDown}
+              onTriggerCreateGasto={(name) => handleTriggerCreateGasto(name, sg.id_servicio, '05', handleGastoCreatedQuickLocal, handleGastoCancelQuickLocal)}
               onSelect={(gasto) => {
                 if (!gasto) {
                   setForm({
@@ -5692,6 +6560,13 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                   codigo_item: gasto.codigo,
                   descripcion_item: gasto.nombre
                 });
+                setTimeout(() => {
+                  const descInput = document.getElementById(`quick-add-srv-desc-${subgrupoId}`);
+                  if (descInput) {
+                    descInput.focus();
+                    if (descInput.select) descInput.select();
+                  }
+                }, 50);
               }}
             />
           </td>
@@ -5699,8 +6574,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           <td className="px-2 py-1">
             <div className="flex flex-col w-full">
               <input
+                id={`quick-add-srv-desc-${subgrupoId}`}
                 type="text"
-                onKeyDown={handleKeyDown}
                 className={cn(
                   "w-full text-[10.5px] border rounded px-1.5 py-0.5 uppercase font-semibold text-gray-700 bg-white",
                   inlineDescError.subgrupoId === sg.id_servicio ? "border-red-400 ring-1 ring-red-100" : "border-gray-300"
@@ -5725,7 +6600,6 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           <td className="px-2 py-1 text-center">
             <input
               type="number"
-              onKeyDown={handleKeyDown}
               className="w-full text-center text-[10.5px] border border-gray-300 text-center rounded px-1 py-0.5 font-bold bg-white"
               value={form.cantidad_hombres === undefined || form.cantidad_hombres === null ? "" : form.cantidad_hombres}
               onChange={(e) => setForm({ cantidad_hombres: parseInt(e.target.value) || 0 })}
@@ -5736,7 +6610,6 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           <td className="px-2 py-1 text-center">
             <input
               type="number"
-              onKeyDown={handleKeyDown}
               className="w-full text-center text-[10.5px] border border-gray-300 text-center rounded px-1 py-0.5 font-semibold bg-white"
               value={form.cantidad_dias === undefined || form.cantidad_dias === null ? "" : form.cantidad_dias}
               onChange={(e) => setForm({ cantidad_dias: parseInt(e.target.value) || 0 })}
@@ -5747,7 +6620,6 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           <td className="px-2 py-1 text-right">
             <input
               type="number"
-              onKeyDown={handleKeyDown}
               className="w-full text-[10.5px] border border-gray-300 text-right rounded px-1 py-0.5 bg-white"
               value={form.cotizado_hombre_dia === undefined || form.cotizado_hombre_dia === null ? "" : form.cotizado_hombre_dia}
               onChange={(e) => setForm({ cotizado_hombre_dia: parseFloat(e.target.value) || 0 })}
@@ -5783,22 +6655,18 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       const calculatedCotizadoTotal = calculatedCostoTotal + calculatedUtilidad;
       const calculatedCotizadoHD = formCosto * (1 + formPorcentaje / 100);
 
-      const handleKeyDown = (e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          handleConfirmOtrosInline(form, grupo.id_servicio, sg.id_servicio);
-        }
-      };
-
       return (
-        <tr className="bg-teal-50/10">
+        <tr 
+          className="bg-teal-50/10"
+          onKeyDown={e => handleQuickAddKeyDown(e, grupo.id_servicio, sg.id_servicio, '06')}
+        >
           {gripPlaceholder}
           {/* CÓDIGO GASTO */}
           <td className="px-2 py-1">
             <TipoGastoDetalleAutocomplete
               value={form.codigo_item || ""}
               codePrefix="06"
-              onKeyDown={handleKeyDown}
+              onTriggerCreateGasto={(name) => handleTriggerCreateGasto(name, sg.id_servicio, '06', handleGastoCreatedQuickLocal, handleGastoCancelQuickLocal)}
               onSelect={(gasto) => {
                 if (!gasto) {
                   setForm({
@@ -5811,6 +6679,13 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                   codigo_item: gasto.codigo,
                   descripcion_item: gasto.nombre
                 });
+                setTimeout(() => {
+                  const descInput = document.getElementById(`quick-add-srv-desc-${subgrupoId}`);
+                  if (descInput) {
+                    descInput.focus();
+                    if (descInput.select) descInput.select();
+                  }
+                }, 50);
               }}
             />
           </td>
@@ -5818,8 +6693,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           <td className="px-2 py-1">
             <div className="flex flex-col w-full">
               <input
+                id={`quick-add-srv-desc-${subgrupoId}`}
                 type="text"
-                onKeyDown={handleKeyDown}
                 className={cn(
                   "w-full text-[10.5px] border rounded px-1.5 py-0.5 uppercase font-semibold text-gray-700 bg-white",
                   inlineDescError.subgrupoId === sg.id_servicio ? "border-red-400 ring-1 ring-red-100" : "border-gray-300"
@@ -5844,7 +6719,6 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           <td className="px-2 py-1 text-center">
             <input
               type="number"
-              onKeyDown={handleKeyDown}
               className="w-full text-center text-[10.5px] border border-gray-300 text-center rounded px-1 py-0.5 font-bold bg-white"
               value={form.cantidad_hombres === undefined || form.cantidad_hombres === null ? "" : form.cantidad_hombres}
               onChange={(e) => setForm({ cantidad_hombres: parseInt(e.target.value) || 0 })}
@@ -5855,7 +6729,6 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           <td className="px-2 py-1 text-center">
             <input
               type="number"
-              onKeyDown={handleKeyDown}
               className="w-full text-[10.5px] border border-gray-300 text-center rounded px-1 py-0.5 bg-white"
               value={form.costo_hombre_dia === undefined || form.costo_hombre_dia === null ? "" : form.costo_hombre_dia}
               onChange={(e) => setForm({ costo_hombre_dia: parseFloat(e.target.value) || 0 })}
@@ -5872,7 +6745,6 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 <input
                   type="number"
                   step="0.1"
-                  onKeyDown={handleKeyDown}
                   className="w-full text-[10px] border border-gray-300 text-center rounded px-1 py-0.5 font-medium text-gray-500 bg-white"
                   value={form.porcentaje === undefined || form.porcentaje === null ? "" : form.porcentaje}
                   onChange={(e) => setForm({ porcentaje: parseFloat(e.target.value) || 0 })}
@@ -6102,6 +6974,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                           {editingSubgrupoId === sg.id_servicio ? (
                             <input
                               type="text"
+                              data-field="subgroup-custom-title"
                               className="bg-transparent border border-gray-300 rounded text-[10px] font-black text-gray-700 p-0.5 focus:ring-0 focus:outline-none uppercase"
                               value={editingSubgrupoValue}
                               onChange={(e) => setEditingSubgrupoValue(e.target.value)}
@@ -6126,11 +6999,16 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                                 if (isReadOnly) return;
                                 e.stopPropagation();
                                 setEditingSubgrupoId(sg.id_servicio);
-                                setEditingSubgrupoValue(sg.titulo || sg.tipoNombre || "");
+                                const currentVal = sg.titulo && sg.titulo.trim().toUpperCase() !== sg.tipoNombre.trim().toUpperCase()
+                                  ? sg.titulo
+                                  : "";
+                                setEditingSubgrupoValue(currentVal);
                               }}
                               title="Doble clic para editar título"
                             >
-                              {sg.titulo || sg.tipoNombre}
+                              {sg.titulo && sg.titulo.trim().toUpperCase() !== sg.tipoNombre.trim().toUpperCase()
+                                ? `${sg.tipoNombre} - ${sg.titulo}`
+                                : sg.tipoNombre}
                             </span>
                           )}
                           <span className="text-[9px] font-bold text-gray-400 bg-white border border-gray-200 px-1.5 rounded-full select-none">
@@ -6230,11 +7108,18 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                                         formatMoneySymbol={formatMoneySymbol}
                                         activeEditServicioField={activeEditServicioField}
                                         setActiveEditServicioField={setActiveEditServicioField}
+                                        handleTriggerCreatePersonal={handleTriggerCreatePersonal}
+                                        renderInlinePersonalCreateForm={renderInlinePersonalCreateForm}
+                                        handleTriggerCreateGasto={handleTriggerCreateGasto}
+                                        renderInlineGastoCreateForm={renderInlineGastoCreateForm}
+                                        catalogoVersion={catalogoVersion}
                                       />
                                     ))}
                                   </SortableContext>
 
                                   {renderAddingItemRow(grupo, sg)}
+                                  {renderInlinePersonalCreateForm && renderInlinePersonalCreateForm(sg.id_servicio)}
+                                  {renderInlineGastoCreateForm && renderInlineGastoCreateForm(sg.id_servicio)}
 
                                   {sortedItems.length === 0 && isReadOnly && (
                                     <tr>
@@ -7685,7 +8570,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
         </div>
 
         {/* SERVICIOS SECTION */}
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+        <div id="section-servicios" className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
           <button
             onClick={() => toggleCategory('Servicios')}
             className="flex items-center justify-between w-full px-5 py-4 bg-gray-50 hover:bg-gray-100/80 transition-colors border-b border-gray-200"
@@ -7738,6 +8623,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                       setCatalogoVersion={setCatalogoVersion}
                       unidadesMedida={unidadesMedida}
                       setUnidadesMedida={setUnidadesMedida}
+                      handleTriggerCreatePersonal={handleTriggerCreatePersonal}
+                      renderInlinePersonalCreateForm={renderInlinePersonalCreateForm}
                     />
                   )}
 
@@ -10950,6 +11837,11 @@ const SortableItemServicioRow = ({
   formatMoneySymbol,
   activeEditServicioField,
   setActiveEditServicioField,
+  handleTriggerCreatePersonal,
+  renderInlinePersonalCreateForm,
+  handleTriggerCreateGasto,
+  renderInlineGastoCreateForm,
+  catalogoVersion,
 }) => {
   const {
     attributes,
@@ -11167,41 +12059,70 @@ const SortableItemServicioRow = ({
       const calculatedCotizadoTotal = calculatedCostoTotal + calculatedUtilidad;
       const calculatedCotizadoHD = formCosto * (1 + formPorcentaje / 100);
 
+      const handlePersonalCreatedEditLocal = (registro) => {
+        const cMin = parseFloat(registro.costo_min || 0);
+        const cMax = parseFloat(registro.costo_max || 0);
+        const cAvg = cMin && cMax ? (cMin + cMax) / 2 : (cMax || cMin || 0);
+        setEditingServicioForm(prev => ({
+          ...prev,
+          codigo_item: `${registro.codigo}-${registro.nombre}`,
+          descripcion_item: '',
+          costo_hombre_dia: cAvg,
+          costo_min: cMin,
+          costo_max: cMax
+        }));
+        setTimeout(() => {
+          const descInput = document.querySelector('[data-field="descripcion_item"]');
+          if (descInput) {
+            descInput.focus();
+            if (descInput.select) descInput.select();
+          }
+        }, 100);
+      };
+
+      const handlePersonalCancelEditLocal = () => {};
+
       return (
-        <tr ref={setMergedRef} style={style} className="bg-indigo-50/30">
-          <td className="px-2 text-center align-middle">
-            <Icon name="grip-vertical" className="h-3.5 w-3.5 text-gray-200 mx-auto" />
-          </td>
-          <td className="px-2 py-1">
-            <div data-field="codigo_item" className="w-full">
-              <TipoPersonalAutocomplete
-                value={editingServicioForm.codigo_item || ""}
-                idArea={item.id_area || data?.id_area}
-                onKeyDown={handleKeyDown}
-                onSelect={(personal) => {
-                  if (!personal) {
+        <>
+          <tr ref={setMergedRef} style={style} className="bg-indigo-50/30">
+            <td className="px-2 text-center align-middle">
+              <Icon name="grip-vertical" className="h-3.5 w-3.5 text-gray-200 mx-auto" />
+            </td>
+            <td className="px-2 py-1">
+              <div data-field="codigo_item" className="w-full">
+                <TipoPersonalAutocomplete
+                  value={editingServicioForm.codigo_item || ""}
+                  idArea={item.id_area || data?.id_area}
+                  catalogoVersion={catalogoVersion}
+                  onTriggerCreatePersonal={(name) => handleTriggerCreatePersonal(name, 'edit-' + item.id_servicio, handlePersonalCreatedEditLocal, handlePersonalCancelEditLocal)}
+                  onKeyDown={handleKeyDown}
+                  onSelect={(personal) => {
+                    if (!personal) {
+                      setEditingServicioForm(prev => ({
+                        ...prev,
+                        codigo_item: '',
+                        descripcion_item: '',
+                        costo_hombre_dia: 0,
+                        costo_min: 0,
+                        costo_max: 0
+                      }));
+                      return;
+                    }
+                    const cMin = parseFloat(personal.costo_min || 0);
+                    const cMax = parseFloat(personal.costo_max || 0);
+                    const cAvg = cMin && cMax ? (cMin + cMax) / 2 : (cMax || cMin || 0);
                     setEditingServicioForm(prev => ({
                       ...prev,
-                      codigo_item: '',
+                      codigo_item: `${personal.codigo}-${personal.nombre}`,
                       descripcion_item: '',
-                      costo_hombre_dia: 0,
-                      costo_min: 0,
-                      costo_max: 0
+                      costo_hombre_dia: cAvg,
+                      costo_min: cMin,
+                      costo_max: cMax
                     }));
-                    return;
-                  }
-                  setEditingServicioForm(prev => ({
-                    ...prev,
-                    codigo_item: `${personal.codigo}-${personal.nombre}`,
-                    descripcion_item: '',
-                    costo_hombre_dia: parseFloat(personal.costo_max || personal.costo_min || 0),
-                    costo_min: parseFloat(personal.costo_min || 0),
-                    costo_max: parseFloat(personal.costo_max || 0)
-                  }));
-                }}
-              />
-            </div>
-          </td>
+                  }}
+                />
+              </div>
+            </td>
           <td className="px-2 py-1">
             <input
               type="text"
@@ -11285,6 +12206,8 @@ const SortableItemServicioRow = ({
             <div className="h-4" />
           </td>
         </tr>
+        {renderInlinePersonalCreateForm && renderInlinePersonalCreateForm('edit-' + item.id_servicio, handlePersonalCreatedEditLocal, handlePersonalCancelEditLocal)}
+        </>
       );
     }
 
@@ -11292,87 +12215,108 @@ const SortableItemServicioRow = ({
       const formHombres = Number(editingServicioForm.cantidad_hombres || 0);
       const formDias = Number(editingServicioForm.cantidad_dias || 0);
       const formPrecio = Number(editingServicioForm.cotizado_hombre_dia || 0);
+      const handleGastoCreatedEditLocal = (registro) => {
+        setEditingServicioForm(prev => ({
+          ...prev,
+          codigo_item: registro.codigo,
+          descripcion_item: registro.nombre
+        }));
+        setTimeout(() => {
+          const descInput = document.querySelector('[data-field="descripcion_item"]');
+          if (descInput) {
+            descInput.focus();
+            if (descInput.select) descInput.select();
+          }
+        }, 100);
+      };
+
+      const handleGastoCancelEditLocal = () => {};
+
       const calculatedCotizadoTotal = formHombres * formDias * formPrecio;
 
       return (
-        <tr ref={setMergedRef} style={style} className="bg-indigo-50/30">
-          <td className="px-2 text-center align-middle">
-            <Icon name="grip-vertical" className="h-3.5 w-3.5 text-gray-200 mx-auto" />
-          </td>
-          <td className="px-2 py-1">
-            <div data-field="codigo_item" className="w-full">
-              <TipoGastoDetalleAutocomplete
-                value={editingServicioForm.codigo_item || ""}
-                codePrefix="05"
-                onKeyDown={handleKeyDown}
-                onSelect={(gasto) => {
-                  if (!gasto) {
+        <>
+          <tr ref={setMergedRef} style={style} className="bg-indigo-50/30">
+            <td className="px-2 text-center align-middle">
+              <Icon name="grip-vertical" className="h-3.5 w-3.5 text-gray-200 mx-auto" />
+            </td>
+            <td className="px-2 py-1">
+              <div data-field="codigo_item" className="w-full">
+                <TipoGastoDetalleAutocomplete
+                  value={editingServicioForm.codigo_item || ""}
+                  codePrefix="05"
+                  onTriggerCreateGasto={(name) => handleTriggerCreateGasto(name, 'edit-' + item.id_servicio, '05', handleGastoCreatedEditLocal, handleGastoCancelEditLocal)}
+                  onKeyDown={handleKeyDown}
+                  onSelect={(gasto) => {
+                    if (!gasto) {
+                      setEditingServicioForm(prev => ({
+                        ...prev,
+                        codigo_item: '',
+                        descripcion_item: ''
+                      }));
+                      return;
+                    }
                     setEditingServicioForm(prev => ({
                       ...prev,
-                      codigo_item: '',
-                      descripcion_item: ''
+                      codigo_item: gasto.codigo,
+                      descripcion_item: gasto.nombre
                     }));
-                    return;
-                  }
-                  setEditingServicioForm(prev => ({
-                    ...prev,
-                    codigo_item: gasto.codigo,
-                    descripcion_item: gasto.nombre
-                  }));
-                }}
+                  }}
+                />
+              </div>
+            </td>
+            <td className="px-2 py-1">
+              <input
+                type="text"
+                data-field="descripcion_item"
+                onKeyDown={handleKeyDown}
+                className="w-full text-[10.5px] border border-gray-300 rounded px-1.5 py-0.5 uppercase font-semibold text-gray-700 bg-white"
+                value={editingServicioForm.descripcion_item || ""}
+                onChange={(e) => setEditingServicioForm({ ...editingServicioForm, descripcion_item: e.target.value.toUpperCase() })}
               />
-            </div>
-          </td>
-          <td className="px-2 py-1">
-            <input
-              type="text"
-              data-field="descripcion_item"
-              onKeyDown={handleKeyDown}
-              className="w-full text-[10.5px] border border-gray-300 rounded px-1.5 py-0.5 uppercase font-semibold text-gray-700 bg-white"
-              value={editingServicioForm.descripcion_item || ""}
-              onChange={(e) => setEditingServicioForm({ ...editingServicioForm, descripcion_item: e.target.value.toUpperCase() })}
-            />
-          </td>
-          <td className="px-2 py-1 text-center">
-            <input
-              type="number"
-              data-field="cantidad_hombres"
-              onKeyDown={handleKeyDown}
-              className="w-full text-center text-[10.5px] border border-gray-300 text-center rounded px-1 py-0.5 font-bold bg-white"
-              value={editingServicioForm.cantidad_hombres === undefined || editingServicioForm.cantidad_hombres === null ? "" : editingServicioForm.cantidad_hombres}
-              onChange={(e) => setEditingServicioForm({ ...editingServicioForm, cantidad_hombres: parseInt(e.target.value) || 0 })}
-              onFocus={(e) => e.target.select()}
-            />
-          </td>
-          <td className="px-2 py-1 text-center">
-            <input
-              type="number"
-              data-field="cantidad_dias"
-              onKeyDown={handleKeyDown}
-              className="w-full text-center text-[10.5px] border border-gray-300 text-center rounded px-1 py-0.5 font-semibold bg-white"
-              value={editingServicioForm.cantidad_dias === undefined || editingServicioForm.cantidad_dias === null ? "" : editingServicioForm.cantidad_dias}
-              onChange={(e) => setEditingServicioForm({ ...editingServicioForm, cantidad_dias: parseInt(e.target.value) || 0 })}
-              onFocus={(e) => e.target.select()}
-            />
-          </td>
-          <td className="px-2 py-1 text-right">
-            <input
-              type="text"
-              data-field="cotizado_hombre_dia"
-              onKeyDown={handleKeyDown}
-              className="w-full text-[10.5px] border border-gray-300 text-right rounded px-1 py-0.5 bg-white"
-              value={editingServicioForm.cotizado_hombre_dia === undefined || editingServicioForm.cotizado_hombre_dia === null ? "" : editingServicioForm.cotizado_hombre_dia}
-              onChange={(e) => handleDecimalChange(e, (val) => setEditingServicioForm({ ...editingServicioForm, cotizado_hombre_dia: val }))}
-              onFocus={(e) => e.target.select()}
-            />
-          </td>
-          <td className="px-3 py-1.5 text-[10.5px] text-gray-900 text-right font-black">
-            {formatMoneySymbol(calculatedCotizadoTotal)}
-          </td>
-          <td className="px-3 py-1 text-right">
-            <div className="h-4" />
-          </td>
-        </tr>
+            </td>
+            <td className="px-2 py-1 text-center">
+              <input
+                type="number"
+                data-field="cantidad_hombres"
+                onKeyDown={handleKeyDown}
+                className="w-full text-center text-[10.5px] border border-gray-300 text-center rounded px-1 py-0.5 font-bold bg-white"
+                value={editingServicioForm.cantidad_hombres === undefined || editingServicioForm.cantidad_hombres === null ? "" : editingServicioForm.cantidad_hombres}
+                onChange={(e) => setEditingServicioForm({ ...editingServicioForm, cantidad_hombres: parseInt(e.target.value) || 0 })}
+                onFocus={(e) => e.target.select()}
+              />
+            </td>
+            <td className="px-2 py-1 text-center">
+              <input
+                type="number"
+                data-field="cantidad_dias"
+                onKeyDown={handleKeyDown}
+                className="w-full text-center text-[10.5px] border border-gray-300 text-center rounded px-1 py-0.5 font-semibold bg-white"
+                value={editingServicioForm.cantidad_dias === undefined || editingServicioForm.cantidad_dias === null ? "" : editingServicioForm.cantidad_dias}
+                onChange={(e) => setEditingServicioForm({ ...editingServicioForm, cantidad_dias: parseInt(e.target.value) || 0 })}
+                onFocus={(e) => e.target.select()}
+              />
+            </td>
+            <td className="px-2 py-1 text-right">
+              <input
+                type="text"
+                data-field="cotizado_hombre_dia"
+                onKeyDown={handleKeyDown}
+                className="w-full text-[10.5px] border border-gray-300 text-right rounded px-1 py-0.5 bg-white"
+                value={editingServicioForm.cotizado_hombre_dia === undefined || editingServicioForm.cotizado_hombre_dia === null ? "" : editingServicioForm.cotizado_hombre_dia}
+                onChange={(e) => handleDecimalChange(e, (val) => setEditingServicioForm({ ...editingServicioForm, cotizado_hombre_dia: val }))}
+                onFocus={(e) => e.target.select()}
+              />
+            </td>
+            <td className="px-3 py-1.5 text-[10.5px] text-gray-900 text-right font-black">
+              {formatMoneySymbol(calculatedCotizadoTotal)}
+            </td>
+            <td className="px-3 py-1 text-right">
+              <div className="h-4" />
+            </td>
+          </tr>
+          {renderInlineGastoCreateForm && renderInlineGastoCreateForm('edit-' + item.id_servicio, handleGastoCreatedEditLocal, handleGastoCancelEditLocal)}
+        </>
       );
     }
 
@@ -11386,96 +12330,117 @@ const SortableItemServicioRow = ({
       const calculatedCotizadoTotal = calculatedCostoTotal + calculatedUtilidad;
       const calculatedCotizadoHD = formCosto * (1 + formPorcentaje / 100);
 
+      const handleGastoCreatedEditLocal = (registro) => {
+        setEditingServicioForm(prev => ({
+          ...prev,
+          codigo_item: registro.codigo,
+          descripcion_item: registro.nombre
+        }));
+        setTimeout(() => {
+          const descInput = document.querySelector('[data-field="descripcion_item"]');
+          if (descInput) {
+            descInput.focus();
+            if (descInput.select) descInput.select();
+          }
+        }, 100);
+      };
+
+      const handleGastoCancelEditLocal = () => {};
+
       return (
-        <tr ref={setMergedRef} style={style} className="bg-indigo-50/30">
-          <td className="px-2 text-center align-middle">
-            <Icon name="grip-vertical" className="h-3.5 w-3.5 text-gray-200 mx-auto" />
-          </td>
-          <td className="px-2 py-1">
-            <div data-field="codigo_item" className="w-full">
-              <TipoGastoDetalleAutocomplete
-                value={editingServicioForm.codigo_item || ""}
-                codePrefix="06"
-                onKeyDown={handleKeyDown}
-                onSelect={(gasto) => {
-                  if (!gasto) {
+        <>
+          <tr ref={setMergedRef} style={style} className="bg-indigo-50/30">
+            <td className="px-2 text-center align-middle">
+              <Icon name="grip-vertical" className="h-3.5 w-3.5 text-gray-200 mx-auto" />
+            </td>
+            <td className="px-2 py-1">
+              <div data-field="codigo_item" className="w-full">
+                <TipoGastoDetalleAutocomplete
+                  value={editingServicioForm.codigo_item || ""}
+                  codePrefix="06"
+                  onTriggerCreateGasto={(name) => handleTriggerCreateGasto(name, 'edit-' + item.id_servicio, '06', handleGastoCreatedEditLocal, handleGastoCancelEditLocal)}
+                  onKeyDown={handleKeyDown}
+                  onSelect={(gasto) => {
+                    if (!gasto) {
+                      setEditingServicioForm(prev => ({
+                        ...prev,
+                        codigo_item: '',
+                        descripcion_item: ''
+                      }));
+                      return;
+                    }
                     setEditingServicioForm(prev => ({
                       ...prev,
-                      codigo_item: '',
-                      descripcion_item: ''
+                      codigo_item: gasto.codigo,
+                      descripcion_item: gasto.nombre
                     }));
-                    return;
-                  }
-                  setEditingServicioForm(prev => ({
-                    ...prev,
-                    codigo_item: gasto.codigo,
-                    descripcion_item: gasto.nombre
-                  }));
-                }}
-              />
-            </div>
-          </td>
-          <td className="px-2 py-1">
-            <input
-              type="text"
-              data-field="descripcion_item"
-              onKeyDown={handleKeyDown}
-              className="w-full text-[10.5px] border border-gray-300 rounded px-1.5 py-0.5 uppercase font-semibold text-gray-700 bg-white"
-              value={editingServicioForm.descripcion_item || ""}
-              onChange={(e) => setEditingServicioForm({ ...editingServicioForm, descripcion_item: e.target.value.toUpperCase() })}
-            />
-          </td>
-          <td className="px-2 py-1 text-center">
-            <input
-              type="number"
-              data-field="cantidad_hombres"
-              onKeyDown={handleKeyDown}
-              className="w-full text-center text-[10.5px] border border-gray-300 text-center rounded px-1 py-0.5 font-bold bg-white"
-              value={editingServicioForm.cantidad_hombres === undefined || editingServicioForm.cantidad_hombres === null ? "" : editingServicioForm.cantidad_hombres}
-              onChange={(e) => setEditingServicioForm({ ...editingServicioForm, cantidad_hombres: parseInt(e.target.value) || 0 })}
-              onFocus={(e) => e.target.select()}
-            />
-          </td>
-          <td className="px-2 py-1 text-right">
-            <input
-              type="text"
-              data-field="costo_hombre_dia"
-              onKeyDown={handleKeyDown}
-              className="w-full text-[10.5px] border border-gray-300 text-right rounded px-1 py-0.5 bg-white"
-              value={editingServicioForm.costo_hombre_dia === undefined || editingServicioForm.costo_hombre_dia === null ? "" : editingServicioForm.costo_hombre_dia}
-              onChange={(e) => handleDecimalChange(e, (val) => setEditingServicioForm({ ...editingServicioForm, costo_hombre_dia: val }))}
-              onFocus={(e) => e.target.select()}
-            />
-          </td>
-          <td className="px-2 py-1">
-            <div className="flex flex-col gap-1 items-center justify-center text-center">
-              <span className="text-[10.5px] font-bold text-gray-700">
-                {formatMoneySymbol(calculatedUtilidad)}
-              </span>
-              <div className="relative flex items-center justify-center w-full">
-                <input
-                  type="text"
-                  data-field="porcentaje"
-                  onKeyDown={handleKeyDown}
-                  className="w-full text-[10px] border border-gray-300 text-center rounded px-1 py-0.5 font-medium text-gray-500 bg-white"
-                  value={editingServicioForm.porcentaje === undefined || editingServicioForm.porcentaje === null ? "" : editingServicioForm.porcentaje}
-                  onChange={(e) => handleDecimalChange(e, (val) => setEditingServicioForm({ ...editingServicioForm, porcentaje: val }))}
-                  onFocus={(e) => e.target.select()}
+                  }}
                 />
-                <span className="absolute right-1 text-[9px] text-gray-400">%</span>
               </div>
-            </div>
-          </td>
-          <td className="px-3 py-1.5 text-[10.5px] text-gray-600 text-right font-medium">
-            {formatMoneySymbol(calculatedCotizadoHD)}
-          </td>
-          <td className="px-3 py-1.5 text-[10.5px] text-gray-900 text-right font-black">
-            {formatMoneySymbol(calculatedCotizadoTotal)}
-          </td>
-          <td className="px-3 py-1 text-right">
-            <div className="h-4" />
-          </td>
-        </tr>
+            </td>
+            <td className="px-2 py-1">
+              <input
+                type="text"
+                data-field="descripcion_item"
+                onKeyDown={handleKeyDown}
+                className="w-full text-[10.5px] border border-gray-300 rounded px-1.5 py-0.5 uppercase font-semibold text-gray-700 bg-white"
+                value={editingServicioForm.descripcion_item || ""}
+                onChange={(e) => setEditingServicioForm({ ...editingServicioForm, descripcion_item: e.target.value.toUpperCase() })}
+              />
+            </td>
+            <td className="px-2 py-1 text-center">
+              <input
+                type="number"
+                data-field="cantidad_hombres"
+                onKeyDown={handleKeyDown}
+                className="w-full text-center text-[10.5px] border border-gray-300 text-center rounded px-1 py-0.5 font-bold bg-white"
+                value={editingServicioForm.cantidad_hombres === undefined || editingServicioForm.cantidad_hombres === null ? "" : editingServicioForm.cantidad_hombres}
+                onChange={(e) => setEditingServicioForm({ ...editingServicioForm, cantidad_hombres: parseInt(e.target.value) || 0 })}
+                onFocus={(e) => e.target.select()}
+              />
+            </td>
+            <td className="px-2 py-1 text-right">
+              <input
+                type="text"
+                data-field="costo_hombre_dia"
+                onKeyDown={handleKeyDown}
+                className="w-full text-[10.5px] border border-gray-300 text-right rounded px-1 py-0.5 bg-white"
+                value={editingServicioForm.costo_hombre_dia === undefined || editingServicioForm.costo_hombre_dia === null ? "" : editingServicioForm.costo_hombre_dia}
+                onChange={(e) => handleDecimalChange(e, (val) => setEditingServicioForm({ ...editingServicioForm, costo_hombre_dia: val }))}
+                onFocus={(e) => e.target.select()}
+              />
+            </td>
+            <td className="px-2 py-1">
+              <div className="flex flex-col gap-1 items-center justify-center text-center">
+                <span className="text-[10.5px] font-bold text-gray-700">
+                  {formatMoneySymbol(calculatedUtilidad)}
+                </span>
+                <div className="relative flex items-center justify-center w-full">
+                  <input
+                    type="text"
+                    data-field="porcentaje"
+                    onKeyDown={handleKeyDown}
+                    className="w-full text-[10px] border border-gray-300 text-center rounded px-1 py-0.5 font-medium text-gray-500 bg-white"
+                    value={editingServicioForm.porcentaje === undefined || editingServicioForm.porcentaje === null ? "" : editingServicioForm.porcentaje}
+                    onChange={(e) => handleDecimalChange(e, (val) => setEditingServicioForm({ ...editingServicioForm, porcentaje: val }))}
+                    onFocus={(e) => e.target.select()}
+                  />
+                  <span className="absolute right-1 text-[9px] text-gray-400">%</span>
+                </div>
+              </div>
+            </td>
+            <td className="px-3 py-1.5 text-[10.5px] text-gray-600 text-right font-medium">
+              {formatMoneySymbol(calculatedCotizadoHD)}
+            </td>
+            <td className="px-3 py-1.5 text-[10.5px] text-gray-900 text-right font-black">
+              {formatMoneySymbol(calculatedCotizadoTotal)}
+            </td>
+            <td className="px-3 py-1 text-right">
+              <div className="h-4" />
+            </td>
+          </tr>
+          {renderInlineGastoCreateForm && renderInlineGastoCreateForm('edit-' + item.id_servicio, handleGastoCreatedEditLocal, handleGastoCancelEditLocal)}
+        </>
       );
     }
   }

@@ -299,7 +299,7 @@ export const ClienteAutocomplete = ({ value, onSelect, isReadOnly, initialId, on
               onMouseDown={(e) => e.preventDefault()}
               onWheel={(e) => e.stopPropagation()}
               onTouchMove={(e) => e.stopPropagation()}
-              className="bg-white/95 backdrop-blur-md border border-slate-100/80 rounded-2xl shadow-xl shadow-slate-200/40 max-h-60 overflow-y-auto p-1.5 animate-in fade-in slide-in-from-top-2 duration-200 text-left font-sans pointer-events-auto"
+              className="autocomplete-dropdown-portal bg-white/95 backdrop-blur-md border border-slate-100/80 rounded-2xl shadow-xl shadow-slate-200/40 max-h-60 overflow-y-auto p-1.5 animate-in fade-in slide-in-from-top-2 duration-200 text-left font-sans pointer-events-auto"
             >
               {loading ? (
                 <div className="p-3 text-center text-xs text-slate-400 font-bold uppercase tracking-wider animate-pulse">Buscando...</div>
@@ -600,7 +600,7 @@ export const RepresentanteAutocomplete = ({ value, clienteId, onSelect, isReadOn
               onMouseDown={(e) => e.preventDefault()}
               onWheel={(e) => e.stopPropagation()}
               onTouchMove={(e) => e.stopPropagation()}
-              className="bg-white/95 backdrop-blur-md border border-slate-100/80 rounded-2xl shadow-xl shadow-slate-200/40 max-h-60 overflow-y-auto p-1.5 animate-in fade-in slide-in-from-top-2 duration-200 text-left font-sans pointer-events-auto"
+              className="autocomplete-dropdown-portal bg-white/95 backdrop-blur-md border border-slate-100/80 rounded-2xl shadow-xl shadow-slate-200/40 max-h-60 overflow-y-auto p-1.5 animate-in fade-in slide-in-from-top-2 duration-200 text-left font-sans pointer-events-auto"
             >
               {loading ? (
                 <div className="p-3 text-center text-xs text-slate-400 font-bold uppercase tracking-wider animate-pulse">Buscando...</div>
@@ -972,7 +972,7 @@ export const ProductoAutocomplete = ({
               onMouseDown={(e) => e.preventDefault()}
               onWheel={(e) => e.stopPropagation()}
               onTouchMove={(e) => e.stopPropagation()}
-              className="bg-white/95 backdrop-blur-md border border-slate-100/80 rounded-2xl shadow-xl shadow-slate-200/40 max-h-60 overflow-y-auto p-1.5 animate-in fade-in slide-in-from-top-2 duration-200 text-left pointer-events-auto"
+              className="autocomplete-dropdown-portal bg-white/95 backdrop-blur-md border border-slate-100/80 rounded-2xl shadow-xl shadow-slate-200/40 max-h-60 overflow-y-auto p-1.5 animate-in fade-in slide-in-from-top-2 duration-200 text-left pointer-events-auto"
             >
               {loading ? (
                 <div className="p-3 text-center text-xs text-slate-400 font-bold uppercase tracking-wider animate-pulse">Buscando...</div>
@@ -1034,7 +1034,7 @@ export const ProductoAutocomplete = ({
   );
 };
 
-export const TipoPersonalAutocomplete = ({ value, idArea, onSelect, isReadOnly, tabIndex, placeholder = "Buscar personal...", onKeyDown }) => {
+export const TipoPersonalAutocomplete = ({ value, idArea, onSelect, isReadOnly, tabIndex, placeholder = "Buscar personal...", onKeyDown, onTriggerCreatePersonal, catalogoVersion = 0 }) => {
   const [query, setQuery] = useState("");
   const [allPersonal, setAllPersonal] = useState([]);
   const [results, setResults] = useState([]);
@@ -1081,7 +1081,7 @@ export const TipoPersonalAutocomplete = ({ value, idArea, onSelect, isReadOnly, 
       }
     };
     loadPersonal();
-  }, [idArea]);
+  }, [idArea, catalogoVersion]);
 
   // Measure text width dynamically
   useEffect(() => {
@@ -1177,10 +1177,6 @@ export const TipoPersonalAutocomplete = ({ value, idArea, onSelect, isReadOnly, 
     const uppercaseName = personalName.trim().toUpperCase();
     if (!uppercaseName) return;
 
-    if (!window.confirm(`¿Desea crear el tipo de personal "${uppercaseName}" en la base de datos?`)) {
-      return;
-    }
-
     setCreating(true);
     try {
       const { data: res } = await api.post("core/tipo_personal/", {
@@ -1209,6 +1205,44 @@ export const TipoPersonalAutocomplete = ({ value, idArea, onSelect, isReadOnly, 
     }
   };
 
+  const getNextCode = () => {
+    if (!idArea) return "";
+    const prefix = String(idArea).padStart(2, '0');
+    let maxNum = 0;
+    let hasSeparator = false;
+    let zfillLen = 2;
+
+    const areaCodes = allPersonal
+      .filter(p => p.codigo)
+      .map(p => p.codigo);
+
+    for (const code of areaCodes) {
+      if (!code) continue;
+      const regex = new RegExp(`^${prefix}(-?)(\\d+)$`);
+      const match = code.match(regex);
+      if (match) {
+        const sep = match[1];
+        const numStr = match[2];
+        if (sep === '-') {
+          hasSeparator = true;
+        }
+        const num = parseInt(numStr, 10);
+        if (!isNaN(num) && num > maxNum) {
+          maxNum = num;
+          zfillLen = numStr.length;
+        }
+      }
+    }
+
+    const nextNum = maxNum + 1;
+    const paddedNum = String(nextNum).padStart(zfillLen, '0');
+    if (hasSeparator || areaCodes.some(c => c.startsWith(prefix) && c.includes('-'))) {
+      return `${prefix}-${paddedNum}`;
+    } else {
+      return `${prefix}${paddedNum}`;
+    }
+  };
+
   const handleBlur = () => {
     setTimeout(() => {
       setIsFocused(false);
@@ -1223,7 +1257,7 @@ export const TipoPersonalAutocomplete = ({ value, idArea, onSelect, isReadOnly, 
           onSelect(match);
         } else {
           const hyphenIdx = query.indexOf('-');
-          const code = hyphenIdx !== -1 ? query.substring(0, hyphenIdx).trim() : query.trim();
+          const code = hyphenIdx !== -1 ? query.substring(0, hyphenIdx).trim() : getNextCode();
           const nombre = hyphenIdx !== -1 ? query.substring(hyphenIdx + 1).trim() : query.trim();
           onSelect({ codigo: code, nombre: nombre, isCustom: true });
         }
@@ -1254,7 +1288,13 @@ export const TipoPersonalAutocomplete = ({ value, idArea, onSelect, isReadOnly, 
       if (highlightIndex >= 0 && highlightIndex < results.length && results[highlightIndex]) {
         handleSelectOption(results[highlightIndex]);
       } else if (highlightIndex === results.length && !exactMatchExists && query.trim()) {
-        handleCreatePersonal(query);
+        if (onTriggerCreatePersonal) {
+          onTriggerCreatePersonal(query);
+          setShowDropdown(false);
+          setHighlightIndex(-1);
+        } else {
+          handleCreatePersonal(query);
+        }
       } else {
         setShowDropdown(false);
         setHighlightIndex(-1);
@@ -1267,7 +1307,7 @@ export const TipoPersonalAutocomplete = ({ value, idArea, onSelect, isReadOnly, 
             onSelect(match);
           } else {
             const hyphenIdx = query.indexOf('-');
-            const code = hyphenIdx !== -1 ? query.substring(0, hyphenIdx).trim() : query.trim();
+            const code = hyphenIdx !== -1 ? query.substring(0, hyphenIdx).trim() : getNextCode();
             const nombre = hyphenIdx !== -1 ? query.substring(hyphenIdx + 1).trim() : query.trim();
             onSelect({ codigo: code, nombre: nombre, isCustom: true });
           }
@@ -1313,12 +1353,18 @@ export const TipoPersonalAutocomplete = ({ value, idArea, onSelect, isReadOnly, 
             className="bg-transparent hover:bg-white focus:bg-white border border-gray-200 rounded px-1.5 py-0.5 font-bold text-gray-800 uppercase outline-none text-[11px] transition-all w-full focus:ring-1 focus:ring-indigo-500"
             value={query}
             onFocus={(e) => {
-              e.target.select();
+              const target = e.target;
+              setTimeout(() => {
+                if (target) target.select();
+              }, 50);
               handleFocus();
             }}
             onBlur={handleBlur}
             onClick={(e) => {
-              e.target.select();
+              const target = e.target;
+              setTimeout(() => {
+                if (target) target.select();
+              }, 50);
               if (!showDropdown) handleFocus();
             }}
             onChange={(e) => {
@@ -1345,7 +1391,7 @@ export const TipoPersonalAutocomplete = ({ value, idArea, onSelect, isReadOnly, 
               onMouseDown={(e) => e.preventDefault()}
               onWheel={(e) => e.stopPropagation()}
               onTouchMove={(e) => e.stopPropagation()}
-              className="bg-white border border-slate-200 rounded-xl shadow-xl max-h-60 overflow-y-auto p-1.5 animate-in fade-in slide-in-from-top-2 duration-200 text-left pointer-events-auto"
+              className="autocomplete-dropdown-portal bg-white border border-slate-200 rounded-xl shadow-xl max-h-60 overflow-y-auto p-1.5 animate-in fade-in slide-in-from-top-2 duration-200 text-left pointer-events-auto"
             >
               {creating ? (
                 <div className="p-3 text-center text-xs text-slate-400 font-bold uppercase tracking-wider animate-pulse">Creando Personal...</div>
@@ -1389,7 +1435,13 @@ export const TipoPersonalAutocomplete = ({ value, idArea, onSelect, isReadOnly, 
                     <div
                       onMouseDown={(e) => {
                         e.preventDefault();
-                        handleCreatePersonal(query);
+                        if (onTriggerCreatePersonal) {
+                          onTriggerCreatePersonal(query);
+                          setShowDropdown(false);
+                          setHighlightIndex(-1);
+                        } else {
+                          handleCreatePersonal(query);
+                        }
                       }}
                       className={`px-3 py-2 cursor-pointer rounded-lg mb-1 last:mb-0 border border-dashed text-center font-bold text-[10.5px] tracking-wide uppercase transition-colors
                         ${highlightIndex === results.length 
@@ -1410,7 +1462,7 @@ export const TipoPersonalAutocomplete = ({ value, idArea, onSelect, isReadOnly, 
   );
 };
 
-export const TipoGastoDetalleAutocomplete = ({ value, codePrefix, onSelect, isReadOnly, tabIndex, placeholder = "Buscar gasto...", onKeyDown }) => {
+export const TipoGastoDetalleAutocomplete = ({ value, codePrefix, onSelect, isReadOnly, tabIndex, placeholder = "Buscar gasto...", onKeyDown, onTriggerCreateGasto }) => {
   const [query, setQuery] = useState("");
   const [allGastos, setAllGastos] = useState([]);
   const [results, setResults] = useState([]);
@@ -1571,6 +1623,43 @@ export const TipoGastoDetalleAutocomplete = ({ value, codePrefix, onSelect, isRe
     }
   };
 
+  const getNextCode = () => {
+    if (!codePrefix) return "";
+    let maxNum = 0;
+    let hasSeparator = false;
+    let zfillLen = 3;
+
+    const activeCodes = allGastos
+      .filter(g => g.codigo && g.codigo.startsWith(codePrefix))
+      .map(g => g.codigo);
+
+    for (const code of activeCodes) {
+      if (!code) continue;
+      const regex = new RegExp(`^${codePrefix}(-?)(\\d+)$`);
+      const match = code.match(regex);
+      if (match) {
+        const sep = match[1];
+        const numStr = match[2];
+        if (sep === '-') {
+          hasSeparator = true;
+        }
+        const num = parseInt(numStr, 10);
+        if (!isNaN(num) && num > maxNum) {
+          maxNum = num;
+          zfillLen = numStr.length;
+        }
+      }
+    }
+
+    const nextNum = maxNum + 1;
+    const paddedNum = String(nextNum).padStart(zfillLen, '0');
+    if (hasSeparator || activeCodes.some(c => c.startsWith(codePrefix) && c.includes('-'))) {
+      return `${codePrefix}-${paddedNum}`;
+    } else {
+      return `${codePrefix}${paddedNum}`;
+    }
+  };
+
   const handleBlur = () => {
     setTimeout(() => {
       setIsFocused(false);
@@ -1583,7 +1672,10 @@ export const TipoGastoDetalleAutocomplete = ({ value, codePrefix, onSelect, isRe
         if (match) {
           onSelect(match);
         } else {
-          onSelect({ codigo: query, nombre: query, isCustom: true });
+          const hyphenIdx = query.indexOf('-');
+          const code = hyphenIdx !== -1 ? query.substring(0, hyphenIdx).trim() : getNextCode();
+          const nombre = hyphenIdx !== -1 ? query.substring(hyphenIdx + 1).trim() : query.trim();
+          onSelect({ codigo: code, nombre: nombre, isCustom: true });
         }
       }
     }, 150);
@@ -1612,7 +1704,13 @@ export const TipoGastoDetalleAutocomplete = ({ value, codePrefix, onSelect, isRe
       if (highlightIndex >= 0 && highlightIndex < results.length && results[highlightIndex]) {
         handleSelectOption(results[highlightIndex]);
       } else if (highlightIndex === results.length && !exactMatchExists && query.trim()) {
-        handleCreateGasto(query);
+        if (onTriggerCreateGasto) {
+          onTriggerCreateGasto(query);
+          setShowDropdown(false);
+          setHighlightIndex(-1);
+        } else {
+          handleCreateGasto(query);
+        }
       } else {
         setShowDropdown(false);
         setHighlightIndex(-1);
@@ -1623,7 +1721,10 @@ export const TipoGastoDetalleAutocomplete = ({ value, codePrefix, onSelect, isRe
           if (match) {
             onSelect(match);
           } else {
-            onSelect({ codigo: query, nombre: query, isCustom: true });
+            const hyphenIdx = query.indexOf('-');
+            const code = hyphenIdx !== -1 ? query.substring(0, hyphenIdx).trim() : getNextCode();
+            const nombre = hyphenIdx !== -1 ? query.substring(hyphenIdx + 1).trim() : query.trim();
+            onSelect({ codigo: code, nombre: nombre, isCustom: true });
           }
         }
       }
@@ -1666,12 +1767,18 @@ export const TipoGastoDetalleAutocomplete = ({ value, codePrefix, onSelect, isRe
             className="bg-transparent hover:bg-white focus:bg-white border border-gray-200 rounded px-1.5 py-0.5 font-bold text-gray-800 uppercase outline-none text-[11px] transition-all w-full focus:ring-1 focus:ring-indigo-500"
             value={query}
             onFocus={(e) => {
-              e.target.select();
+              const target = e.target;
+              setTimeout(() => {
+                if (target) target.select();
+              }, 50);
               handleFocus();
             }}
             onBlur={handleBlur}
             onClick={(e) => {
-              e.target.select();
+              const target = e.target;
+              setTimeout(() => {
+                if (target) target.select();
+              }, 50);
               if (!showDropdown) handleFocus();
             }}
             onChange={(e) => {
@@ -1697,7 +1804,7 @@ export const TipoGastoDetalleAutocomplete = ({ value, codePrefix, onSelect, isRe
               onMouseDown={(e) => e.preventDefault()}
               onWheel={(e) => e.stopPropagation()}
               onTouchMove={(e) => e.stopPropagation()}
-              className="bg-white border border-slate-200 rounded-xl shadow-xl max-h-60 overflow-y-auto p-1.5 animate-in fade-in slide-in-from-top-2 duration-200 text-left pointer-events-auto"
+              className="autocomplete-dropdown-portal bg-white border border-slate-200 rounded-xl shadow-xl max-h-60 overflow-y-auto p-1.5 animate-in fade-in slide-in-from-top-2 duration-200 text-left pointer-events-auto"
             >
               {creating ? (
                 <div className="p-3 text-center text-xs text-slate-400 font-bold uppercase tracking-wider animate-pulse">Creando Gasto...</div>
@@ -1731,7 +1838,13 @@ export const TipoGastoDetalleAutocomplete = ({ value, codePrefix, onSelect, isRe
                     <div
                       onMouseDown={(e) => {
                         e.preventDefault();
-                        handleCreateGasto(query);
+                        if (onTriggerCreateGasto) {
+                          onTriggerCreateGasto(query);
+                          setShowDropdown(false);
+                          setHighlightIndex(-1);
+                        } else {
+                          handleCreateGasto(query);
+                        }
                       }}
                       className={`px-3 py-2 cursor-pointer rounded-lg mb-1 last:mb-0 border border-dashed text-center font-bold text-[10.5px] tracking-wide uppercase transition-colors
                         ${highlightIndex === results.length 

@@ -317,7 +317,7 @@ def lista_tipo_personal(request):
                 return Response({"ok": False, "error": "Nombre y Área son requeridos"}, status=400)
             
             import re
-            from core.models import Area
+            from users.models import Area
             try:
                 area = Area.objects.get(pk=id_area)
             except Area.DoesNotExist:
@@ -328,6 +328,7 @@ def lista_tipo_personal(request):
             
             max_num = 0
             has_separator = False
+            zfill_len = 2
             for code in existing_codes:
                 if not code:
                     continue
@@ -340,14 +341,15 @@ def lista_tipo_personal(request):
                         num = int(num_str)
                         if num > max_num:
                             max_num = num
+                            zfill_len = len(num_str)
                     except ValueError:
                         pass
             
             next_num = max_num + 1
             if has_separator or any('-' in c for c in existing_codes if c.startswith(prefix)):
-                next_code = f"{prefix}-{str(next_num).zfill(3)}"
+                next_code = f"{prefix}-{str(next_num).zfill(zfill_len)}"
             else:
-                next_code = f"{prefix}{str(next_num).zfill(3)}"
+                next_code = f"{prefix}{str(next_num).zfill(zfill_len)}"
                 
             nuevo_personal = TipoPersonal.objects.create(
                 codigo=next_code,
@@ -404,6 +406,7 @@ def lista_tgasto_detalle(request):
             
             max_num = 0
             has_separator = False
+            zfill_len = 3
             for code in existing_codes:
                 if not code:
                     continue
@@ -416,14 +419,15 @@ def lista_tgasto_detalle(request):
                         num = int(num_str)
                         if num > max_num:
                             max_num = num
+                            zfill_len = len(num_str)
                     except ValueError:
                         pass
             
             next_num = max_num + 1
             if has_separator or any('-' in c for c in existing_codes if c.startswith(code_prefix)):
-                next_code = f"{code_prefix}-{str(next_num).zfill(3)}"
+                next_code = f"{code_prefix}-{str(next_num).zfill(zfill_len)}"
             else:
-                next_code = f"{code_prefix}{str(next_num).zfill(3)}"
+                next_code = f"{code_prefix}{str(next_num).zfill(zfill_len)}"
                 
             nuevo_gasto = TipoGastoDetalle.objects.create(
                 codigo=next_code,

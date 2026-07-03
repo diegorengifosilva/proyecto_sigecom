@@ -177,9 +177,9 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
             });
           }
 
-          const sub1Title = (form.categoryTitles?.["04"] || "MANO DE OBRA").toUpperCase();
-          const sub2Title = (form.categoryTitles?.["05"] || "GASTOS SERVICIO").toUpperCase();
-          const sub3Title = (form.categoryTitles?.["06"] || "OTROS").toUpperCase();
+          const sub1Title = (form.categoryTitles?.["04"] || "").toUpperCase();
+          const sub2Title = (form.categoryTitles?.["05"] || "").toUpperCase();
+          const sub3Title = (form.categoryTitles?.["06"] || "").toUpperCase();
 
           next[tempGroupId] = {
             id_servicio: tempGroupId,

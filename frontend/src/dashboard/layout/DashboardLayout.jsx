@@ -12,11 +12,18 @@ const Icon = ({ name, className }) => {
 
 const NAV_ITEMS = [
   { path: "/sigecom/home", label: "Dashboard", icon: "LayoutDashboard" },
-  { path: "/sigecom/comercial", label: "Comercial ", icon: "FileText" },
-  { path: "/sigecom/logistica", label: "Logística", icon: "ClipboardList" },
+  { path: "/sigecom/comercial", label: "Comercial", icon: "FileText" },
+  {
+    path: "/sigecom/logistica",
+    label: "Logística",
+    icon: "ClipboardList",
+    subItems: [
+      { path: "/sigecom/logistica/tablas", label: "Tablas" }
+    ]
+  },
   { path: "/sigecom/proyectos", label: "Proyectos", icon: "Briefcase" },
   { path: "/sigecom/compras", label: "Compras", icon: "ShoppingCart" },
-  { path: "/sigecom/almacen", label: "Almacéneeee", icon: "Package" },
+  { path: "/sigecom/almacen", label: "Almacén", icon: "Package" },
   { path: "/sigecom/finanzas", label: "Finanzas", icon: "DollarSign" },
   { path: "/sigecom/maestro/catalogo", label: "Maestro", icon: "Database" },
   { path: "/sigecom/audit", label: "Auditoría", icon: "ShieldCheck" },
@@ -29,6 +36,7 @@ export default function DashboardLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const [breadcrumbOverride, setBreadcrumbOverride] = useState(null);
+  const [openMenus, setOpenMenus] = useState({});
 
   useEffect(() => {
     // Clear override whenever location changes
@@ -48,6 +56,17 @@ export default function DashboardLayout() {
 
   useEffect(() => {
     setIsMobileOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    // Auto-open menus that contain the current path
+    const activeMenus = {};
+    NAV_ITEMS.forEach(item => {
+      if (item.subItems && item.subItems.some(sub => location.pathname.startsWith(sub.path))) {
+        activeMenus[item.label] = true;
+      }
+    });
+    setOpenMenus(prev => ({ ...prev, ...activeMenus }));
   }, [location.pathname]);
 
   const handleLogout = () => {
@@ -110,24 +129,112 @@ export default function DashboardLayout() {
 
         <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
           {NAV_ITEMS.map((item) => {
+            const hasSubItems = item.subItems && item.subItems.length > 0;
             const isActive = location.pathname.startsWith(item.path);
+            const isOpen = !!openMenus[item.label];
+
+            const handleParentClick = (e) => {
+              if (!isExpanded) {
+                setIsExpanded(true);
+                setOpenMenus((prev) => ({ ...prev, [item.label]: true }));
+                navigate(item.path);
+                return;
+              }
+              setOpenMenus((prev) => ({ ...prev, [item.label]: !prev[item.label] }));
+            };
+
             return (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                title={item.label}
-                className={`flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all ${isActive
-                    ? "bg-indigo-50 text-indigo-600 shadow-sm"
-                    : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                  } ${isExpanded ? "" : "justify-center"}`}
-              >
-                <Icon
-                  name={item.icon}
-                  className={`h-5 w-5 ${isExpanded ? "mr-3" : ""} ${isActive ? "text-indigo-600" : "text-gray-400"
-                    }`}
-                />
-                {isExpanded && <span className="truncate">{item.label}</span>}
-              </NavLink>
+              <div key={item.label} className="flex flex-col">
+                {hasSubItems ? (
+                  <div>
+                    {/* Botón principal del acordeón */}
+                    <div className="flex items-center">
+                      <NavLink
+                        to={item.path}
+                        onClick={(e) => {
+                          if (!isExpanded) {
+                            e.preventDefault();
+                            setIsExpanded(true);
+                            setOpenMenus((prev) => ({ ...prev, [item.label]: true }));
+                            navigate(item.path);
+                            return;
+                          }
+                          setOpenMenus((prev) => ({ ...prev, [item.label]: true }));
+                        }}
+                        title={item.label}
+                        className={`flex-1 flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all ${
+                          isActive
+                            ? "bg-indigo-50 text-indigo-600 shadow-sm"
+                            : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                        } ${isExpanded ? "" : "justify-center"}`}
+                      >
+                        <Icon
+                          name={item.icon}
+                          className={`h-5 w-5 ${isExpanded ? "mr-3" : ""} ${
+                            isActive ? "text-indigo-600" : "text-gray-400"
+                          }`}
+                        />
+                        {isExpanded && <span className="truncate">{item.label}</span>}
+                      </NavLink>
+
+                      {/* Flecha colapsable independiente si está expandido el sidebar */}
+                      {isExpanded && (
+                        <button
+                          type="button"
+                          onClick={handleParentClick}
+                          className={`p-2.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors ml-1`}
+                        >
+                          <LucideIcons.ChevronDown
+                            className={`h-4 w-4 transition-transform duration-200 ${
+                              isOpen ? "transform rotate-180" : ""
+                            }`}
+                          />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Subopciones */}
+                    {isExpanded && isOpen && (
+                      <div className="mt-1 ml-5 pl-5 border-l border-gray-200 space-y-1 py-0.5 animate-in slide-in-from-top-1 duration-200">
+                        {item.subItems.map((sub) => {
+                          const isSubActive = location.pathname.startsWith(sub.path);
+                          return (
+                            <NavLink
+                              key={sub.path}
+                              to={sub.path}
+                              className={`block px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                                isSubActive
+                                  ? "bg-indigo-50 text-indigo-600 shadow-sm font-bold"
+                                  : "text-gray-500 hover:bg-gray-50 hover:text-gray-800"
+                              }`}
+                            >
+                              {sub.label}
+                            </NavLink>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <NavLink
+                    to={item.path}
+                    title={item.label}
+                    className={`flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all ${
+                      isActive
+                        ? "bg-indigo-50 text-indigo-600 shadow-sm"
+                        : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                    } ${isExpanded ? "" : "justify-center"}`}
+                  >
+                    <Icon
+                      name={item.icon}
+                      className={`h-5 w-5 ${isExpanded ? "mr-3" : ""} ${
+                        isActive ? "text-indigo-600" : "text-gray-400"
+                      }`}
+                    />
+                    {isExpanded && <span className="truncate">{item.label}</span>}
+                  </NavLink>
+                )}
+              </div>
             );
           })}
         </nav>
