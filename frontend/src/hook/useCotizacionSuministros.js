@@ -1185,7 +1185,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
 
     // 4️⃣ Grabar Libro de Trabajo y lanzar descarga limpia
     XLSX.utils.book_append_sheet(wb, ws, "Suministros General");
-    XLSX.writeFile(wb, `Suministros_General_${numReg}.xlsx`);
+    XLSX.writeFile(wb, `Reporte_Suministros_${numReg}.xlsx`);
 
     toast.success("Excel corporativo general descargado con éxito");
   };

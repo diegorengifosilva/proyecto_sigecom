@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import ReactQuill from 'react-quill';
@@ -1554,6 +1554,7 @@ const EditableGroupRow = ({
                               <TipoPersonalAutocomplete
                                 value={newManoObraItem.codigo_item || ""}
                                 idArea={idArea}
+                                idRegistro={numReg}
                                 catalogoVersion={catalogoVersion}
                                 onTriggerCreatePersonal={(name) => handleTriggerCreatePersonal(name, 'new', handlePersonalCreatedLocal, handlePersonalCancelLocal)}
                                 onKeyDown={(e) => {
@@ -1827,6 +1828,7 @@ const EditableGroupRow = ({
                               <TipoGastoDetalleAutocomplete
                                 value={newGastosServicioItem.codigo_item || ""}
                                 codePrefix="05"
+                                idRegistro={numReg}
                                 onTriggerCreateGasto={(name) => handleTriggerCreateGasto(name, 'new', '05', handleGastoCreatedLocal, handleGastoCancelLocal)}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') {
@@ -2038,6 +2040,7 @@ const EditableGroupRow = ({
                               <TipoGastoDetalleAutocomplete
                                 value={newOtrosItem.codigo_item || ""}
                                 codePrefix="06"
+                                idRegistro={numReg}
                                 onTriggerCreateGasto={(name) => handleTriggerCreateGasto(name, 'new', '06', handleGastoCreatedLocal, handleGastoCancelLocal)}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') {
@@ -2185,8 +2188,12 @@ const EditableGroupRow = ({
                           <th className="w-[10%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Envío</th>
                         )}
                         <th className={isVenta ? "w-[9%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[10%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Utilidad</th>
-                        <th className={isVenta ? "w-[11%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[12%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Venta Precio</th>
-                        <th className={isVenta ? "w-[11%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[13%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Venta Total</th>
+                        {!ocultarTotalesMap['draft'] && (
+                          <>
+                            <th className={isVenta ? "w-[11%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[12%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Venta Precio</th>
+                            <th className={isVenta ? "w-[11%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[13%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Venta Total</th>
+                          </>
+                        )}
                         <th className="w-[5%] px-4 py-2"></th>
                       </tr>
                     </thead>
@@ -2225,12 +2232,16 @@ const EditableGroupRow = ({
                               <span className="text-[9px] text-gray-400">{item.porcentaje_utilidad || 0}%</span>
                             </div>
                           </td>
-                          <td className="px-4 py-1.5 text-[11px] text-right text-gray-600 font-medium">
-                            {formatMoneySymbolSafe(item.precio_venta || item.costo_precio)}
-                          </td>
-                          <td className="px-4 py-1.5 text-[11px] font-black text-right text-gray-900">
-                            {formatMoneySymbolSafe(isVenta ? item.venta_total : item.cantidad * item.costo_precio)}
-                          </td>
+                          {!ocultarTotalesMap['draft'] && (
+                            <>
+                              <td className="px-4 py-1.5 text-[11px] text-right text-gray-600 font-medium">
+                                {formatMoneySymbolSafe(item.precio_venta || item.costo_precio)}
+                              </td>
+                              <td className="px-4 py-1.5 text-[11px] font-black text-right text-gray-900">
+                                {formatMoneySymbolSafe(isVenta ? item.venta_total : item.cantidad * item.costo_precio)}
+                              </td>
+                            </>
+                          )}
                           <td className="px-4 py-1.5 text-center">
                             <button
                               onClick={() => handleRemoveItem(item.id_temp)}
@@ -2251,6 +2262,7 @@ const EditableGroupRow = ({
                             <div className="flex flex-col gap-1 items-center justify-center text-center relative">
                               <MarcaAutocomplete
                                 idMarca={newItem.id_marca}
+                                idRegistro={numReg}
                                 proveedores={proveedores}
                                 onSelect={(brand) => {
                                   const code = String(brand.id_marca).padStart(2, '0');
@@ -2423,14 +2435,18 @@ const EditableGroupRow = ({
                             </div>
                           </div>
                         </td>
-                        {/* Precio unitario */}
-                        <td className="px-4 py-1.5 text-center text-[11.5px] font-semibold text-gray-500">
-                          {formatMoneySymbolSafe(Number(newItem.precio_venta || 0))}
-                        </td>
-                        {/* Total */}
-                        <td className="px-4 py-1.5 text-right text-[11px] font-black text-indigo-600 align-middle">
-                          {formatMoneySymbolSafe(isVenta ? (newItem.venta_total || 0) : (newItem.cantidad || 1) * (newItem.costo_precio || 0))}
-                        </td>
+                        {!ocultarTotalesMap['draft'] && (
+                          <>
+                            {/* Precio unitario */}
+                            <td className="px-4 py-1.5 text-center text-[11.5px] font-semibold text-gray-500">
+                              {formatMoneySymbolSafe(Number(newItem.precio_venta || 0))}
+                            </td>
+                            {/* Total */}
+                            <td className="px-4 py-1.5 text-right text-[11px] font-black text-indigo-600 align-middle">
+                              {formatMoneySymbolSafe(isVenta ? (newItem.venta_total || 0) : (newItem.cantidad || 1) * (newItem.costo_precio || 0))}
+                            </td>
+                          </>
+                        )}
                         <td className="px-4 py-1.5 text-center align-middle">
                           <div className="flex items-center justify-center gap-1">
                             {canExpand && (
@@ -2569,6 +2585,7 @@ const EditableGroupRow = ({
 
 const CotizacionDetalle = ({ esOportunidad = false }) => {
   const { numReg } = useParams();
+  const cleanBaseURL = api.defaults.baseURL.endsWith('/') ? api.defaults.baseURL.slice(0, -1) : api.defaults.baseURL;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const {
@@ -2909,6 +2926,26 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
   }, []);
 
   const [loading, setLoading] = useState(true);
+  const [ocultarTotalesMap, setOcultarTotalesMap] = useState(() => {
+    try {
+      const stored = localStorage.getItem('sigecom_ocultar_totales_suministros_map');
+      return stored ? JSON.parse(stored) : {};
+    } catch (e) {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('sigecom_ocultar_totales_suministros_map', JSON.stringify(ocultarTotalesMap));
+  }, [ocultarTotalesMap]);
+
+  const toggleOcultarTotalesGrupo = (codigoGrupo) => {
+    setOcultarTotalesMap(prev => ({
+      ...prev,
+      [codigoGrupo]: !prev[codigoGrupo]
+    }));
+  };
+
   const isReadOnly = Number(data?.estado_envio ?? 0) === 2;
   const isVenta = data?.id_tipo === "V";
   const tipoVenta = data?.tipo_venta;
@@ -3081,7 +3118,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
         stock_max,
         proveedor: proveedor.trim().toUpperCase() || null,
         precio_dolares,
-        tipo_cambio: data?.tipo_cambio || 1
+        tipo_cambio: data?.tipo_cambio || 1,
+        id_registro: numReg
       });
 
       if (res.ok && res.registro) {
@@ -3220,6 +3258,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
         }
 
         setPersonalCreateState(prev => ({ ...prev, isOpen: false }));
+        fetchHistory();
       } else {
         toast.error("Error al crear el tipo de personal.");
       }
@@ -3414,7 +3453,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     try {
       const { data: res } = await api.post("core/tipo_gasto_detalle/", {
         nombre: nombre.trim().toUpperCase(),
-        code_prefix: codePrefix
+        code_prefix: codePrefix,
+        id_registro: numReg
       });
 
       if (res.ok && res.registro) {
@@ -3426,6 +3466,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
         }
 
         setGastoCreateState(prev => ({ ...prev, isOpen: false }));
+        fetchHistory();
       } else {
         toast.error("Error al crear el tipo de gasto.");
       }
@@ -4508,6 +4549,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     handleDuplicarServicio,
     sensors: sensorsServicios,
     handleDragEnd: handleDragEndServicios,
+    handleExportarGeneralServiciosXLS,
     isServiciosDirty,
     saveServicios,
   } = useCotizacionServicios(numReg);
@@ -4961,130 +5003,184 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     return () => clearTimeout(timer);
   }, [isServiciosDirty, saveServicios, isReadOnly]);
 
+  const saveCondicionesInstantly = useCallback(async () => {
+    if (generalConditions === loadedConditionsRef.current || isReadOnly) return;
+    try {
+      await api.post(`cotizaciones/condiciones-generales/${numReg}/`, { condiciones: generalConditions });
+      loadedConditionsRef.current = generalConditions;
+      fetchHistory();
+      toast.success("Condiciones generales guardadas correctamente");
+    } catch (err) {
+      console.error("Error al guardar condiciones:", err);
+      toast.error("Error al guardar condiciones generales");
+    }
+  }, [generalConditions, numReg, isReadOnly]);
+
   // Auto-save Condiciones Generales
   useEffect(() => {
     if (!isCondicionesDirty || isReadOnly) return;
     const timer = setTimeout(async () => {
-      try {
-        await api.post(`cotizaciones/condiciones-generales/${numReg}/`, { condiciones: generalConditions });
-        loadedConditionsRef.current = generalConditions;
-        fetchHistory();
-      } catch (err) {
-        console.error("Error al autoguardar condiciones:", err);
-        toast.error("Error al autoguardar condiciones generales");
-      }
-    }, 1500);
+      await saveCondicionesInstantly();
+    }, 5000);
     return () => clearTimeout(timer);
-  }, [isCondicionesDirty, generalConditions, numReg, isReadOnly]);
+  }, [isCondicionesDirty, saveCondicionesInstantly, isReadOnly]);
 
-  const [savingHeader, setSavingHeader] = useState(false);
-
-  const handleGuardarCabecera = async () => {
+  const saveHeaderInstantly = useCallback(async (customData) => {
     if (isReadOnly) return;
-    setSavingHeader(true);
+    if (!customData || !customData.id_cliente || !customData.id_area || !customData.id_tipo) {
+      // Do not save if any of the three mandatory fields (Cliente, Área, Tipo) is missing
+      return;
+    }
     try {
-      const promises = [];
+      const keysToCompare = [
+        "referencia", "forma_pago", "lugar", "tipo_moneda", "tipo_cambio", "igv",
+        "entrega_suministros", "id_unidad_tiempo_entrega_suministros",
+        "entrega_servicios", "id_unidad_tiempo_entrega_servicios",
+        "validez_oferta", "id_unidad_tiempo_validez", "id_area", "id_tipo",
+        "tipo_venta", "probabilidad", "id_cliente", "id_representante",
+        "representante_nombre", "representante_cargo", "representante_telefono",
+        "representante_movil", "representante_correo", "estado_oportunidad",
+        "recepcion_solicitud", "fecha_limite", "visita_tecnica",
+        "emision_cotizacion", "comentario"
+      ];
 
-      if (isHeaderDirty) {
-        const endpoint = `cotizaciones/cotizacion_detalle/${numReg}/`;
-        const payload = {
-          referencia: data.referencia,
-          forma_pago: data.forma_pago,
-          lugar: data.lugar,
-          tipo_moneda: data.tipo_moneda,
-          tipo_cambio: data.tipo_cambio,
-          igv: data.igv,
-          entrega_suministros: data.entrega_suministros,
-          id_unidad_tiempo_entrega_suministros: data.id_unidad_tiempo_entrega_suministros,
-          entrega_servicios: data.entrega_servicios,
-          id_unidad_tiempo_entrega_servicios: data.id_unidad_tiempo_entrega_servicios,
-          validez_oferta: data.validez_oferta,
-          id_unidad_tiempo_validez: data.id_unidad_tiempo_validez,
-          id_area: data.id_area,
-          id_tipo: data.id_tipo,
-          tipo_venta: data.tipo_venta,
-          probabilidad: data.probabilidad,
-          id_estado: data.id_estado,
-          id_cliente: data.id_cliente,
-          id_representante: data.id_representante,
-          representante_nombre: data.representante_nombre,
-          representante_cargo: data.representante_cargo,
-          representante_telefono: data.representante_telefono,
-          representante_movil: data.representante_movil,
-          representante_correo: data.representante_correo,
-          estado_oportunidad: data.estado_oportunidad,
-          recepcion_solicitud: data.recepcion_solicitud,
-          fecha_limite: data.fecha_limite,
-          visita_tecnica: data.visita_tecnica,
-          emision_cotizacion: data.emision_cotizacion,
-          comentario: data.comentario,
-        };
-        const headerPromise = api.put(endpoint, payload).then(res => {
-          setData(res.data);
-          setOriginalData(res.data);
-        });
-        promises.push(headerPromise);
-      }
+      const fieldLabels = {
+        referencia: "Referencia",
+        forma_pago: "Forma de pago",
+        lugar: "Lugar",
+        tipo_moneda: "Moneda",
+        tipo_cambio: "Tipo de cambio",
+        igv: "IGV",
+        entrega_suministros: "Entrega Suministros",
+        id_unidad_tiempo_entrega_suministros: "Tiempo Entrega Suministros",
+        entrega_servicios: "Entrega Servicios",
+        id_unidad_tiempo_entrega_servicios: "Tiempo Entrega Servicios",
+        validez_oferta: "Validez de oferta",
+        id_unidad_tiempo_validez: "Tiempo Validez",
+        id_area: "Área",
+        id_tipo: "Tipo de cotización",
+        tipo_venta: "Tipo de venta",
+        probabilidad: "Probabilidad",
+        id_cliente: "Cliente",
+        id_representante: "Contacto / Representante",
+        representante_nombre: "Nombre de representante",
+        representante_cargo: "Cargo de representante",
+        representante_telefono: "Teléfono",
+        representante_movil: "Móvil",
+        representante_correo: "Correo",
+        id_estado: "Estado",
+        estado_oportunidad: "Estado Oportunidad",
+        recepcion_solicitud: "Recepción de solicitud",
+        fecha_limite: "Fecha límite",
+        visita_tecnica: "Visita técnica",
+        emision_cotizacion: "Emisión de cotización",
+        comentario: "Comentarios"
+      };
 
-      if (isCondicionesDirty) {
-        const conditionsPromise = api.post(`cotizaciones/condiciones-generales/${numReg}/`, { condiciones: generalConditions }).then(() => {
-          loadedConditionsRef.current = generalConditions;
-        });
-        promises.push(conditionsPromise);
-      }
+      const changedKeys = keysToCompare.filter(key => customData && originalData && customData[key] !== originalData[key]);
 
-      if (isSuministrosDirty) {
-        promises.push(saveSuministros());
-      }
+      if (changedKeys.length === 0) return;
 
-      if (isServiciosDirty) {
-        promises.push(saveServicios());
-      }
-
-      if (isDescuentoDirty) {
-        if (descuentoError) {
-          throw new Error(`Error en Descuento Comercial: ${descuentoError}`);
+      const cleanLabelsSet = new Set();
+      changedKeys.forEach(key => {
+        if ([
+          "id_representante", "representante_nombre", "representante_cargo", 
+          "representante_telefono", "representante_movil", "representante_correo"
+        ].includes(key)) {
+          cleanLabelsSet.add("Representante");
+        } else if (["entrega_suministros", "id_unidad_tiempo_entrega_suministros"].includes(key)) {
+          cleanLabelsSet.add("Tiempo de entrega (Suministros)");
+        } else if (["entrega_servicios", "id_unidad_tiempo_entrega_servicios"].includes(key)) {
+          cleanLabelsSet.add("Tiempo de entrega (Servicios)");
+        } else if (["validez_oferta", "id_unidad_tiempo_validez"].includes(key)) {
+          cleanLabelsSet.add("Validez de oferta");
+        } else {
+          cleanLabelsSet.add(fieldLabels[key] || key);
         }
+      });
+      const changedLabels = Array.from(cleanLabelsSet);
+
+      const endpoint = `cotizaciones/cotizacion_detalle/${numReg}/`;
+      const payload = {
+        referencia: customData.referencia,
+        forma_pago: customData.forma_pago,
+        lugar: customData.lugar,
+        tipo_moneda: customData.tipo_moneda,
+        tipo_cambio: customData.tipo_cambio,
+        igv: customData.igv,
+        entrega_suministros: customData.entrega_suministros,
+        id_unidad_tiempo_entrega_suministros: customData.id_unidad_tiempo_entrega_suministros,
+        entrega_servicios: customData.entrega_servicios,
+        id_unidad_tiempo_entrega_servicios: customData.id_unidad_tiempo_entrega_servicios,
+        validez_oferta: customData.validez_oferta,
+        id_unidad_tiempo_validez: customData.id_unidad_tiempo_validez,
+        id_area: customData.id_area,
+        id_tipo: customData.id_tipo,
+        tipo_venta: customData.tipo_venta,
+        probabilidad: customData.probabilidad,
+        id_estado: customData.id_estado,
+        id_cliente: customData.id_cliente,
+        id_representante: customData.id_representante,
+        representante_nombre: customData.representante_nombre,
+        representante_cargo: customData.representante_cargo,
+        representante_telefono: customData.representante_telefono,
+        representante_movil: customData.representante_movil,
+        representante_correo: customData.representante_correo,
+        estado_oportunidad: customData.estado_oportunidad,
+        recepcion_solicitud: customData.recepcion_solicitud,
+        fecha_limite: customData.fecha_limite,
+        visita_tecnica: customData.visita_tecnica,
+        emision_cotizacion: customData.emision_cotizacion,
+        comentario: customData.comentario,
+      };
+      const res = await api.put(endpoint, payload);
+      setData(res.data);
+      setOriginalData(res.data);
+      fetchHistory();
+      queryClient.invalidateQueries({ queryKey: ["cotizaciones"] });
+      queryClient.invalidateQueries({ queryKey: ["oportunidades"] });
+
+      if (changedLabels.length > 0) {
+        toast.success(`Datos actualizados: ${changedLabels.join(", ")}`);
+      }
+    } catch (err) {
+      console.error("Error al guardar cabecera:", err);
+      toast.error("Error al guardar los datos de cotización");
+    }
+  }, [originalData, numReg, isReadOnly, queryClient]);
+
+  // Auto-save Descuento
+  useEffect(() => {
+    if (!isDescuentoDirty || isReadOnly) return;
+    const timer = setTimeout(async () => {
+      try {
+        if (descuentoAplicar && Number(descuentoPorcentaje || 0) <= 0 && Number(descuentoImporte || 0) <= 0) {
+          return;
+        }
+        if (descuentoError) return;
         const discountPayload = {
           aplicar: descuentoAplicar,
           afecto: descuentoAfecto,
           porcentaje: descuentoPorcentaje ? Number(descuentoPorcentaje) : null,
           importe: descuentoImporte ? Number(descuentoImporte) : null
         };
-        const discountPromise = api.post(`/cotizaciones/${numReg}/descuento/`, discountPayload).then(() => {
-          setOriginalDescuento({
-            aplicar: descuentoAplicar,
-            afecto: descuentoAfecto,
-            porcentaje: descuentoPorcentaje,
-            importe: descuentoImporte
-          });
+        await api.post(`/cotizaciones/${numReg}/descuento/`, discountPayload);
+        setOriginalDescuento({
+          aplicar: descuentoAplicar,
+          afecto: descuentoAfecto,
+          porcentaje: descuentoPorcentaje,
+          importe: descuentoImporte
         });
-        promises.push(discountPromise);
+        await loadAllData(true);
+        fetchHistory();
+      } catch (err) {
+        console.error("Error al autoguardar descuento:", err);
       }
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [isDescuentoDirty, descuentoAplicar, descuentoAfecto, descuentoPorcentaje, descuentoImporte, descuentoError, numReg, isReadOnly]);
 
-      await Promise.all(promises);
 
-      // Cargar la información fresca (incluidos totales de la cotización y descuento recalculados)
-      await loadAllData();
-
-      toast.success("Cambios guardados correctamente");
-      queryClient.invalidateQueries({ queryKey: ["cotizaciones"] });
-      queryClient.invalidateQueries({ queryKey: ["oportunidades"] });
-      queryClient.invalidateQueries({ queryKey: ["aperturas"] });
-      queryClient.invalidateQueries({ queryKey: ["cotizaciones-aprobacion"] });
-      queryClient.invalidateQueries({ queryKey: ["aprobacion-cotizaciones"] });
-      queryClient.invalidateQueries({ queryKey: ["revision-cotizaciones"] });
-      queryClient.invalidateQueries({ queryKey: ["seguimiento-cotizaciones"] });
-      queryClient.invalidateQueries({ queryKey: ["cotizacion", numReg] });
-      queryClient.invalidateQueries({ queryKey: ["cotizacion-detalle", numReg] });
-    } catch (err) {
-      console.error("Error al guardar cambios:", err);
-      const errMsg = err.response?.data?.error || err.message || "Error al guardar cambios de la cotización";
-      toast.error(errMsg);
-    } finally {
-      setSavingHeader(false);
-    }
-  };
 
   // Handler único para edición de campos de cabecera
   const handleFieldChange = (field, value) => {
@@ -5093,6 +5189,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       return;
     }
 
+    let updatedState = null;
     setData(prev => {
       const newState = { ...prev, [field]: value };
 
@@ -5108,8 +5205,13 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
         newState.costo_envio = 0;
       }
 
+      updatedState = newState;
       return newState;
     });
+
+    if (updatedState) {
+      saveHeaderInstantly(updatedState);
+    }
   };
 
   const fetchDescuento = async () => {
@@ -5154,12 +5256,21 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     setDescuentoImporte(value);
     if (!base || !value) {
       setDescuentoPorcentaje("");
-      setDescuentoError("");
+      if (descuentoAplicar) {
+        setDescuentoError("El descuento aplicado debe ser mayor a 0");
+      } else {
+        setDescuentoError("");
+      }
       return;
     }
     const valNum = Number(value);
-    if (valNum > base) setDescuentoError("El importe no puede superar el total base");
-    else setDescuentoError("");
+    if (valNum <= 0 && descuentoAplicar) {
+      setDescuentoError("El descuento aplicado debe ser mayor a 0");
+    } else if (valNum > base) {
+      setDescuentoError("El importe no puede superar el total base");
+    } else {
+      setDescuentoError("");
+    }
     setDescuentoPorcentaje(((valNum / base) * 100).toFixed(2));
   };
 
@@ -5168,12 +5279,21 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     setDescuentoPorcentaje(value);
     if (!base || !value) {
       setDescuentoImporte("");
-      setDescuentoError("");
+      if (descuentoAplicar) {
+        setDescuentoError("El descuento aplicado debe ser mayor a 0");
+      } else {
+        setDescuentoError("");
+      }
       return;
     }
     const valNum = Number(value);
-    if (valNum > 100) setDescuentoError("El porcentaje no puede superar 100%");
-    else setDescuentoError("");
+    if (valNum <= 0 && descuentoAplicar) {
+      setDescuentoError("El descuento aplicado debe ser mayor a 0");
+    } else if (valNum > 100) {
+      setDescuentoError("El porcentaje no puede superar 100%");
+    } else {
+      setDescuentoError("");
+    }
     setDescuentoImporte(((base * valNum) / 100).toFixed(2));
   };
 
@@ -5205,7 +5325,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       queryClient.invalidateQueries({ queryKey: ["cotizacion-detalle", numReg] });
 
       // Reload main page data
-      await loadAllData();
+      await loadAllData(true);
     } catch (err) {
       console.error("Error al guardar descuento:", err);
       toast.error("Error al guardar el descuento");
@@ -5214,25 +5334,52 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     }
   };
 
-  const handleResetDescuento = async () => {
+  const handleToggleDescuento = async (checked) => {
     if (isReadOnly) return;
+    if (checked) {
+      const pct = Number(descuentoPorcentaje || 0);
+      const imp = Number(descuentoImporte || 0);
+      if (pct <= 0 && imp <= 0) {
+        toast.error("Por favor, ingrese un porcentaje o importe mayor a 0 antes de aplicar el descuento.");
+        return;
+      }
+      setDescuentoError("");
+    }
     setSavingDescuento(true);
+    setDescuentoAplicar(checked);
+
     try {
       const payload = {
-        aplicar: false,
-        afecto: "t",
-        porcentaje: null,
-        importe: null
+        aplicar: checked,
+        afecto: checked ? descuentoAfecto : "t",
+        porcentaje: checked && descuentoPorcentaje ? Number(descuentoPorcentaje) : null,
+        importe: checked && descuentoImporte ? Number(descuentoImporte) : null
       };
-      await api.post(`/cotizaciones/${numReg}/descuento/`, payload);
-      toast.success("Descuento eliminado correctamente");
 
-      // Reset local fields
-      setDescuentoAplicar(false);
-      setDescuentoAfecto("t");
-      setDescuentoPorcentaje("");
-      setDescuentoImporte("");
-      setDescuentoError("");
+      await api.post(`/cotizaciones/${numReg}/descuento/`, payload);
+      toast.success(checked ? "Descuento aplicado correctamente" : "Descuento desactivado y limpiado");
+
+      if (!checked) {
+        // Reset local fields
+        setDescuentoAfecto("t");
+        setDescuentoPorcentaje("");
+        setDescuentoImporte("");
+        setDescuentoError("");
+
+        setOriginalDescuento({
+          aplicar: false,
+          afecto: "t",
+          porcentaje: "",
+          importe: ""
+        });
+      } else {
+        setOriginalDescuento({
+          aplicar: true,
+          afecto: descuentoAfecto,
+          porcentaje: descuentoPorcentaje,
+          importe: descuentoImporte
+        });
+      }
 
       // Invalidate queries
       queryClient.invalidateQueries({ queryKey: ["cotizaciones"] });
@@ -5242,21 +5389,24 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       queryClient.invalidateQueries({ queryKey: ["cotizacion-detalle", numReg] });
 
       // Reload main page data
-      await loadAllData();
+      await loadAllData(true);
+      fetchHistory();
     } catch (err) {
-      console.error("Error al resetear descuento:", err);
-      toast.error("Error al eliminar el descuento");
+      console.error("Error al actualizar descuento:", err);
+      toast.error("Error al actualizar el descuento");
+      // Rollback
+      setDescuentoAplicar(!checked);
     } finally {
       setSavingDescuento(false);
     }
   };
 
   useEffect(() => {
-    loadAllData();
+    loadAllData(false);
   }, [numReg]);
 
-  const loadAllData = async () => {
-    setLoading(true);
+  const loadAllData = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       // Fetch unidades de medida
       try {
@@ -5305,7 +5455,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       console.error("Error loading data:", err);
       toast.error("Error al cargar la información");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -5620,6 +5770,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
   const renderGrupoSuministro = (grupo, gIdx, dndListeners = {}, dndAttributes = {}) => {
     const isExpanded = gruposExpandidos[grupo.codigo_grupo] !== false;
     const tipoVenta = data?.tipo_venta;
+    const ocultarTotalesGrupo = !!ocultarTotalesMap[grupo.codigo_grupo];
 
     return (
       <motion.div
@@ -5803,8 +5954,12 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                         <th className="w-[10%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Envío</th>
                       )}
                       <th className={isVenta ? "w-[9%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[10%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Utilidad</th>
-                      <th className={isVenta ? "w-[11%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[12%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Venta Precio</th>
-                      <th className={isVenta ? "w-[11%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[13%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Venta Total</th>
+                      {!ocultarTotalesGrupo && (
+                        <>
+                          <th className={isVenta ? "w-[11%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[12%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Venta Precio</th>
+                          <th className={isVenta ? "w-[11%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[13%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Venta Total</th>
+                        </>
+                      )}
                       <th className="w-[5%] py-1.5"></th>
                     </tr>
                   </thead>
@@ -5843,12 +5998,13 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                           activeEditField={activeEditField}
                           handleTriggerCreateProduct={handleTriggerCreateProduct}
                           renderInlineProductCreateForm={renderInlineProductCreateForm}
+                          ocultarTotales={ocultarTotalesGrupo}
                         />
                       ))}
                     </SortableContext>
                     {grupo.items.length === 0 && (
                       <tr>
-                        <td colSpan={isVenta ? "10" : "9"} className="px-4 py-6 text-center">
+                        <td colSpan={ocultarTotalesGrupo ? (isVenta ? "8" : "7") : (isVenta ? "10" : "9")} className="px-4 py-6 text-center">
                           <span className="text-[10px] text-gray-400 italic">No hay ítems registrados</span>
                         </td>
                       </tr>
@@ -5886,6 +6042,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                             <div className="flex flex-col gap-1 items-center justify-center text-center relative">
                               <MarcaAutocomplete
                                 idMarca={currentForm.id_marca}
+                                idRegistro={numReg}
                                 proveedores={proveedores}
                                 onSelect={(brand) => {
                                   const code = String(brand.id_marca).padStart(2, '0');
@@ -5974,7 +6131,6 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                               onFocus={(e) => e.target.select()}
                             />
                           </td>
-                           {/* Envío */}
                           {isVenta && (
                             <td className="px-3 py-1.5 text-center">
                               <div className="flex flex-col items-center justify-center text-center gap-1">
@@ -5992,7 +6148,6 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                           {/* Utilidad */}
                           <td className="px-3 py-1.5">
                             <div className="flex flex-col gap-1 items-center justify-center text-center">
-
                               {/* Monto de utilidad (Ahora ARRIBA) */}
                               <span className="text-[11px] font-bold text-gray-700">
                                 {formatMoneySymbol(Number(currentForm.utilidad || 0))}
@@ -6010,14 +6165,18 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                               </div>
                             </div>
                           </td>
-                          {/* Venta Precio */}
-                          <td className="px-3 py-1.5 text-center text-[11.5px] font-semibold text-gray-500">
-                            {formatMoneySymbol(Number(currentForm.precio_venta || 0))}
-                          </td>
-                          {/* Venta Total */}
-                          <td className="px-3 py-1.5 text-center text-[11.5px] font-black text-indigo-600">
-                            {formatMoneySymbol(Number(currentForm.venta_total || 0))}
-                          </td>
+                          {!ocultarTotalesGrupo && (
+                            <>
+                              {/* Venta Precio */}
+                              <td className="px-3 py-1.5 text-center text-[11.5px] font-semibold text-gray-500">
+                                {formatMoneySymbol(Number(currentForm.precio_venta || 0))}
+                              </td>
+                              {/* Venta Total */}
+                              <td className="px-3 py-1.5 text-center text-[11.5px] font-black text-indigo-600">
+                                {formatMoneySymbol(Number(currentForm.venta_total || 0))}
+                              </td>
+                            </>
+                          )}
                           {/* Acciones */}
                           <td className="px-3 py-1.5 text-center">
                             <div className="flex justify-center items-center gap-1">
@@ -6198,19 +6357,23 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                     <Icon name="file-down" className="h-3.5 w-3.5" />
                   </button>
 
+                  <div className="w-[1px] h-3.5 bg-gray-200 mx-0.5" />
+
+                  {/* Botón: OCULTAR/MOSTRAR TOTALES */}
+                  <button
+                    type="button"
+                    title="Ocultar/Mostrar Totales"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleOcultarTotalesGrupo(grupo.codigo_grupo);
+                    }}
+                    className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded transition-colors"
+                  >
+                    <Icon name={ocultarTotalesGrupo ? "eye-off" : "eye"} className="h-3.5 w-3.5" />
+                  </button>
+
                   {!isReadOnly && (
                     <>
-                      <div className="w-[1px] h-3.5 bg-gray-200 mx-0.5" />
-
-                      {/* Botón: CONFIGURACIÓN DEL GRUPO */}
-                      <button
-                        type="button"
-                        title="Configuración del Grupo"
-                        className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded transition-colors"
-                      >
-                        <Icon name="settings-2" className="h-3.5 w-3.5" />
-                      </button>
-
                       <div className="w-[1px] h-3.5 bg-gray-200 mx-0.5" />
 
                       {/* Botón: ELIMINAR GRUPO */}
@@ -6387,6 +6550,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
             <TipoPersonalAutocomplete
               value={form.codigo_item || ""}
               idArea={data?.id_area}
+              idRegistro={numReg}
               catalogoVersion={catalogoVersion}
               onTriggerCreatePersonal={(name) => handleTriggerCreatePersonal(name, sg.id_servicio, handlePersonalCreatedQuickLocal, handlePersonalCancelQuickLocal)}
               onSelect={(personal) => {
@@ -6516,15 +6680,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
             {formatMoneySymbol(calculatedCotizadoTotal)}
           </td>
           <td className="px-3 py-1 text-right">
-            <div className="flex justify-end gap-1.5">
-              <button
-                onClick={() => handleConfirmManoObraInline(form, grupo.id_servicio, sg.id_servicio)}
-                className="p-1 bg-teal-50 border border-teal-200 text-teal-700 hover:bg-teal-100 rounded-lg transition-all"
-                title="Agregar"
-              >
-                <Icon name="check" className="h-3.5 w-3.5" />
-              </button>
-            </div>
+            <div className="h-4" />
           </td>
         </tr>
       );
@@ -6547,6 +6703,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
             <TipoGastoDetalleAutocomplete
               value={form.codigo_item || ""}
               codePrefix="05"
+              idRegistro={numReg}
               onTriggerCreateGasto={(name) => handleTriggerCreateGasto(name, sg.id_servicio, '05', handleGastoCreatedQuickLocal, handleGastoCancelQuickLocal)}
               onSelect={(gasto) => {
                 if (!gasto) {
@@ -6631,15 +6788,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
             {formatMoneySymbol(calculatedCotizadoTotal)}
           </td>
           <td className="px-3 py-1 text-right">
-            <div className="flex justify-end gap-1.5">
-              <button
-                onClick={() => handleConfirmGastosServicioInline(form, grupo.id_servicio, sg.id_servicio)}
-                className="p-1 bg-teal-50 border border-teal-200 text-teal-700 hover:bg-teal-100 rounded-lg transition-all"
-                title="Agregar"
-              >
-                <Icon name="check" className="h-3.5 w-3.5" />
-              </button>
-            </div>
+            <div className="h-4" />
           </td>
         </tr>
       );
@@ -6666,6 +6815,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
             <TipoGastoDetalleAutocomplete
               value={form.codigo_item || ""}
               codePrefix="06"
+              idRegistro={numReg}
               onTriggerCreateGasto={(name) => handleTriggerCreateGasto(name, sg.id_servicio, '06', handleGastoCreatedQuickLocal, handleGastoCancelQuickLocal)}
               onSelect={(gasto) => {
                 if (!gasto) {
@@ -6763,15 +6913,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
             {formatMoneySymbol(calculatedCotizadoTotal)}
           </td>
           <td className="px-3 py-1 text-right">
-            <div className="flex justify-end gap-1.5">
-              <button
-                onClick={() => handleConfirmOtrosInline(form, grupo.id_servicio, sg.id_servicio)}
-                className="p-1 bg-teal-50 border border-teal-200 text-teal-700 hover:bg-teal-100 rounded-lg transition-all"
-                title="Agregar"
-              >
-                <Icon name="check" className="h-3.5 w-3.5" />
-              </button>
-            </div>
+            <div className="h-4" />
           </td>
         </tr>
       );
@@ -7431,8 +7573,11 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     if (text.includes("ESTADO") || text.includes("CAMBIO")) return "ESTADO";
     if (text.includes("REGISTRO:")) return "SEGUIMIENTO";
     if (text.includes("SUMINISTROS:")) return "SUMINISTROS";
-    if (text.includes("SERVICIOS:")) return "SERVICIOS";
+    if (text.includes("SERVICIOS:") || text.includes("PERSONAL:") || text.includes("GASTOS:")) return "SERVICIOS";
     if (text.includes("CONDICIONES GENERALES:")) return "CONDICIONES";
+    if (text.includes("DESCUENTO:") || text.includes("DESCUENTOS:")) return "DESCUENTO";
+    if (text.includes("DATOS:")) return "DATOS_COTIZACION";
+    if (text.includes("CÓDIGO:")) return "CODIGO";
     return "SISTEMA";
   };
 
@@ -7579,12 +7724,6 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                     {data?.codigo || data?.numero || 'S/N'}
                   </h1>
 
-                  {isDirty && (
-                    <div className="flex items-center px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-100 border border-amber-200 text-amber-700 uppercase tracking-widest shadow-sm animate-pulse">
-                      Falta Guardar
-                    </div>
-                  )}
-
                   {/* BADGE ESTADO COTIZACION */}
                   <div className="relative group">
                     <button className={`flex items-center px-3 py-1 rounded-full text-[9px] font-black text-white transition-all shadow-sm uppercase tracking-widest ${(esOportunidad ? OPP_STATES : PIPELINE).find(s => s.label === currentStatus)?.color || 'bg-indigo-600'} hover:brightness-105 border border-white/20`}>
@@ -7714,8 +7853,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                     initialId={data.id_cliente}
                     isReadOnly={isReadOnly}
                     onSelect={(cliente) => {
-                      setData(prev => ({
-                        ...prev,
+                      const updated = {
+                        ...data,
                         id_cliente: cliente.id_cliente,
                         cliente_nombre: cliente.nombre,
                         id_representante: null,
@@ -7724,7 +7863,9 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                         representante_telefono: "",
                         representante_movil: "",
                         representante_correo: "",
-                      }));
+                      };
+                      setData(updated);
+                      saveHeaderInstantly(updated);
                     }}
                     onContextMenu={(e) => {
                       e.preventDefault();
@@ -7747,15 +7888,17 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                     initialId={data.id_representante}
                     isReadOnly={isReadOnly}
                     onSelect={(enc) => {
-                      setData(prev => ({
-                        ...prev,
+                      const updated = {
+                        ...data,
                         id_representante: enc.id_representante,
                         representante_nombre: enc.nombre_representante,
                         representante_cargo: enc.cargo || "",
                         representante_telefono: enc.telefono || "",
                         representante_movil: enc.movil || "",
                         representante_correo: enc.email || "",
-                      }));
+                      };
+                      setData(updated);
+                      saveHeaderInstantly(updated);
                     }}
                     onContextMenu={(e) => {
                       e.preventDefault();
@@ -7840,20 +7983,6 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {isDirty && !isReadOnly && (
-                <button
-                  onClick={handleGuardarCabecera}
-                  disabled={savingHeader}
-                  className="flex items-center px-4 py-2 bg-emerald-50 border border-emerald-200 rounded-xl text-[10px] font-black text-emerald-700 hover:bg-emerald-100 hover:border-emerald-300 hover:shadow-sm transition-all h-[42px] uppercase group"
-                >
-                  {savingHeader ? (
-                    <div className="h-3.5 w-3.5 mr-2 border-2 border-emerald-700 border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <Icon name="save" className="h-3.5 w-3.5 mr-2 text-emerald-600 group-hover:scale-110 transition-transform" />
-                  )}
-                  {savingHeader ? "Guardando..." : "Guardar Cambios"}
-                </button>
-              )}
               {/* MENÚ DESPLEGABLE DE REPORTES */}
               {!esOportunidad && (
                 <div className="relative" ref={dropdownRef}>
@@ -7971,10 +8100,22 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                         rows="2"
                         className="absolute inset-0 w-full h-full opacity-0 focus:opacity-100 bg-white border border-indigo-300 rounded-lg px-2 py-1 text-[10px] font-black text-gray-900 uppercase outline-none resize-none shadow-sm"
                         defaultValue={data.referencia}
-                        onBlur={(e) => handleFieldChange("referencia", e.target.value)}
+                        onBlur={(e) => {
+                          if (e.target.dataset.saved === "true") {
+                            handleFieldChange("referencia", e.target.value);
+                            delete e.target.dataset.saved;
+                          } else {
+                            e.target.value = data.referencia || "";
+                          }
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && !e.shiftKey) {
                             e.preventDefault();
+                            e.target.dataset.saved = "true";
+                            e.target.blur();
+                          } else if (e.key === 'Escape') {
+                            e.preventDefault();
+                            e.target.dataset.saved = "false";
                             e.target.blur();
                           }
                         }}
@@ -8079,8 +8220,25 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                             type="text"
                             className="absolute inset-0 w-full h-full opacity-0 focus:opacity-100 bg-white border border-indigo-300 rounded px-1 text-[10px] font-black text-gray-900 uppercase outline-none"
                             defaultValue={data.forma_pago}
-                            onBlur={(e) => handleFieldChange("forma_pago", e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && e.target.blur()}
+                            onBlur={(e) => {
+                              if (e.target.dataset.saved === "true") {
+                                handleFieldChange("forma_pago", e.target.value);
+                                delete e.target.dataset.saved;
+                              } else {
+                                e.target.value = data.forma_pago || "";
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                e.target.dataset.saved = "true";
+                                e.target.blur();
+                              } else if (e.key === 'Escape') {
+                                e.preventDefault();
+                                e.target.dataset.saved = "false";
+                                e.target.blur();
+                              }
+                            }}
                             disabled={isReadOnly}
                           />
                         </>
@@ -8100,8 +8258,25 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                             type="text"
                             className="absolute inset-0 w-full h-full opacity-0 focus:opacity-100 bg-white border border-indigo-300 rounded px-1 text-[10px] font-black text-gray-900 uppercase outline-none"
                             defaultValue={data.lugar}
-                            onBlur={(e) => handleFieldChange("lugar", e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && e.target.blur()}
+                            onBlur={(e) => {
+                              if (e.target.dataset.saved === "true") {
+                                handleFieldChange("lugar", e.target.value);
+                                delete e.target.dataset.saved;
+                              } else {
+                                e.target.value = data.lugar || "";
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                e.target.dataset.saved = "true";
+                                e.target.blur();
+                              } else if (e.key === 'Escape') {
+                                e.preventDefault();
+                                e.target.dataset.saved = "false";
+                                e.target.blur();
+                              }
+                            }}
                             disabled={isReadOnly}
                           />
                         </>
@@ -8165,10 +8340,22 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                         rows="2"
                         className="absolute inset-0 w-full h-full opacity-0 focus:opacity-100 bg-white border border-indigo-300 rounded-lg px-2 py-1 text-[10px] font-black text-gray-900 uppercase outline-none resize-none shadow-sm"
                         defaultValue={data.comentario}
-                        onBlur={(e) => handleFieldChange("comentario", e.target.value)}
+                        onBlur={(e) => {
+                          if (e.target.dataset.saved === "true") {
+                            handleFieldChange("comentario", e.target.value);
+                            delete e.target.dataset.saved;
+                          } else {
+                            e.target.value = data.comentario || "";
+                          }
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && !e.shiftKey) {
                             e.preventDefault();
+                            e.target.dataset.saved = "true";
+                            e.target.blur();
+                          } else if (e.key === 'Escape') {
+                            e.preventDefault();
+                            e.target.dataset.saved = "false";
                             e.target.blur();
                           }
                         }}
@@ -8247,8 +8434,25 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                             step="0.001"
                             className="absolute inset-0 w-full h-full opacity-0 focus:opacity-100 bg-white border border-indigo-300 rounded px-1 text-[10px] font-black text-gray-900 outline-none"
                             defaultValue={data.tipo_cambio}
-                            onBlur={(e) => handleFieldChange("tipo_cambio", e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && e.target.blur()}
+                            onBlur={(e) => {
+                              if (e.target.dataset.saved === "true") {
+                                handleFieldChange("tipo_cambio", e.target.value);
+                                delete e.target.dataset.saved;
+                              } else {
+                                e.target.value = data.tipo_cambio || "";
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                e.target.dataset.saved = "true";
+                                e.target.blur();
+                              } else if (e.key === 'Escape') {
+                                e.preventDefault();
+                                e.target.dataset.saved = "false";
+                                e.target.blur();
+                              }
+                            }}
                             disabled={isReadOnly}
                           />
                         </>
@@ -8592,9 +8796,23 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                     setReporteServiciosOpen(true);
                   }}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-50 border border-teal-200 text-teal-700 text-[10px] font-black rounded-lg uppercase shadow-sm hover:bg-teal-100 hover:text-teal-900 transition-all cursor-pointer"
+                  title="Ver reporte oficial en HTML"
                 >
                   <Icon name="bar-chart-3" className="h-3 w-3" />
                   <span className="hidden sm:inline">Reporte</span>
+                </span>
+
+                {/* BOTÓN DE EXPORTAR SERVICIOS */}
+                <span
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleExportarGeneralServiciosXLS();
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 border border-green-200 text-green-700 text-[10px] font-black rounded-lg uppercase shadow-sm hover:bg-green-100 transition-all cursor-pointer"
+                  title="Exportar servicios a Excel"
+                >
+                  <Icon name="file-down" className="h-3 w-3" />
+                  <span className="hidden sm:inline">Exportar</span>
                 </span>
               </div>
             )}
@@ -8867,6 +9085,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                       theme="snow"
                       value={generalConditions}
                       onChange={setGeneralConditions}
+                      onBlur={() => saveCondicionesInstantly()}
                       readOnly={isReadOnly}
                       placeholder="Las notas aparecerán aquí. Puedes editarlas libremente..."
                       modules={{
@@ -9164,10 +9383,22 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                       rows="2"
                       className="absolute inset-0 w-full h-full opacity-0 focus:opacity-100 bg-white border border-indigo-300 rounded-lg px-2 py-1 text-[10px] font-black text-gray-900 uppercase outline-none resize-none shadow-sm"
                       defaultValue={data.referencia}
-                      onBlur={(e) => handleFieldChange("referencia", e.target.value)}
+                      onBlur={(e) => {
+                        if (e.target.dataset.saved === "true") {
+                          handleFieldChange("referencia", e.target.value);
+                          delete e.target.dataset.saved;
+                        } else {
+                          e.target.value = data.referencia || "";
+                        }
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && !e.shiftKey) {
                           e.preventDefault();
+                          e.target.dataset.saved = "true";
+                          e.target.blur();
+                        } else if (e.key === 'Escape') {
+                          e.preventDefault();
+                          e.target.dataset.saved = "false";
                           e.target.blur();
                         }
                       }}
@@ -9245,8 +9476,25 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                           step="0.001"
                           className="absolute inset-0 w-full h-full opacity-0 focus:opacity-100 bg-white border border-indigo-300 rounded px-1 text-[10px] font-black text-gray-900 outline-none"
                           defaultValue={data.tipo_cambio}
-                          onBlur={(e) => handleFieldChange("tipo_cambio", e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && e.target.blur()}
+                          onBlur={(e) => {
+                            if (e.target.dataset.saved === "true") {
+                              handleFieldChange("tipo_cambio", e.target.value);
+                              delete e.target.dataset.saved;
+                            } else {
+                              e.target.value = data.tipo_cambio || "";
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              e.target.dataset.saved = "true";
+                              e.target.blur();
+                            } else if (e.key === 'Escape') {
+                              e.preventDefault();
+                              e.target.dataset.saved = "false";
+                              e.target.blur();
+                            }
+                          }}
                           disabled={isReadOnly}
                         />
                       </>
@@ -9269,8 +9517,25 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                           type="text"
                           className="absolute inset-0 w-full h-full opacity-0 focus:opacity-100 bg-white border border-indigo-300 rounded px-1 text-[10px] font-black text-gray-900 uppercase outline-none"
                           defaultValue={data.forma_pago}
-                          onBlur={(e) => handleFieldChange("forma_pago", e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && e.target.blur()}
+                          onBlur={(e) => {
+                            if (e.target.dataset.saved === "true") {
+                              handleFieldChange("forma_pago", e.target.value);
+                              delete e.target.dataset.saved;
+                            } else {
+                              e.target.value = data.forma_pago || "";
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              e.target.dataset.saved = "true";
+                              e.target.blur();
+                            } else if (e.key === 'Escape') {
+                              e.preventDefault();
+                              e.target.dataset.saved = "false";
+                              e.target.blur();
+                            }
+                          }}
                           disabled={isReadOnly}
                         />
                       </>
@@ -9290,8 +9555,25 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                           type="text"
                           className="absolute inset-0 w-full h-full opacity-0 focus:opacity-100 bg-white border border-indigo-300 rounded px-1 text-[10px] font-black text-gray-900 uppercase outline-none"
                           defaultValue={data.lugar}
-                          onBlur={(e) => handleFieldChange("lugar", e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && e.target.blur()}
+                          onBlur={(e) => {
+                            if (e.target.dataset.saved === "true") {
+                              handleFieldChange("lugar", e.target.value);
+                              delete e.target.dataset.saved;
+                            } else {
+                              e.target.value = data.lugar || "";
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              e.target.dataset.saved = "true";
+                              e.target.blur();
+                            } else if (e.key === 'Escape') {
+                              e.preventDefault();
+                              e.target.dataset.saved = "false";
+                              e.target.blur();
+                            }
+                          }}
                           disabled={isReadOnly}
                         />
                       </>
@@ -9539,68 +9821,76 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
             <div className="px-5 py-3.5 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
               <h3 className="font-black text-gray-900 flex items-center text-[11px] uppercase tracking-wider">
-                <Icon name="percent" className="h-3.5 w-3.5 mr-2 text-indigo-500" strokeWidth={2.5} /> Descuento Comercial
+                <Icon name="percent" className="h-4 w-4 mr-2 text-indigo-500" strokeWidth={2.5} /> Descuento Comercial
               </h3>
               <div className="flex items-center gap-3">
                 {loadingDescuentoTotales && (
-                  <div className="animate-spin h-3 w-3 border-2 border-teal-500 border-t-transparent rounded-full" />
-                )}
-                {!isReadOnly && (
-                  <button
-                    type="button"
-                    disabled={savingDescuento}
-                    onClick={handleResetDescuento}
-                    className="group flex items-center gap-1 text-[10px] font-black text-slate-400 hover:text-rose-500 uppercase tracking-widest transition-all disabled:opacity-50"
-                    title="Limpiar descuento"
-                  >
-                    <Icon name="rotate-ccw" className="h-3.5 w-3.5 group-hover:rotate-[-45deg] transition-transform" />
-                    <span>Limpiar</span>
-                  </button>
+                  <div className="animate-spin h-3.5 w-3.5 border-2 border-teal-500 border-t-transparent rounded-full" />
                 )}
               </div>
             </div>
 
-            <div className="p-4 space-y-4">
+            <div className="p-5 space-y-4">
               
-              {/* Grid de 2 columnas para la configuración del descuento */}
-              <div className="grid grid-cols-2 gap-3 pb-1">
-                
-                {/* Aplicar Descuento */}
-                <CompactField label="Aplicar Descuento" className="group relative justify-center">
-                  <div className="flex items-center min-h-[18px]">
-                    <input
-                      type="checkbox"
-                      disabled={isReadOnly}
-                      checked={descuentoAplicar}
-                      onChange={(e) => setDescuentoAplicar(e.target.checked)}
-                      className="w-4 h-4 text-teal-650 border-gray-300 rounded focus:ring-teal-500/20 transition-all cursor-pointer disabled:cursor-not-allowed"
+              {/* Toggle Switch */}
+              <div className={cn(
+                "flex items-center justify-between p-3.5 rounded-2xl border transition-all duration-300",
+                descuentoAplicar 
+                  ? "bg-teal-50/20 border-teal-150 shadow-sm" 
+                  : "bg-slate-50 border-slate-150"
+              )}>
+                <div className="flex flex-col">
+                  <span className="text-[11px] font-black text-slate-800 uppercase tracking-wide">
+                    Aplicar Descuento
+                  </span>
+                  <span className="text-[9px] font-bold text-slate-450 uppercase tracking-tight">
+                    {descuentoAplicar ? "Activo - Se aplica a la cotización" : "Inactivo - Apagado"}
+                  </span>
+                </div>
+                {!isReadOnly && (
+                  <button
+                    type="button"
+                    onClick={() => handleToggleDescuento(!descuentoAplicar)}
+                    className={cn(
+                      "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-250 ease-in-out outline-none focus:ring-4 focus:ring-teal-500/10",
+                      descuentoAplicar ? "bg-teal-600" : "bg-slate-200"
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-250 ease-in-out",
+                        descuentoAplicar ? "translate-x-5" : "translate-x-0"
+                      )}
                     />
-                  </div>
-                </CompactField>
+                  </button>
+                )}
+              </div>
 
+              {/* Grid de 2 columnas para la configuración del descuento */}
+              <div className="grid grid-cols-2 gap-4 transition-all duration-300">
                 {/* Afecto a */}
-                <CompactField label="Afecto a" className="group relative">
+                <div className="flex flex-col gap-1 bg-slate-50 border border-slate-200 rounded-xl p-3 hover:border-slate-300 transition-colors group">
+                  <span className="text-[9px] font-black text-slate-455 uppercase tracking-wider">Afecto a</span>
                   <div className="relative">
                     <select
                       disabled={isReadOnly}
                       value={descuentoAfecto}
                       onChange={(e) => setDescuentoAfecto(e.target.value)}
-                      className="bg-transparent border-none p-0 h-auto font-black text-[10px] text-gray-900 focus:ring-0 cursor-pointer w-full appearance-none pr-4 uppercase"
+                      className="bg-transparent border-none p-0 h-auto font-black text-xs text-slate-855 focus:ring-0 cursor-pointer w-full appearance-none pr-5 uppercase outline-none"
                     >
                       <option value="t">TOTAL GENERAL</option>
                       <option value="su">SUMINISTROS</option>
                       <option value="ser">SERVICIOS</option>
                     </select>
                     {!isReadOnly && (
-                      <div className="absolute right-0 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                        <Icon name="chevron-down" className="h-2 w-2 text-gray-400" />
-                      </div>
+                      <Icon name="chevron-down" className="absolute right-0 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 group-hover:text-slate-655 transition-colors pointer-events-none" />
                     )}
                   </div>
-                </CompactField>
+                </div>
 
                 {/* Porcentaje */}
-                <CompactField label="Porcentaje" className="group relative">
+                <div className="flex flex-col gap-1 bg-slate-50 border border-slate-200 rounded-xl p-3 hover:border-slate-300 transition-colors group">
+                  <span className="text-[9px] font-black text-slate-455 uppercase tracking-wider">Porcentaje</span>
                   <div className="relative flex items-center w-full">
                     <input
                       type="number"
@@ -9609,14 +9899,15 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                       value={descuentoPorcentaje}
                       onChange={(e) => handleDecimalChange(e, handleDescuentoPorcentajeChange)}
                       placeholder="0.00"
-                      className="bg-transparent border-none p-0 h-auto font-black text-[10px] text-gray-900 focus:ring-0 outline-none w-full pr-4 font-mono"
+                      className="bg-transparent border-none p-0 h-auto font-black text-xs text-slate-855 focus:ring-0 outline-none w-full pr-5 font-mono"
                     />
-                    <span className="absolute right-0 text-[10px] font-bold text-gray-400">%</span>
+                    <span className="absolute right-0 text-xs font-bold text-slate-405">%</span>
                   </div>
-                </CompactField>
+                </div>
 
                 {/* Importe */}
-                <CompactField label="Importe" className="group relative">
+                <div className="flex flex-col gap-1 bg-slate-50 border border-slate-200 rounded-xl p-3 hover:border-slate-300 transition-colors group col-span-2">
+                  <span className="text-[9px] font-black text-slate-455 uppercase tracking-wider">Importe Descuento</span>
                   <div className="relative flex items-center w-full">
                     <input
                       type="number"
@@ -9625,14 +9916,13 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                       value={descuentoImporte}
                       onChange={(e) => handleDecimalChange(e, handleDescuentoImporteChange)}
                       placeholder="0.00"
-                      className="bg-transparent border-none p-0 h-auto font-black text-[10px] text-gray-900 focus:ring-0 outline-none w-full pr-6 font-mono"
+                      className="bg-transparent border-none p-0 h-auto font-black text-xs text-slate-855 focus:ring-0 outline-none w-full pr-6 font-mono"
                     />
-                    <span className="absolute right-0 text-[10px] font-bold text-gray-400">
+                    <span className="absolute right-0 text-xs font-bold text-slate-455">
                       {data?.tipo_moneda === 'S' || data?.tipo_moneda === 'PEN' ? 'S/' : '$'}
                     </span>
                   </div>
-                </CompactField>
-
+                </div>
               </div>
 
               {descuentoError && (
@@ -9642,29 +9932,29 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
               )}
 
               {/* SECCIÓN 2: DASHBOARD */}
-              <div className="grid grid-cols-2 gap-3 pt-1">
+              <div className="grid grid-cols-2 gap-3.5 pt-1">
                 
                 {/* Resumen de Base */}
-                <div className="bg-gray-50/80 p-3 rounded-xl border border-gray-100 space-y-2">
-                  <div className="flex items-center gap-1.5 pb-1 border-b border-gray-200/50">
-                    <Icon name="calculator" className="h-3 w-3 text-teal-650" />
+                <div className="bg-gray-50/80 p-3.5 rounded-xl border border-gray-150 space-y-2.5">
+                  <div className="flex items-center gap-1.5 pb-1.5 border-b border-gray-200/50">
+                    <Icon name="calculator" className="h-3.5 w-3.5 text-teal-650" />
                     <span className="text-[9px] font-black text-slate-700 uppercase tracking-wider">Base de Cálculo</span>
                   </div>
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center text-[9px] font-bold">
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-center text-[10px] font-bold">
                       <span className="text-slate-500">Total Original:</span>
-                      <span className="text-slate-900 font-mono text-[9.5px]">
+                      <span className="text-slate-900 font-mono font-black">
                         {formatMoneySymbol((Number(descuentoTotales.total || 0) + Number(descuentoTotales.des_m || 0)))}
                       </span>
                     </div>
-                    <div className="flex justify-between items-center text-[9px]">
-                      <span className="text-slate-500">Suministros:</span>
+                    <div className="flex justify-between items-center text-[9.5px]">
+                      <span className="text-slate-550">Suministros:</span>
                       <span className="text-slate-770 font-mono">
                         {formatMoneySymbol(Number(descuentoTotales.suministros || 0))}
                       </span>
                     </div>
-                    <div className="flex justify-between items-center text-[9px]">
-                      <span className="text-slate-500">Servicios:</span>
+                    <div className="flex justify-between items-center text-[9.5px]">
+                      <span className="text-slate-550">Servicios:</span>
                       <span className="text-slate-770 font-mono">
                         {formatMoneySymbol(Number(descuentoTotales.servicios || 0))}
                       </span>
@@ -9674,33 +9964,32 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
 
                 {/* Resultado Final */}
                 <div className={cn(
-                  "p-3 rounded-xl border space-y-2 transition-all duration-300",
+                  "p-3.5 rounded-xl border space-y-2.5 transition-all duration-300",
                   descuentoAplicar
-                    ? "bg-teal-50/30 border-teal-150"
+                    ? "bg-teal-50/30 border-teal-150 shadow-sm"
                     : "bg-gray-50/40 border-gray-100 opacity-60"
                 )}>
-                  <div className="flex items-center gap-1.5 pb-1 border-b border-teal-200/20">
-                    <Icon name="trending-up" className={cn("h-3 w-3", descuentoAplicar ? "text-teal-650" : "text-gray-400")} />
+                  <div className="flex items-center gap-1.5 pb-1.5 border-b border-teal-200/25">
+                    <Icon name="trending-up" className={cn("h-3.5 w-3.5", descuentoAplicar ? "text-teal-650" : "text-gray-400")} />
                     <span className={cn("text-[9px] font-black uppercase tracking-wider", descuentoAplicar ? "text-teal-700" : "text-slate-500")}>Resultado Final</span>
                   </div>
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center text-[9px] font-bold">
-                      <span className="text-slate-500">Descuento:</span>
-                      <span className="font-black text-red-650 italic">
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-center text-[10px] font-bold">
+                      <span className="text-slate-555">Descuento:</span>
+                      <span className="font-black text-red-655 italic">
                         {descuentoAplicar ? `- ${formatMoneySymbol(Number(descuentoImporte || 0))}` : '0.00'}
                       </span>
                     </div>
-                    <div className="pt-1 border-t border-slate-200/50">
-                      <div className="flex justify-between items-center text-[9.5px] font-black">
+                    <div className="pt-1.5 border-t border-slate-200/50">
+                      <div className="flex justify-between items-center text-[10px] font-black">
                         <span className={descuentoAplicar ? "text-teal-700" : "text-slate-650"}>Total Final:</span>
-                        <span className={cn("font-mono", descuentoAplicar ? "text-teal-700 text-[10px]" : "text-slate-800")}>
+                        <span className={cn("font-mono text-xs", descuentoAplicar ? "text-teal-700 font-black" : "text-slate-800")}>
                           {formatMoneySymbol((Number(descuentoTotales.total || 0) + Number(descuentoTotales.des_m || 0) - (descuentoAplicar ? Number(descuentoImporte || 0) : 0)))}
                         </span>
                       </div>
                     </div>
                   </div>
                 </div>
-
               </div>
             </div>
           </div>
@@ -10004,7 +10293,10 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                     ESTADO: { color: 'rose', icon: 'refresh-cw', label: 'Cambio de Estado' },
                     SUMINISTROS: { color: 'blue', icon: 'box', label: 'Suministros' },
                     SERVICIOS: { color: 'purple', icon: 'tool', label: 'Servicios' },
-                    CONDICIONES: { color: 'slate', icon: 'file-text', label: 'Condiciones Generales' }
+                    CONDICIONES: { color: 'orange', icon: 'file-text', label: 'Condiciones Generales' },
+                    DESCUENTO: { color: 'teal', icon: 'percent', label: 'Descuento' },
+                    DATOS_COTIZACION: { color: 'sky', icon: 'file-text', label: 'DATOS COTIZACION' },
+                    CODIGO: { color: 'violet', icon: 'file-text', label: 'CÓDIGO' }
                   };
 
                   const config = typeConfig[type] || typeConfig.SISTEMA;
@@ -10017,7 +10309,11 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                     rose: { border: 'border-rose-500', text: 'text-rose-700', bg: 'bg-rose-50/30 border border-rose-100/50' },
                     blue: { border: 'border-blue-500', text: 'text-blue-700', bg: 'bg-blue-50/30 border border-blue-100/50' },
                     purple: { border: 'border-purple-500', text: 'text-purple-700', bg: 'bg-purple-50/30 border border-purple-100/50' },
-                    slate: { border: 'border-slate-500', text: 'text-slate-700', bg: 'bg-slate-50/30 border border-slate-100/50' }
+                    slate: { border: 'border-slate-500', text: 'text-slate-700', bg: 'bg-slate-50/30 border border-slate-100/50' },
+                    teal: { border: 'border-teal-500', text: 'text-teal-700', bg: 'bg-teal-50/30 border border-teal-100/50' },
+                    orange: { border: 'border-orange-500', text: 'text-orange-700', bg: 'bg-orange-50/30 border border-orange-100/50' },
+                    sky: { border: 'border-sky-500', text: 'text-sky-700', bg: 'bg-sky-50/30 border border-sky-100/50' },
+                    violet: { border: 'border-violet-500', text: 'text-violet-700', bg: 'bg-violet-50/30 border border-violet-100/50' }
                   };
 
                   const classes = colorMap[colorClass] || colorMap.slate;
@@ -10025,35 +10321,49 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                   let cleanDetalle = n.detalle || "";
                   if (type === "SUMINISTROS" && cleanDetalle.toUpperCase().startsWith("SUMINISTROS:")) {
                     cleanDetalle = cleanDetalle.substring("Suministros:".length).trim();
-                  } else if (type === "SERVICIOS" && cleanDetalle.toUpperCase().startsWith("SERVICIOS:")) {
-                    cleanDetalle = cleanDetalle.substring("Servicios:".length).trim();
+                  } else if (type === "SERVICIOS") {
+                    if (cleanDetalle.toUpperCase().startsWith("SERVICIOS:")) {
+                      cleanDetalle = cleanDetalle.substring("Servicios:".length).trim();
+                    } else if (cleanDetalle.toUpperCase().startsWith("PERSONAL:")) {
+                      cleanDetalle = cleanDetalle.substring("Personal:".length).trim();
+                    } else if (cleanDetalle.toUpperCase().startsWith("GASTOS:")) {
+                      cleanDetalle = cleanDetalle.substring("Gastos:".length).trim();
+                    }
                   } else if (type === "CONDICIONES" && cleanDetalle.toUpperCase().startsWith("CONDICIONES GENERALES:")) {
                     cleanDetalle = cleanDetalle.substring("Condiciones Generales:".length).trim();
+                  } else if (type === "DESCUENTO" && cleanDetalle.toUpperCase().startsWith("DESCUENTOS:")) {
+                    cleanDetalle = cleanDetalle.substring("Descuentos:".length).trim();
+                  } else if (type === "DESCUENTO" && cleanDetalle.toUpperCase().startsWith("DESCUENTO:")) {
+                    cleanDetalle = cleanDetalle.substring("Descuento:".length).trim();
+                  } else if (type === "DATOS_COTIZACION" && cleanDetalle.toUpperCase().startsWith("DATOS:")) {
+                    cleanDetalle = cleanDetalle.substring("Datos:".length).trim();
+                  } else if (type === "CODIGO" && cleanDetalle.toUpperCase().startsWith("CÓDIGO:")) {
+                    cleanDetalle = cleanDetalle.substring("CÓDIGO:".length).trim();
                   }
 
                   return (
-                    <div key={n.id_seguimiento || idx} className="relative pl-8 pb-6 group">
+                    <div key={n.id_seguimiento || idx} className="relative pl-8 pb-6 group min-w-0">
                       {/* Punto conector dinámico según color */}
                       <div className={`absolute left-0 top-1.5 w-3 h-3 bg-white border-2 ${classes.border} rounded-full z-10 transition-all group-hover:scale-110`}></div>
 
-                      <div className="flex flex-col">
-                        <div className="flex items-center justify-between mb-1.5">
-                          <div className="flex items-center space-x-2">
-                            {config.icon && <Icon name={config.icon} className={`h-3.5 w-3.5 ${classes.text}`} />}
-                            <span className={`text-[10px] font-black ${classes.text} uppercase tracking-tight`}>
+                      <div className="flex flex-col min-w-0">
+                        <div className="flex items-center justify-between mb-1.5 min-w-0 gap-2">
+                          <div className="flex items-center space-x-2 min-w-0">
+                            {config.icon && <Icon name={config.icon} className={`h-3.5 w-3.5 ${classes.text} flex-shrink-0`} />}
+                            <span className={`text-[10px] font-black ${classes.text} uppercase tracking-tight truncate`}>
                               {config.label}
                             </span>
-                            <span className="h-1 w-1 bg-slate-200 rounded-full"></span>
-                            <span className="text-[10px] font-bold text-slate-400">@{n.usuario_nombre || 'sistema'}</span>
+                            <span className="h-1 w-1 bg-slate-200 rounded-full flex-shrink-0"></span>
+                            <span className="text-[10px] font-bold text-slate-400 truncate">@{n.usuario_nombre || 'sistema'}</span>
                           </div>
-                          <span className="text-[9px] font-bold text-slate-400 tabular-nums">{n.fecha_formateada}</span>
+                          <span className="text-[9px] font-bold text-slate-400 tabular-nums flex-shrink-0">{n.fecha_formateada}</span>
                         </div>
 
                         {/* Contenedor de contenido según tipo */}
-                        <div className={`rounded-xl p-2.5 transition-all ${
+                        <div className={`rounded-xl p-2.5 transition-all min-w-0 ${
                           type === 'CREACION' ? classes.bg : 'bg-transparent group-hover:bg-gray-50/50'
                         }`}>
-                          <p className="text-[11px] text-slate-600 leading-relaxed font-bold">
+                          <p className="text-[11px] text-slate-600 leading-relaxed font-bold break-words whitespace-normal overflow-wrap-anywhere">
                             {type === 'ADJUNTOS' && <Icon name="file-text" className="inline h-3 w-3 mr-1 text-emerald-500" />}
                             {type === 'ESTADO' && <Icon name="arrow-right" className="inline h-3 w-3 mr-1 text-rose-500" />}
                             {cleanDetalle}
@@ -10305,11 +10615,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
               <div>
                 <h3 className="text-[13px] font-black text-slate-900 uppercase tracking-widest">
-                  Previsualización del Reporte Oficial
+                  Previsualización del Reporte de Suministros
                 </h3>
-                <p className="text-[11px] text-slate-500 font-bold mt-0.5 uppercase tracking-wider">
-                  Módulo Suministros • Cotización N° {numReg}
-                </p>
               </div>
               
               {/* Botón Cerrar */}
@@ -10331,7 +10638,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 </div>
               )}
               <iframe 
-                src={`${api.defaults.baseURL}/cotizaciones/reporte-suministros-html/${numReg}/`}
+                src={`${cleanBaseURL}/cotizaciones/reporte-suministros-html/${numReg}/`}
                 className="w-full h-full bg-white rounded-xl border border-slate-200 shadow-sm"
                 title="Reporte de Suministros Oficial"
                 scrolling={reporteHeight && (reporteHeight + 160 < window.innerHeight * 0.88) ? "no" : "auto"}
@@ -10386,7 +10693,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 </div>
               )}
               <iframe 
-                src={`${api.defaults.baseURL}/cotizaciones/reporte-servicios-html/${numReg}/`}
+                src={`${cleanBaseURL}/cotizaciones/reporte-servicios-html/${numReg}/`}
                 className="w-full h-full bg-white rounded-xl border border-slate-200 shadow-sm"
                 title="Reporte de Servicios Oficial"
                 scrolling={reporteHeight && (reporteHeight + 160 < window.innerHeight * 0.88) ? "no" : "auto"}
@@ -10435,7 +10742,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 </div>
               )}
               <iframe 
-                src={`${api.defaults.baseURL}/cotizaciones/reporte-detallado/${numReg}/`}
+                src={`${cleanBaseURL}/cotizaciones/reporte-detallado/${numReg}/`}
                 className="w-full h-full bg-white rounded-xl border border-slate-200 shadow-sm"
                 title="Reporte Cliente Detallado"
                 scrolling={reporteHeight && (reporteHeight + 140 < window.innerHeight * 0.88) ? "no" : "auto"}
@@ -10484,7 +10791,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 </div>
               )}
               <iframe 
-                src={`${api.defaults.baseURL}/cotizaciones/reporte-resumen/${numReg}/`}
+                src={`${cleanBaseURL}/cotizaciones/reporte-resumen/${numReg}/`}
                 className="w-full h-full bg-white rounded-xl border border-slate-200 shadow-sm"
                 title="Reporte Cliente Resumen"
                 scrolling={reporteHeight && (reporteHeight + 140 < window.innerHeight * 0.88) ? "no" : "auto"}
@@ -10518,7 +10825,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
               </div>
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => window.open(`${api.defaults.baseURL}/cotizaciones/${numReg}/pdf/`, '_blank')}
+                  onClick={() => window.open(`${cleanBaseURL}/cotizaciones/${numReg}/pdf/`, '_blank')}
                   className="flex items-center px-3.5 py-2 bg-emerald-50 border border-emerald-200 rounded-xl text-[10px] font-black text-emerald-700 hover:bg-emerald-100 hover:border-emerald-300 hover:shadow-sm transition-all uppercase group"
                 >
                   <Icon name="file-text" className="h-3.5 w-3.5 mr-1.5 text-emerald-600 group-hover:scale-110 transition-transform" />
@@ -10526,7 +10833,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 </button>
 
                 <button
-                  onClick={() => window.open(`${api.defaults.baseURL}/cotizaciones/cotizacion/word/${numReg}/`, '_blank')}
+                  onClick={() => window.open(`${cleanBaseURL}/cotizaciones/cotizacion/word/${numReg}/`, '_blank')}
                   className="flex items-center px-3.5 py-2 bg-blue-50 border border-blue-200 rounded-xl text-[10px] font-black text-blue-700 hover:bg-blue-100 hover:border-blue-300 hover:shadow-sm transition-all uppercase group"
                 >
                   <LucideIcons.FileDown className="h-3.5 w-3.5 mr-1.5 text-blue-600 group-hover:scale-110 transition-transform" />
@@ -10551,7 +10858,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 </div>
               )}
               <iframe 
-                src={`${api.defaults.baseURL}/cotizaciones/${numReg}/pdf-preview/`}
+                src={`${cleanBaseURL}/cotizaciones/${numReg}/pdf-preview/`}
                 className="w-full h-full bg-white rounded-xl border border-slate-200 shadow-sm"
                 title="Previsualización de Cotización PDF"
                 scrolling="auto"
@@ -10917,7 +11224,8 @@ const SortableItemRow = ({
   setUnidadesMedida,
   activeEditField,
   handleTriggerCreateProduct,
-  renderInlineProductCreateForm
+  renderInlineProductCreateForm,
+  ocultarTotales
 }) => {
   const {
     attributes,
@@ -11212,6 +11520,7 @@ const SortableItemRow = ({
           <div className="flex flex-col gap-1 items-center justify-center text-center relative">
             <MarcaAutocomplete
               idMarca={editForm.id_marca}
+              idRegistro={numReg}
               proveedores={proveedores}
               onSelect={(brand) => {
                 const code = String(brand.id_marca).padStart(2, '0');
@@ -11353,14 +11662,18 @@ const SortableItemRow = ({
             </div>
           </div>
         </td>
-        {/* Precio Venta */}
-        <td className="px-3 py-1 text-center text-[11.5px] font-semibold text-gray-500">
-          {formatMoney(Number(editForm.precio_venta || 0))}
-        </td>
-        {/* Venta Total */}
-        <td className="px-3 py-1 text-center text-[11.5px] font-black text-gray-900">
-          {formatMoney(Number(editForm.venta_total || 0))}
-        </td>
+        {!ocultarTotales && (
+          <>
+            {/* Precio Venta */}
+            <td className="px-3 py-1 text-center text-[11.5px] font-semibold text-gray-500">
+              {formatMoney(Number(editForm.precio_venta || 0))}
+            </td>
+            {/* Venta Total */}
+            <td className="px-3 py-1 text-center text-[11.5px] font-black text-gray-900">
+              {formatMoney(Number(editForm.venta_total || 0))}
+            </td>
+          </>
+        )}
         {/* Actions */}
         <td className="px-3 py-1">
           <div className="flex justify-center items-center gap-1">
@@ -11657,20 +11970,24 @@ const SortableItemRow = ({
           </span>
         </div>
       </td>
-      {/* Precio Unitario */}
-      <td 
-        className="px-3 py-1 text-[12.5px] text-slate-700 font-semibold text-center"
-        onDoubleClick={(e) => e.stopPropagation()}
-      >
-        {formatMoney(item.precio_venta)}
-      </td>
-      {/* Venta Total */}
-      <td 
-        className="px-3 py-1 text-[12.5px] font-black text-slate-900 text-center"
-        onDoubleClick={(e) => e.stopPropagation()}
-      >
-        {formatMoney(item.venta_total)}
-      </td>
+      {!ocultarTotales && (
+        <>
+          {/* Precio Unitario */}
+          <td 
+            className="px-3 py-1 text-[12.5px] text-slate-700 font-semibold text-center"
+            onDoubleClick={(e) => e.stopPropagation()}
+          >
+            {formatMoney(item.precio_venta)}
+          </td>
+          {/* Venta Total */}
+          <td 
+            className="px-3 py-1 text-[12.5px] font-black text-slate-900 text-center"
+            onDoubleClick={(e) => e.stopPropagation()}
+          >
+            {formatMoney(item.venta_total)}
+          </td>
+        </>
+      )}
       {/* Acciones */}
       <td 
         className="px-3 py-1 align-middle text-center w-[60px] relative"
@@ -12093,6 +12410,7 @@ const SortableItemServicioRow = ({
                 <TipoPersonalAutocomplete
                   value={editingServicioForm.codigo_item || ""}
                   idArea={item.id_area || data?.id_area}
+                  idRegistro={numReg}
                   catalogoVersion={catalogoVersion}
                   onTriggerCreatePersonal={(name) => handleTriggerCreatePersonal(name, 'edit-' + item.id_servicio, handlePersonalCreatedEditLocal, handlePersonalCancelEditLocal)}
                   onKeyDown={handleKeyDown}
@@ -12245,6 +12563,7 @@ const SortableItemServicioRow = ({
                 <TipoGastoDetalleAutocomplete
                   value={editingServicioForm.codigo_item || ""}
                   codePrefix="05"
+                  idRegistro={numReg}
                   onTriggerCreateGasto={(name) => handleTriggerCreateGasto(name, 'edit-' + item.id_servicio, '05', handleGastoCreatedEditLocal, handleGastoCancelEditLocal)}
                   onKeyDown={handleKeyDown}
                   onSelect={(gasto) => {
@@ -12358,6 +12677,7 @@ const SortableItemServicioRow = ({
                 <TipoGastoDetalleAutocomplete
                   value={editingServicioForm.codigo_item || ""}
                   codePrefix="06"
+                  idRegistro={numReg}
                   onTriggerCreateGasto={(name) => handleTriggerCreateGasto(name, 'edit-' + item.id_servicio, '06', handleGastoCreatedEditLocal, handleGastoCancelEditLocal)}
                   onKeyDown={handleKeyDown}
                   onSelect={(gasto) => {

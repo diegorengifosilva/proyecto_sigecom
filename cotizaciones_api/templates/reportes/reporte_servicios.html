@@ -1,6 +1,6 @@
-
 {% load static %}
 {% load humanize %}
+{% load currency %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -31,14 +31,15 @@ body{
 ================================ */
 .grupo-titulo{
     margin-top:18px;
-    background:#0b5353;
+    background:#0f766e;
     color:#ffffff;
     font-weight:700;
     font-size:14px;
-    padding:9px 10px;
+    padding:8px 10px;
     border-radius:6px 6px 0 0;
+    border:1px solid #000307;
+    border-bottom:none;
     letter-spacing:.4px;
-    box-shadow:0 1px 3px rgba(0,0,0,.12);
 }
 
 /* evita td flotando */
@@ -54,7 +55,7 @@ body{
     width:100%;
     border-collapse:collapse;
     margin-bottom:18px;
-    border:2px solid #000103;
+    border:1px solid #000307;
 }
 
 /* encabezado principal */
@@ -62,21 +63,22 @@ body{
     background:#008080;
     color:white;
     padding:8px 6px;
-    border:1px solid #0a0c00;
+    border:1px solid #000307;
     font-weight:700;
     text-align:center;
 }
 
 /* sub encabezado */
 #tabla_servicios .sub-header th{
-    background:#14b8a6;
-    color:#0e1100;
+    background:#008080;
+    color:#ffffff;
     font-weight:700;
+    border:1px solid #000307;
 }
 
 /* filas */
 #tabla_servicios tbody td{
-    border:1px solid #000205;
+    border:1px solid #000307;
     padding:6px 7px;
     font-size:12px;
 }
@@ -94,11 +96,12 @@ body{
    SUBGRUPO
 ================================ */
 .subgrupo-titulo{
-    background:#17b1a4 !important;
+    background:#0f766e !important;
     font-weight:700;
     color:#ffffff;
-    padding:10px !important;
-    border-top:2px solid #000000 !important;
+    padding:8px 10px !important;
+    border-top:1px solid #000307 !important;
+    border-bottom:1px solid #000307 !important;
 }
 
 /* ================================
@@ -108,6 +111,7 @@ body{
     background:#ecfdf5 !important;
     font-weight:700;
     border-top:2px solid #0f766e !important;
+    border-bottom:1px solid #000307 !important;
 }
 
 .total-row:last-child td{
@@ -115,6 +119,7 @@ body{
     color:white;
     font-size:13px;
     border-top:3px solid #0c5f58 !important;
+    border-bottom:1px solid #000307 !important;
 }
 
 /* ================================
@@ -123,6 +128,7 @@ body{
 .text-right{
     text-align:right;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }
 
 .text-center{
@@ -208,18 +214,8 @@ body{
 {% for grupo in grupos.values %}
  
        <div class="grupo-titulo">
-        <td colspan="11" style="
-                background:#0f595c;
-                color:#ffffff;
-                font-weight:bold;
-                font-size:14px;
-                text-align:left;
-                padding:8px;
-                border:2px solid #2f2f2f;
-            ">
             {{ grupo.titulo }}
-        </td>
-    </div>
+       </div>
     <table>
              <thead>
             <tr>
@@ -252,31 +248,31 @@ body{
                     <td>{{ it.cod }}</td>
                     <td>{{ it.des }}</td>
                     <td class="text-center">{{ it.pro }}</td>
-                    <td class="text-center">{{ it.can|floatformat:2 }}</td>
+                    <td class="text-center">{{ it.can|floatformat:0 }}</td>
                     <td class="text-center">{{ it.dias|floatformat:0 }}</td>
-                    <td class="text-right">{{ it.val|floatformat:2 }}</td>
-                    <td class="text-right">{{ it.tot|floatformat:2 }}</td>
-                    <td class="text-right">{{ it.puc|floatformat:2 }}</td>
-                    <td class="text-right">{{ it.toc|floatformat:2 }}</td>
-                    <td class="text-right">{{ it.utilidad|floatformat:2 }}</td>
+                    <td class="text-right">{{ it.val|format_custom:moneda }}</td>
+                    <td class="text-right">{{ it.tot|format_custom:moneda }}</td>
+                    <td class="text-right">{{ it.puc|format_custom:moneda }}</td>
+                    <td class="text-right">{{ it.toc|format_custom:moneda }}</td>
+                    <td class="text-right">{{ it.utilidad|format_custom:moneda }}</td>
                 </tr>
             {% endfor %}
 
             <tr class="total-row">
                 <td colspan="7" class="text-right">Total {{ sub.tipo }}:</td>
-                <td class="text-right">{{ sub.sub_total_tot|floatformat:2 }}</td>
+                <td class="text-right">{{ sub.sub_total_tot|format_custom:moneda }}</td>
                 <td class="text-right"> </td>
-                <td class="text-right">{{ sub.sub_total_toc|floatformat:2 }}</td>
-                <td class="text-right">{{ sub.sub_total_utilidad|floatformat:2 }}</td>
+                <td class="text-right">{{ sub.sub_total_toc|format_custom:moneda }}</td>
+                <td class="text-right">{{ sub.sub_total_utilidad|format_custom:moneda }}</td>
             </tr>
         {% endfor %}
 
         <tr class="total-row">
             <td colspan="7" class="text-right">Total Servicio:</td>
-            <td class="text-right">{{ grupo.total_tot|floatformat:2 }}</td>
+            <td class="text-right">{{ grupo.total_tot|format_custom:moneda }}</td>
             <td class="text-right"> </td>
-            <td class="text-right">{{ grupo.total_toc|floatformat:2 }}</td>
-            <td class="text-right">{{ grupo.total_utilidad|floatformat:2 }}</td>
+            <td class="text-right">{{ grupo.total_toc|format_custom:moneda }}</td>
+            <td class="text-right">{{ grupo.total_utilidad|format_custom:moneda }}</td>
         </tr>
         </tbody>
     </table>
@@ -378,21 +374,21 @@ xmlns="http://www.w3.org/TR/REC-html40">
 .text-center{ text-align:center; }
 
 .grupo-titulo {
-    background: #0f4c5c;
-    color: #000;
+    background: #0f766e;
+    color: #ffffff;
     padding: 6px;
     font-weight: bold;
-    border: 2px solid #2f2f2f;
+    border: 1px solid #0c5f58;
     border-bottom: none;
 }
 
 .grupo-titulo tr{
-    background:#0f4c5c;
+    background:#0f766e;
     color:#ffffff;
     font-weight:bold;
     text-align:left;
     padding:7px 8px;
-    border:2px solid #2f2f2f;
+    border:1px solid #0c5f58;
     letter-spacing:.5px;
     font-size:13px;
 }

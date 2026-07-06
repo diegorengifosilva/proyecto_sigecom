@@ -3,6 +3,7 @@ import api from '@/services/api';
 import { toast } from '../utils/toast';
 import { useSensors, useSensor, PointerSensor } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
+import XLSX from 'xlsx-js-style';
 
 export const useCotizacionServicios = (numReg, onAddLog) => {
   const [gruposServicios, setGruposServicios] = useState({});
@@ -898,6 +899,282 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
     }
   }, [gruposServicios, handleGuardarOrden]);
 
+  const handleExportarGeneralServiciosXLS = useCallback(() => {
+    if (!gruposServicios || Object.keys(gruposServicios).length === 0) {
+      toast.error("No hay datos disponibles para exportar");
+      return;
+    }
+
+    const wb = XLSX.utils.book_new();
+    const ws = {};
+
+    const HEX_COLOR_BASE = "237573"; // Color institucional
+    const HEX_BG_GRUPO = "F1F5F9";   // Gris claro profesional para grupos
+    const HEX_BG_SUBGRUPO = "E6F4F1"; // Celeste/teal muy suave para subgrupos
+    const FONT_NAME = "Segoe UI";
+
+    const setCell = (ref, value, style = {}) => {
+      ws[ref] = { v: value, t: typeof value === 'number' ? 'n' : 's' };
+      if (Object.keys(style).length > 0) {
+        ws[ref].s = style;
+      }
+    };
+
+    // 🏢 CABECERA SUPERIOR
+    setCell("A1", "REPORTE GENERAL DE SERVICIOS", {
+      font: { name: FONT_NAME, size: 14, bold: true, color: { rgb: "1E293B" } }
+    });
+    setCell("A2", `Cotización N°: ${numReg || '-'}`, {
+      font: { name: FONT_NAME, size: 10, color: { rgb: "64748B" } }
+    });
+
+    // 📊 CABECERAS PRINCIPALES (Fila 4)
+    const headers = [
+      "Item", "Código", "Descripción", "Área",
+      "Cant. Hombres", "Días", "Precio Venta Unitario", "Venta Total",
+      "Precio Costo Unitario", "Costo Total", "Utilidad"
+    ];
+
+    const headerStyle = {
+      fill: { patternType: "solid", fgColor: { rgb: HEX_COLOR_BASE } },
+      font: { name: FONT_NAME, size: 10, bold: true, color: { rgb: "FFFFFF" } },
+      alignment: { horizontal: "center", vertical: "center" },
+      border: {
+        top: { style: "thin", color: { rgb: "E2E8F0" } },
+        bottom: { style: "medium", color: { rgb: "1E293B" } },
+        left: { style: "thin", color: { rgb: "E2E8F0" } },
+        right: { style: "thin", color: { rgb: "E2E8F0" } }
+      }
+    };
+
+    headers.forEach((header, idx) => {
+      const colLetter = String.fromCharCode(65 + idx);
+      setCell(`${colLetter}4`, header, headerStyle);
+    });
+
+    const borderData = {
+      top: { style: "thin", color: { rgb: "E2E8F0" } },
+      bottom: { style: "thin", color: { rgb: "E2E8F0" } },
+      left: { style: "thin", color: { rgb: "E2E8F0" } },
+      right: { style: "thin", color: { rgb: "E2E8F0" } }
+    };
+
+    let currentRow = 5;
+    let totalGeneralVenta = 0;
+    let totalGeneralCosto = 0;
+    let totalGeneralUtilidad = 0;
+    const mergesConfig = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 10 } }, // Título
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 10 } }  // Subtítulo
+    ];
+
+    // Recorrido de Grupos y Subgrupos
+    Object.values(gruposServicios).forEach(grupo => {
+      // FILA GRUPO PRINCIPAL (Nivel 0)
+      const grupoStyle = {
+        font: { name: FONT_NAME, size: 10, bold: true, color: { rgb: "1E293B" } },
+        fill: { patternType: "solid", fgColor: { rgb: HEX_BG_GRUPO } },
+        alignment: { horizontal: "left", vertical: "center" },
+        border: borderData
+      };
+
+      const nombreGrupo = grupo.tituloGeneral ? grupo.tituloGeneral.trim() : "SIN NOMBRE";
+      setCell(`A${currentRow}`, `GRUPO: ${nombreGrupo} (Cant: ${grupo.cantidad || 1})`, grupoStyle);
+      
+      for (let c = 1; c < 11; c++) {
+        setCell(`${String.fromCharCode(65 + c)}${currentRow}`, "", grupoStyle);
+      }
+      mergesConfig.push({ s: { r: currentRow - 1, c: 0 }, e: { r: currentRow - 1, c: 10 } });
+      currentRow++;
+
+      // SUBGRUPO (Mano de obra, etc.)
+      (grupo.subgrupos || []).forEach(sub => {
+        if (!sub.items || sub.items.length === 0) return;
+
+        const subgrupoStyle = {
+          font: { name: FONT_NAME, size: 9, bold: true, color: { rgb: "0F766E" } },
+          fill: { patternType: "solid", fgColor: { rgb: HEX_BG_SUBGRUPO } },
+          alignment: { horizontal: "left", vertical: "center" },
+          border: borderData
+        };
+
+        const tituloSubgrupo = sub.titulo ? sub.titulo.trim() : "OTROS";
+        setCell(`A${currentRow}`, `${tituloSubgrupo}`, subgrupoStyle);
+        for (let c = 1; c < 11; c++) {
+          setCell(`${String.fromCharCode(65 + c)}${currentRow}`, "", subgrupoStyle);
+        }
+        mergesConfig.push({ s: { r: currentRow - 1, c: 0 }, e: { r: currentRow - 1, c: 10 } });
+        currentRow++;
+
+        let contadorItems = 1;
+        let subtotalVenta = 0;
+        let subtotalCosto = 0;
+        let subtotalUtilidad = 0;
+
+        sub.items.forEach((item, idx) => {
+          const isZebra = idx % 2 !== 0;
+          const rowBg = isZebra ? "F8FAFC" : "FFFFFF";
+
+          const itemStyle = (align) => ({
+            font: { name: FONT_NAME, size: 9, color: { rgb: "334155" } },
+            fill: { patternType: "solid", fgColor: { rgb: rowBg } },
+            alignment: { horizontal: align, vertical: "center" },
+            border: borderData
+          });
+
+          const cod = item.codigo_item || "";
+          const desc = item.descripcion_item || "";
+          const area = item.area_nombre || "";
+          const cantHombres = Number(item.cantidad_hombres) || 0;
+          const dias = Number(item.cantidad_dias) || 0;
+
+          // Cliente Final
+          const valUnit = Number(item.cotizado_hombre_dia) || 0;
+          const valTotal = Number(item.cotizado_total) || 0;
+
+          // Costo
+          const costUnit = Number(item.costo_hombre_dia) || 0;
+          const costTotal = Number(item.costo_total) || 0;
+
+          // Utilidad
+          const util = Number(item.utilidad) || (valTotal - costTotal);
+
+          setCell(`A${currentRow}`, contadorItems++, itemStyle("center"));
+          setCell(`B${currentRow}`, cod, itemStyle("left"));
+          setCell(`C${currentRow}`, desc, itemStyle("left"));
+          setCell(`D${currentRow}`, area, itemStyle("center"));
+
+          setCell(`E${currentRow}`, cantHombres, itemStyle("center"));
+          ws[`E${currentRow}`].z = '#,##0';
+
+          setCell(`F${currentRow}`, dias, itemStyle("center"));
+          ws[`F${currentRow}`].z = '#,##0';
+
+          // Venta
+          setCell(`G${currentRow}`, valUnit, itemStyle("right"));
+          ws[`G${currentRow}`].z = '$#,##0.00';
+          setCell(`H${currentRow}`, valTotal, itemStyle("right"));
+          ws[`H${currentRow}`].z = '$#,##0.00';
+
+          // Costo
+          setCell(`I${currentRow}`, costUnit, itemStyle("right"));
+          ws[`I${currentRow}`].z = '$#,##0.00';
+          setCell(`J${currentRow}`, costTotal, itemStyle("right"));
+          ws[`J${currentRow}`].z = '$#,##0.00';
+
+          // Utilidad
+          setCell(`K${currentRow}`, util, itemStyle("right"));
+          ws[`K${currentRow}`].z = '$#,##0.00';
+
+          subtotalVenta += valTotal;
+          subtotalCosto += costTotal;
+          subtotalUtilidad += util;
+
+          currentRow++;
+        });
+
+        // FILA DE TOTAL SUBGRUPO
+        const subTotalStyle = (align) => ({
+          font: { name: FONT_NAME, size: 9, bold: true, color: { rgb: "475569" } },
+          alignment: { horizontal: align, vertical: "center" },
+          border: {
+            top: { style: "thin", color: { rgb: "CBD5E1" } },
+            bottom: { style: "thin", color: { rgb: "CBD5E1" } }
+          }
+        });
+
+        setCell(`A${currentRow}`, `TOTAL SUBGRUPO (${tituloSubgrupo})`, subTotalStyle("right"));
+        for (let c = 1; c < 7; c++) {
+          setCell(`${String.fromCharCode(65 + c)}${currentRow}`, "", subTotalStyle("left"));
+        }
+        mergesConfig.push({ s: { r: currentRow - 1, c: 0 }, e: { r: currentRow - 1, c: 6 } });
+
+        setCell(`H${currentRow}`, subtotalVenta, subTotalStyle("right"));
+        ws[`H${currentRow}`].z = '$#,##0.00';
+
+        setCell(`J${currentRow}`, subtotalCosto, subTotalStyle("right"));
+        ws[`J${currentRow}`].z = '$#,##0.00';
+
+        setCell(`K${currentRow}`, subtotalUtilidad, subTotalStyle("right"));
+        ws[`K${currentRow}`].z = '$#,##0.00';
+
+        totalGeneralVenta += subtotalVenta;
+        totalGeneralCosto += subtotalCosto;
+        totalGeneralUtilidad += subtotalUtilidad;
+
+        currentRow += 2; // Espacio
+      });
+    });
+
+    // TOTAL GENERAL COMERCIAL
+    const totalStyle = (align) => ({
+      font: { name: FONT_NAME, size: 10, bold: true, color: { rgb: "1E293B" } },
+      alignment: { horizontal: align, vertical: "center" },
+      border: {
+        top: { style: "thin", color: { rgb: "94A3B8" } },
+        bottom: { style: "double", color: { rgb: HEX_COLOR_BASE } }
+      }
+    });
+
+    setCell(`A${currentRow}`, "TOTAL GENERAL SERVICIOS", totalStyle("right"));
+    for (let c = 1; c < 7; c++) {
+      setCell(`${String.fromCharCode(65 + c)}${currentRow}`, "", totalStyle("left"));
+    }
+    mergesConfig.push({ s: { r: currentRow - 1, c: 0 }, e: { r: currentRow - 1, c: 6 } });
+
+    setCell(`H${currentRow}`, totalGeneralVenta, totalStyle("right"));
+    ws[`H${currentRow}`].z = '$#,##0.00';
+
+    setCell(`J${currentRow}`, totalGeneralCosto, totalStyle("right"));
+    ws[`J${currentRow}`].z = '$#,##0.00';
+
+    setCell(`K${currentRow}`, totalGeneralUtilidad, totalStyle("right"));
+    ws[`K${currentRow}`].z = '$#,##0.00';
+
+    ws['!ref'] = `A1:K${currentRow}`;
+    ws['!merges'] = mergesConfig;
+
+    // 📐 CONTROL RESPONSIVO DINÁMICO DE ANCHOS
+    const minWidths = [7, 12, 50, 16, 12, 8, 16, 18, 16, 18, 18];
+    const colWidths = minWidths.map(w => ({ wch: w }));
+
+    for (let c = 0; c < 11; c++) {
+      const colLetter = String.fromCharCode(65 + c);
+      let maxLength = minWidths[c];
+
+      for (let r = 4; r <= currentRow; r++) {
+        // Ignoramos filas de totales y separadores combinados al medir para evitar distorsiones
+        const esFilaEspecial = ws[`A${r}`]?.v && (
+          String(ws[`A${r}`].v).includes("GRUPO:") || 
+          String(ws[`A${r}`].v).includes("TOTAL") || 
+          String(ws[`A${r}`].v).includes("Subgrupo:")
+        );
+        if (esFilaEspecial && c < 4) continue;
+
+        const cellRef = `${colLetter}${r}`;
+        if (ws[cellRef] && ws[cellRef].v !== undefined && ws[cellRef].v !== null) {
+          let cellText = String(ws[cellRef].v);
+
+          if (ws[cellRef].t === 'n' && ws[cellRef].z && ws[cellRef].z.includes('$')) {
+            cellText = `$${Number(ws[cellRef].v).toFixed(2)}`;
+          }
+
+          if (cellText.length > maxLength) {
+            maxLength = cellText.length;
+          }
+        }
+      }
+      colWidths[c].wch = maxLength + 3;
+    }
+
+    ws['!cols'] = colWidths;
+
+    // 4️⃣ Grabar Libro de Trabajo y lanzar descarga
+    XLSX.utils.book_append_sheet(wb, ws, "Servicios General");
+    XLSX.writeFile(wb, `Reporte_Servicios_${numReg}.xlsx`);
+    toast.success("Excel corporativo de servicios descargado");
+  }, [gruposServicios, numReg]);
+
   const handleReporteServicios = useCallback(() => {
     if (!numReg) return;
   }, [numReg]);
@@ -915,6 +1192,7 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
     sensors,
     handleDragEnd,
     handleReporteServicios,
+    handleExportarGeneralServiciosXLS,
     isServiciosDirty,
     saveServicios,
   };

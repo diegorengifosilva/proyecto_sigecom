@@ -297,6 +297,22 @@ def lista_tipo_marca(request):
         
         next_id = obtener_siguiente_id_marca()
         nueva_marca = TipoMarca.objects.create(id_marca=next_id, nombre=nombre, activo="1")
+        
+        id_registro = request.data.get("id_registro")
+        if id_registro:
+            try:
+                from cotizaciones_api.models import Cotizacion, CotizacionSeguimiento
+                cot = Cotizacion.objects.filter(id_registro=id_registro).first()
+                if cot:
+                    CotizacionSeguimiento.objects.create(
+                        id_registro=cot,
+                        detalle=f"Suministros: Agregar nueva marca '{nueva_marca.nombre}'",
+                        id_usuario=request.user if request.user.is_authenticated else None,
+                        activo='1'
+                    )
+            except Exception as ex:
+                print("Error creating tracking log for brand:", ex)
+
         serializer = TipoMarcaSerializer(nueva_marca)
         return Response({"ok": True, "registro": serializer.data}, status=status.HTTP_201_CREATED)
 
@@ -359,6 +375,22 @@ def lista_tipo_personal(request):
                 id_area=area,
                 activo=1
             )
+            
+            id_registro = request.data.get("id_registro")
+            if id_registro:
+                try:
+                    from cotizaciones_api.models import Cotizacion, CotizacionSeguimiento
+                    cot = Cotizacion.objects.filter(id_registro=id_registro).first()
+                    if cot:
+                        CotizacionSeguimiento.objects.create(
+                            id_registro=cot,
+                            detalle=f"Servicios: Agregar nuevo personal '{nuevo_personal.codigo} - {nuevo_personal.nombre}'",
+                            id_usuario=request.user if request.user.is_authenticated else None,
+                            activo='1'
+                        )
+                except Exception as ex:
+                    print("Error creating tracking log for personal:", ex)
+
             serializer = TipoPersonalSerializer(nuevo_personal)
             return Response({"ok": True, "registro": serializer.data}, status=status.HTTP_201_CREATED)
         except Exception as e:
@@ -435,6 +467,22 @@ def lista_tgasto_detalle(request):
                 id_tipo_gasto=parent_gasto,
                 activo=1
             )
+            
+            id_registro = request.data.get("id_registro")
+            if id_registro:
+                try:
+                    from cotizaciones_api.models import Cotizacion, CotizacionSeguimiento
+                    cot = Cotizacion.objects.filter(id_registro=id_registro).first()
+                    if cot:
+                        CotizacionSeguimiento.objects.create(
+                            id_registro=cot,
+                            detalle=f"Servicios: Agregar nuevo Gasto '{nuevo_gasto.codigo} - {nuevo_gasto.nombre}'",
+                            id_usuario=request.user if request.user.is_authenticated else None,
+                            activo='1'
+                        )
+                except Exception as ex:
+                    print("Error creating tracking log for gasto:", ex)
+
             serializer = TipoGastoDetalleSerializer(nuevo_gasto)
             return Response({"ok": True, "registro": serializer.data}, status=status.HTTP_201_CREATED)
         except Exception as e:
@@ -616,6 +664,22 @@ def lista_productos(request):
                 proveedor=proveedor,
                 activo=1
             )
+            
+            id_registro = request.data.get("id_registro")
+            if id_registro:
+                try:
+                    from cotizaciones_api.models import Cotizacion, CotizacionSeguimiento
+                    cot = Cotizacion.objects.filter(id_registro=id_registro).first()
+                    if cot:
+                        CotizacionSeguimiento.objects.create(
+                            id_registro=cot,
+                            detalle=f"Suministros: Agregar nuevo producto '{nuevo_producto.nombre}'",
+                            id_usuario=request.user if request.user.is_authenticated else None,
+                            activo='1'
+                        )
+                except Exception as ex:
+                    print("Error creating tracking log for product:", ex)
+
             serializer = ProductoSerializer(nuevo_producto)
             return Response({"ok": True, "registro": serializer.data}, status=status.HTTP_201_CREATED)
 

@@ -1034,7 +1034,7 @@ export const ProductoAutocomplete = ({
   );
 };
 
-export const TipoPersonalAutocomplete = ({ value, idArea, onSelect, isReadOnly, tabIndex, placeholder = "Buscar personal...", onKeyDown, onTriggerCreatePersonal, catalogoVersion = 0 }) => {
+export const TipoPersonalAutocomplete = ({ value, idArea, onSelect, isReadOnly, tabIndex, placeholder = "Buscar personal...", onKeyDown, onTriggerCreatePersonal, catalogoVersion = 0, idRegistro }) => {
   const [query, setQuery] = useState("");
   const [allPersonal, setAllPersonal] = useState([]);
   const [results, setResults] = useState([]);
@@ -1183,7 +1183,8 @@ export const TipoPersonalAutocomplete = ({ value, idArea, onSelect, isReadOnly, 
         nombre: uppercaseName,
         id_area: idArea,
         costo_min: 0,
-        costo_max: 0
+        costo_max: 0,
+        id_registro: idRegistro
       });
       if (res.ok && res.registro) {
         toast.success(`Tipo de personal "${uppercaseName}" creado con éxito`);
@@ -1290,11 +1291,11 @@ export const TipoPersonalAutocomplete = ({ value, idArea, onSelect, isReadOnly, 
       } else if (highlightIndex === results.length && !exactMatchExists && query.trim()) {
         if (onTriggerCreatePersonal) {
           onTriggerCreatePersonal(query);
-          setShowDropdown(false);
-          setHighlightIndex(-1);
         } else {
           handleCreatePersonal(query);
         }
+        setShowDropdown(false);
+        setHighlightIndex(-1);
       } else {
         setShowDropdown(false);
         setHighlightIndex(-1);
@@ -1437,11 +1438,11 @@ export const TipoPersonalAutocomplete = ({ value, idArea, onSelect, isReadOnly, 
                         e.preventDefault();
                         if (onTriggerCreatePersonal) {
                           onTriggerCreatePersonal(query);
-                          setShowDropdown(false);
-                          setHighlightIndex(-1);
                         } else {
                           handleCreatePersonal(query);
                         }
+                        setShowDropdown(false);
+                        setHighlightIndex(-1);
                       }}
                       className={`px-3 py-2 cursor-pointer rounded-lg mb-1 last:mb-0 border border-dashed text-center font-bold text-[10.5px] tracking-wide uppercase transition-colors
                         ${highlightIndex === results.length 
@@ -1462,7 +1463,7 @@ export const TipoPersonalAutocomplete = ({ value, idArea, onSelect, isReadOnly, 
   );
 };
 
-export const TipoGastoDetalleAutocomplete = ({ value, codePrefix, onSelect, isReadOnly, tabIndex, placeholder = "Buscar gasto...", onKeyDown, onTriggerCreateGasto }) => {
+export const TipoGastoDetalleAutocomplete = ({ value, codePrefix, onSelect, isReadOnly, tabIndex, placeholder = "Buscar gasto...", onKeyDown, onTriggerCreateGasto, idRegistro }) => {
   const [query, setQuery] = useState("");
   const [allGastos, setAllGastos] = useState([]);
   const [results, setResults] = useState([]);
@@ -1601,7 +1602,8 @@ export const TipoGastoDetalleAutocomplete = ({ value, codePrefix, onSelect, isRe
     try {
       const { data: res } = await api.post("core/tipo_gasto_detalle/", {
         nombre: uppercaseName,
-        code_prefix: codePrefix
+        code_prefix: codePrefix,
+        id_registro: idRegistro
       });
       if (res.ok && res.registro) {
         toast.success(`Tipo de gasto "${uppercaseName}" creado con éxito`);
@@ -1706,11 +1708,11 @@ export const TipoGastoDetalleAutocomplete = ({ value, codePrefix, onSelect, isRe
       } else if (highlightIndex === results.length && !exactMatchExists && query.trim()) {
         if (onTriggerCreateGasto) {
           onTriggerCreateGasto(query);
-          setShowDropdown(false);
-          setHighlightIndex(-1);
         } else {
           handleCreateGasto(query);
         }
+        setShowDropdown(false);
+        setHighlightIndex(-1);
       } else {
         setShowDropdown(false);
         setHighlightIndex(-1);
@@ -1840,11 +1842,11 @@ export const TipoGastoDetalleAutocomplete = ({ value, codePrefix, onSelect, isRe
                         e.preventDefault();
                         if (onTriggerCreateGasto) {
                           onTriggerCreateGasto(query);
-                          setShowDropdown(false);
-                          setHighlightIndex(-1);
                         } else {
                           handleCreateGasto(query);
                         }
+                        setShowDropdown(false);
+                        setHighlightIndex(-1);
                       }}
                       className={`px-3 py-2 cursor-pointer rounded-lg mb-1 last:mb-0 border border-dashed text-center font-bold text-[10.5px] tracking-wide uppercase transition-colors
                         ${highlightIndex === results.length 
@@ -1873,7 +1875,8 @@ export const MarcaAutocomplete = ({
   isReadOnly,
   tabIndex,
   placeholder = "-- Marca --",
-  onKeyDown
+  onKeyDown,
+  idRegistro
 }) => {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
@@ -2024,7 +2027,10 @@ export const MarcaAutocomplete = ({
 
     setCreating(true);
     try {
-      const { data: res } = await api.post("core/tipo_marca/", { nombre: uppercaseName });
+      const { data: res } = await api.post("core/tipo_marca/", {
+        nombre: uppercaseName,
+        id_registro: idRegistro
+      });
       if (res.ok && res.registro) {
         toast.success(`Marca "${uppercaseName}" creada con éxito`);
         if (onAddBrand) {

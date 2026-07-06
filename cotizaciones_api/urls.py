@@ -94,10 +94,10 @@ urlpatterns = [
 
     # REPORTES
     path("reportes/reporte_cotizaciones_dashboard_html/", views.reporte_cotizaciones_dashboard_html, name="reporte_cotizaciones_dashboard_html"),
-    path('reporte-suministros-html/<int:id_registro>/', views.reporte_suministros_html, name='reporte_suministros_html'),
-    path('reporte-servicios-html/<int:id_registro>/', views.reporte_servicios_html, name='reporte_servicios_html'),
-    path("reporte-detallado/<int:id_registro>/", views.reporte_detallado_cotizacion, name="reporte_detallado_cotizacion"),
-    path("reporte-resumen/<int:id_registro>/", views.reporte_resumen_cotizacion, name="reporte_resumen_cotizacion"),
+    path('reporte-suministros-html/<str:id_registro>/', views.reporte_suministros_html, name='reporte_suministros_html'),
+    path('reporte-servicios-html/<str:id_registro>/', views.reporte_servicios_html, name='reporte_servicios_html'),
+    path("reporte-detallado/<str:id_registro>/", views.reporte_detallado_cotizacion, name="reporte_detallado_cotizacion"),
+    path("reporte-resumen/<str:id_registro>/", views.reporte_resumen_cotizacion, name="reporte_resumen_cotizacion"),
     path("reportes/reporte_venta_total/<str:num_reg>/", views.reporte_venta_total_html, name="reporte_venta_total_html"),
     path("reportes/reporte_venta_parcial/<str:num_reg>/", views.reporte_venta_parcial_html, name="reporte_venta_parcial_html"),
 

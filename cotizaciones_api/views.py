@@ -595,18 +595,28 @@ def obtener_ultimo_valor_no_vacio_historial(id_registro, field_label):
         detalle__icontains=field_label
     ).order_by('-id_seguimiento')
     
-    # Usar regex con límites de palabra para evitar confusiones de etiquetas
-    if field_label == "Representante":
-        pattern = re.compile(r"(?<!Nombre del\s)\bRepresentante\b\s+(?:modificado|modificada|de|actualizó|agregó)\s+.*?\s+a?\s*'([^']+)'", re.IGNORECASE)
-    else:
-        pattern = re.compile(rf"\b{field_label}\b\s+(?:modificado|modificada|de|actualizó|agregó)\s+.*?\s+a?\s*'([^']+)'", re.IGNORECASE)
-    
     for log in logs:
-        match = pattern.search(log.detalle or "")
-        if match:
-            val = match.group(1)
-            if val and val != "Vacío" and val != "null" and val != "":
-                return val
+        detalle = log.detalle or ""
+        
+        # Si el log más reciente es de eliminación, significa que el estado anterior era vacío
+        if "eliminó" in detalle.lower() or "elimino" in detalle.lower():
+            return "Vacío"
+            
+        val = None
+        
+        # Intentar buscar formato "Se actualizó [label] de 'old' a 'new'"
+        match_upd = re.search(rf"Se actualizó {field_label} de '.*?' a '([^']+)'", detalle, re.IGNORECASE)
+        if match_upd:
+            val = match_upd.group(1)
+        else:
+            # Intentar buscar formato "Se agregó [genero] [label] 'new'"
+            match_add = re.search(rf"Se agregó (?:\w+\s+)?{field_label} '([^']+)'", detalle, re.IGNORECASE)
+            if match_add:
+                val = match_add.group(1)
+                
+        if val and val != "Vacío" and val != "null" and val.strip() != "":
+            return val
+            
     return "Vacío"
 
 def formatear_mensaje_cambio(label, old_val, new_val):
@@ -622,6 +632,8 @@ def formatear_mensaje_cambio(label, old_val, new_val):
     
     if is_old_empty and not is_new_empty:
         # Se agregó
+        if label.lower() == "representante":
+            return f"Se actualizó representante de ' ' a '{new_val}'"
         return f"Se agregó {genero} {label.lower()} '{new_val}'"
     elif not is_old_empty and is_new_empty:
         # Se eliminó
@@ -662,11 +674,11 @@ def cotizacion_detalle(request, id_registro):
                 'lugar': ('Lugar de entrega', str),
                 'tipo_moneda': ('Moneda', lambda x: 'Dólares' if x == 'D' else 'Soles'),
                 'tipo_cambio': ('Tipo de cambio', str),
-                'igv': ('IGV', lambda x: 'Incluye' if x == 'I' else ('Sí' if x == 'S' else 'No Incluye')),
+                'igv': ('IGV', lambda x: 'Incluye' if x == 'I' else ('Incluye' if x == 'S' else 'No Incluye')),
                 'entrega_suministros': ('Tiempo de entrega (Suministros)', str),
                 'entrega_servicios': ('Tiempo de entrega (Servicios)', str),
                 'validez_oferta': ('Validez de oferta', str),
-                'probabilidad': ('Probabilidad', lambda x: 'Baja' if x == 1 else ('Media' if x == 2 else ('Alta' if x == 3 else 'Muy Alta' if x == 4 else str(x)))),
+                'probabilidad': ('Probabilidad', lambda x: 'Baja' if str(x) == '0' else ('Media' if str(x) == '1' else ('Alta' if str(x) == '2' else ('Muy Alta' if str(x) == '3' else str(x) if x is not None else 'Vacío')))),
                 'comentario': ('Comentario', str),
             }
 
@@ -802,14 +814,6 @@ def cotizacion_detalle(request, id_registro):
                         if old_d_str != new_d_str:
                             cambios.append(formatear_mensaje_cambio(label, old_d_str, new_d_str))
 
-                    for cambio in cambios:
-                        CotizacionSeguimiento.objects.create(
-                            id_registro=cot,
-                            detalle=f"DATOS: {cambio}",
-                            id_usuario=request.user,
-                            activo='1'
-                        )
-
                     # Si cambiaron campos clave (área, tipo, cliente), recalculamos el código
                     if (cot.id_area != old_area_id or 
                         cot.id_tipo_id != old_tipo_id or 
@@ -830,6 +834,14 @@ def cotizacion_detalle(request, id_registro):
                                     id_usuario=request.user,
                                     activo='1'
                                 )
+
+                    for cambio in cambios:
+                        CotizacionSeguimiento.objects.create(
+                            id_registro=cot,
+                            detalle=f"DATOS: {cambio}",
+                            id_usuario=request.user,
+                            activo='1'
+                        )
                     actualizar_total_general_cotizacion(cot)
 
                 # Return updated detail
@@ -1039,10 +1051,9 @@ def listar_suministros(request, id_registro):
                 
                 # Registrar en la trazabilidad (Seguimiento)
                 if sumin.nivel == 0:
-                    detalle_log = f"Suministros: Se agregó el suministro '{sumin.nombre_grupo or ''}'"
+                    detalle_log = f"Suministros: Agregar Suministro '{sumin.nombre_grupo or ''}'"
                 else:
-                    nom_padre = _obtener_nombre_suministro_padre(id_registro, sumin.codigo_grupo)
-                    detalle_log = f"Suministros: Se agregó el ítem '{sumin.codigo_item or ''} - {sumin.descripcion or ''}' - {nom_padre}"
+                    detalle_log = f"Suministros: Agregar item '{sumin.codigo_item or ''} - {sumin.descripcion or ''}'"
                 
                 CotizacionSeguimiento.objects.create(
                     id_registro=cot,
@@ -1127,7 +1138,7 @@ def listar_suministros(request, id_registro):
                 if sumin_updated.nivel == 0:
                     if old_nombre_grupo != sumin_updated.nombre_grupo:
                         cambios.append(f"Nombre de grupo modificado de '{old_nombre_grupo or 'Vacío'}' a '{sumin_updated.nombre_grupo or 'Vacío'}'")
-                    detalle_prefijo = f"Suministros: Se editó el suministro '{sumin_updated.nombre_grupo or ''}':"
+                    detalle_prefijo = f"Suministros: Editar Suministro '{sumin_updated.nombre_grupo or ''}':"
                 else:
                     if old_codigo_item != sumin_updated.codigo_item:
                         cambios.append(f"Código de item modificado de '{old_codigo_item or 'Vacío'}' a '{sumin_updated.codigo_item or 'Vacío'}'")
@@ -1145,8 +1156,7 @@ def listar_suministros(request, id_registro):
                         cambios.append(f"Observación modificada de '{old_observacion or 'Vacío'}' a '{sumin_updated.observacion or 'Vacío'}'")
                     if old_tipo_unidad != sumin_updated.tipo_unidad:
                         cambios.append(f"Unidad modificada de '{old_tipo_unidad or 'Vacío'}' a '{sumin_updated.tipo_unidad or 'Vacío'}'")
-                    nom_padre = _obtener_nombre_suministro_padre(id_registro, sumin_updated.codigo_grupo)
-                    detalle_prefijo = f"Suministros: Se editó el ítem '{sumin_updated.codigo_item or ''} - {sumin_updated.descripcion or ''}' - {nom_padre}:"
+                    detalle_prefijo = f"Suministros: Editar item '{sumin_updated.codigo_item or ''} - {sumin_updated.descripcion or ''}':"
                 
                 if cambios:
                     CotizacionSeguimiento.objects.create(
@@ -1178,10 +1188,9 @@ def listar_suministros(request, id_registro):
 
             # Trazabilidad
             if suministro.nivel == 0:
-                detalle_log = f"Suministros: Se eliminó el suministro '{suministro.nombre_grupo or ''}'"
+                detalle_log = f"Suministros: Eliminar Suministro '{suministro.nombre_grupo or ''}'"
             else:
-                nom_padre = _obtener_nombre_suministro_padre(id_registro, suministro.codigo_grupo)
-                detalle_log = f"Suministros: Se eliminó el ítem '{suministro.codigo_item or ''} - {suministro.descripcion or ''}' - {nom_padre}"
+                detalle_log = f"Suministros: Eliminar item '{suministro.codigo_item or ''} - {suministro.descripcion or ''}'"
 
             # Si es cabecera de grupo (nivel=0), también eliminamos los items del grupo
             if suministro.nivel == 0:
@@ -1395,13 +1404,11 @@ def listar_servicios(request, id_registro):
                 
                 # Registrar en la trazabilidad (Seguimiento)
                 if serv.nivel == 0:
-                    detalle_log = f"Servicios: Se agregó el servicio '{serv.nombre_servicio or ''}'"
+                    detalle_log = f"Servicios: Agregar Servicio '{serv.nombre_servicio or ''}'"
                 elif serv.nivel == 1:
                     detalle_log = f"Servicios: Se agregó el subgrupo '{serv.nombre_servicio or ''}'"
                 else:
-                    tipo_nombre = _obtener_categoria_servicio(serv.id_tipo_gasto_id)
-                    nom_padre = _obtener_nombre_servicio_padre(id_registro, serv.codigo_servicio)
-                    detalle_log = f"Servicios: Se agregó el ítem '{serv.codigo_item or ''} - {serv.descripcion_item or ''}' a {nom_padre} - {tipo_nombre}"
+                    detalle_log = f"Servicios: Agregar item '{serv.codigo_item or ''} - {serv.descripcion_item or ''}'"
                 
                 CotizacionSeguimiento.objects.create(
                     id_registro=cot,
@@ -1482,7 +1489,7 @@ def listar_servicios(request, id_registro):
                         cambios.append(f"Nombre de servicio modificado de '{old_nombre_servicio or 'Vacío'}' a '{serv_updated.nombre_servicio or 'Vacío'}'")
                     if old_descripcion_servicio != serv_updated.descripcion_servicio:
                         cambios.append(f"Descripción de servicio modificada de '{old_descripcion_servicio or 'Vacío'}' a '{serv_updated.descripcion_servicio or 'Vacío'}'")
-                    detalle_prefijo = f"Servicios: Se editó el servicio '{serv_updated.nombre_servicio or ''}':"
+                    detalle_prefijo = f"Servicios: Editar Servicio '{serv_updated.nombre_servicio or ''}':"
                 elif serv_updated.nivel == 1:
                     if old_nombre_servicio != serv_updated.nombre_servicio:
                         cambios.append(f"Nombre de subgrupo modificado de '{old_nombre_servicio or 'Vacío'}' a '{serv_updated.nombre_servicio or 'Vacío'}'")
@@ -1502,9 +1509,7 @@ def listar_servicios(request, id_registro):
                         cambios.append(f"Hombre/Día modificado de '{old_cotizado_hombre_dia or 0}' a '{serv_updated.cotizado_hombre_dia or 0}'")
                     if old_cotizado_total != serv_updated.cotizado_total:
                         cambios.append(f"Cotizado Total modificado de '{old_cotizado_total or 0}' a '{serv_updated.cotizado_total or 0}'")
-                    tipo_nombre = _obtener_categoria_servicio(serv_updated.id_tipo_gasto_id)
-                    nom_padre = _obtener_nombre_servicio_padre(id_registro, serv_updated.codigo_servicio)
-                    detalle_prefijo = f"Servicios: Se editó el ítem '{serv_updated.codigo_item or ''} - {serv_updated.descripcion_item or ''}' a {nom_padre} - {tipo_nombre}:"
+                    detalle_prefijo = f"Servicios: Editar item '{serv_updated.codigo_item or ''} - {serv_updated.descripcion_item or ''}':"
 
                 if cambios:
                     CotizacionSeguimiento.objects.create(
@@ -1533,15 +1538,12 @@ def listar_servicios(request, id_registro):
                 id_registro=id_registro
             )
 
-            # Trazabilidad antes de eliminar
             if servicio.nivel == 0:
-                detalle_log = f"Servicios: Se eliminó el servicio '{servicio.nombre_servicio or ''}'"
+                detalle_log = f"Servicios: Eliminar Servicio '{servicio.nombre_servicio or ''}'"
             elif servicio.nivel == 1:
                 detalle_log = f"Servicios: Se eliminó el subgrupo '{servicio.nombre_servicio or ''}'"
             else:
-                tipo_nombre = _obtener_categoria_servicio(servicio.id_tipo_gasto_id)
-                nom_padre = _obtener_nombre_servicio_padre(id_registro, servicio.codigo_servicio)
-                detalle_log = f"Servicios: Se eliminó el ítem '{servicio.codigo_item or ''} - {servicio.descripcion_item or ''}' de {nom_padre} - {tipo_nombre}"
+                detalle_log = f"Servicios: Eliminar item '{servicio.codigo_item or ''} - {servicio.descripcion_item or ''}'"
 
             # Si es cabecera (nivel=0), eliminamos todo el grupo de servicios
             if servicio.nivel == 0:
@@ -1860,7 +1862,7 @@ def listar_seguimientos(request, id_registro):
         seguimientos = CotizacionSeguimiento.objects.filter(
             id_registro=id_registro,
             activo="1"
-        ).order_by("fecha")
+        ).order_by("fecha", "id_seguimiento")
 
         # El serializer ahora incluirá el 'usuario_nombre' y 'fecha_formateada'
         serializer = CotizacionSeguimientoSerializer(seguimientos, many=True)
@@ -3582,12 +3584,25 @@ def condiciones_generales(request, id_registro):
                 condicion_obj.save()
 
                 if old_desc != contenido:
-                    CotizacionSeguimiento.objects.create(
+                    from django.utils import timezone
+                    from datetime import timedelta
+                    cinco_minutos_atras = timezone.now() - timedelta(minutes=5)
+                    log_reciente = CotizacionSeguimiento.objects.filter(
                         id_registro=cot,
                         detalle="CONDICIONES GENERALES: Se actualizaron las condiciones generales de la cotización.",
                         id_usuario=request.user,
-                        activo='1'
-                    )
+                        fecha__gte=cinco_minutos_atras
+                    ).first()
+
+                    if log_reciente:
+                        CotizacionSeguimiento.objects.filter(id_seguimiento=log_reciente.id_seguimiento).update(fecha=timezone.now())
+                    else:
+                        CotizacionSeguimiento.objects.create(
+                            id_registro=cot,
+                            detalle="CONDICIONES GENERALES: Se actualizaron las condiciones generales de la cotización.",
+                            id_usuario=request.user,
+                            activo='1'
+                        )
 
             return Response({
                 "status": "ok",
@@ -4021,13 +4036,19 @@ def descuento_cotizacion(request, num_reg):
             elif afecto_front == "ser":
                 afecto_str = "SERVICIOS"
                 
-            monto_val = data.get("importe") or "0.00"
+            simbolo_moneda = "S/." if cot.tipo_moneda == "S" else "$"
+            try:
+                monto_dec = Decimal(str(data.get("importe") or 0))
+                monto_str = f"{simbolo_moneda}{monto_dec:,.2f}"
+            except Exception:
+                monto_str = f"{simbolo_moneda}0.00"
+            
             pct_val = data.get("porcentaje")
             
             if pct_val:
-                detalle_log = f"DESCUENTOS: Se aplicó un descuento del {pct_val}% ({monto_val}) para {afecto_str}"
+                detalle_log = f"DESCUENTOS: Se aplicó un descuento del {pct_val}% ({monto_str}) para {afecto_str}"
             else:
-                detalle_log = f"DESCUENTOS: Se aplicó un descuento de {monto_val} para {afecto_str}"
+                detalle_log = f"DESCUENTOS: Se aplicó un descuento de {monto_str} para {afecto_str}"
         else:
             detalle_log = "DESCUENTOS: Se desactivó el descuento"
 
@@ -4047,20 +4068,35 @@ def build_cotizacion_pdf_context(num_reg):
     # =========================
     # CABECERA (solo campos usados)
     # =========================
-    cotizacion = (
-        Cotizacion.objects
-        .select_related(
-            "id_cliente",
-            "id_representante",
-            "id_comercial",
-            "id_tecnico",
-            "id_unidad_tiempo_entrega_suministros",
-            "id_unidad_tiempo_entrega_servicios",
-            "id_unidad_tiempo_validez",
+    try:
+        cotizacion = (
+            Cotizacion.objects
+            .select_related(
+                "id_cliente",
+                "id_representante",
+                "id_comercial",
+                "id_tecnico",
+                "id_unidad_tiempo_entrega_suministros",
+                "id_unidad_tiempo_entrega_servicios",
+                "id_unidad_tiempo_validez",
+            )
+            .get(id_registro=num_reg)
         )
-        .filter(id_registro=num_reg)
-        .first()
-    )
+    except (Cotizacion.DoesNotExist, ValueError):
+        cotizacion = (
+            Cotizacion.objects
+            .select_related(
+                "id_cliente",
+                "id_representante",
+                "id_comercial",
+                "id_tecnico",
+                "id_unidad_tiempo_entrega_suministros",
+                "id_unidad_tiempo_entrega_servicios",
+                "id_unidad_tiempo_validez",
+            )
+            .filter(codigo=str(num_reg))
+            .first()
+        )
 
     if not cotizacion:
         return None
@@ -6491,10 +6527,15 @@ def reporte_cotizaciones_dashboard_html(request):
 @csrf_exempt
 @xframe_options_exempt
 def reporte_suministros_html(request, id_registro):
-    # Filtramos usando el campo id_registro
+    try:
+        cotizacion = Cotizacion.objects.get(id_registro=id_registro)
+    except (Cotizacion.DoesNotExist, ValueError):
+        cotizacion = get_object_or_404(Cotizacion, codigo=str(id_registro))
+
+    # Filtramos usando el campo id_registro de la cotización encontrada
     suministros = (
         CotizacionSuministro.objects
-        .filter(id_registro=id_registro)
+        .filter(id_registro=cotizacion.id_registro)
         .order_by("codigo_grupo", "nivel", "orden")
     )
 
@@ -6521,6 +6562,11 @@ def reporte_suministros_html(request, id_registro):
     # ==========================================
     # AGRUPAR POR NUEVO CAMPO: codigo_grupo
     # ==========================================
+    tipo_moneda = cotizacion.tipo_moneda
+    tipo_cambio = cotizacion.tipo_cambio or Decimal("1.00")
+    factor = tipo_cambio if tipo_moneda == "S" else Decimal("1.00")
+    moneda_simbolo = "S/." if tipo_moneda == "S" else "$"
+
     for row in suministros:
         c_grupo = row.codigo_grupo
 
@@ -6545,16 +6591,17 @@ def reporte_suministros_html(request, id_registro):
                 "des": row.descripcion,
                 "pro": row.proveedor,
                 "can": int(row.cantidad or 0),
-                "val": round(row.costo_precio or Decimal("0"), 2),   # Costo Unitario
-                "tot": round(row.costo_total or Decimal("0"), 2),    # Costo Total Neto
-                "puc": round(row.precio_venta or Decimal("0"), 2),   # Precio Venta Unitario
-                "toc": round(row.venta_total or Decimal("0"), 2),    # Venta Total
-                "utilidad": round(utilidad_total, 2),
+                "val": round((row.costo_precio or Decimal("0")) * factor, 2),   # Costo Unitario
+                "tot": round((row.costo_total or Decimal("0")) * factor, 2),    # Costo Total Neto
+                "puc": round((row.precio_venta or Decimal("0")) * factor, 2),   # Precio Venta Unitario
+                "toc": round((row.venta_total or Decimal("0")) * factor, 2),    # Venta Total
+                "utilidad": round(utilidad_total * factor, 2),
             })
 
     context = {
         "id_registro": id_registro,  # <--- Alineado con el nuevo parámetro
-        "grupos": grupos
+        "grupos": grupos,
+        "moneda": moneda_simbolo,
     }
 
     # 1. Generamos la respuesta del renderizado
@@ -6576,10 +6623,15 @@ def reporte_suministros_html(request, id_registro):
 @csrf_exempt
 @xframe_options_exempt
 def reporte_servicios_html(request, id_registro):
-    # 1. Filtramos usando la nueva relación id_registro en lugar del campo num_reg
+    try:
+        cotizacion = Cotizacion.objects.get(id_registro=id_registro)
+    except (Cotizacion.DoesNotExist, ValueError):
+        cotizacion = get_object_or_404(Cotizacion, codigo=str(id_registro))
+
+    # 1. Filtramos usando la nueva relación id_registro de la cotización encontrada
     servicios = (
         CotizacionServicio.objects
-        .filter(id_registro=id_registro)
+        .filter(id_registro=cotizacion.id_registro)
         .order_by("codigo_servicio", "nivel", "orden")
     )
 
@@ -6594,6 +6646,11 @@ def reporte_servicios_html(request, id_registro):
     # ==========================================
     # AGRUPAR POR GRUPO (SERVICIO) Y SUBGRUPO
     # ==========================================
+    tipo_moneda = cotizacion.tipo_moneda
+    tipo_cambio = cotizacion.tipo_cambio or Decimal("1.00")
+    factor = tipo_cambio if tipo_moneda == "S" else Decimal("1.00")
+    moneda_simbolo = "S/." if tipo_moneda == "S" else "$"
+
     for row in servicios:
         # Usamos codigo_servicio como clave de grupo principal (equivalente al antiguo cog)
         c_servicio_key = row.codigo_servicio or "SIN_CODIGO"
@@ -6655,11 +6712,11 @@ def reporte_servicios_html(request, id_registro):
                 "pro": f"{row.cantidad_hombres or 0} Pers. / {row.horas or 0} Hrs.", # Armamos el formato para la columna prov/obs
                 "can": int(row.cantidad_hombres or 0),
                 "dias": int(row.cantidad_dias or 0),
-                "val": round(row.costo_hombre_dia or Decimal("0"), 2),   # Costo unitario por día
-                "tot": round(row.costo_total or Decimal("0"), 2),        # Costo Total Neto
-                "puc": round(row.cotizado_hombre_dia or Decimal("0"), 2),# Precio Venta Unitario por día
-                "toc": round(row.cotizado_total or Decimal("0"), 2),     # Venta Total
-                "utilidad": round(utilidad_total, 2),
+                "val": round((row.costo_hombre_dia or Decimal("0")) * factor, 2),   # Costo unitario por día
+                "tot": round((row.costo_total or Decimal("0")) * factor, 2),        # Costo Total Neto
+                "puc": round((row.cotizado_hombre_dia or Decimal("0")) * factor, 2),# Precio Venta Unitario por día
+                "toc": round((row.cotizado_total or Decimal("0")) * factor, 2),     # Venta Total
+                "utilidad": round(utilidad_total * factor, 2),
             }
 
             # Guardar ítem en la estructura
@@ -6684,7 +6741,8 @@ def reporte_servicios_html(request, id_registro):
     # Ajustado al nuevo parámetro id_registro para que el HTML renderice el título
     context = {
         "num_reg": id_registro,
-        "grupos": grupos
+        "grupos": grupos,
+        "moneda": moneda_simbolo
     }
 
     # 2. Renderizado e inyección manual de cabeceras de bypass de Iframe
@@ -6736,8 +6794,13 @@ def sumatoria_costos(queryset):
 @csrf_exempt
 @xframe_options_exempt
 def reporte_detallado_cotizacion(request, id_registro):
-    # 1. Obtener la cotización principal usando el nuevo ID secuencial
-    cotizacion = get_object_or_404(Cotizacion, id_registro=id_registro)
+    # 1. Obtener la cotización principal usando el nuevo ID secuencial o el código fallback
+    try:
+        cotizacion = Cotizacion.objects.get(id_registro=id_registro)
+    except (Cotizacion.DoesNotExist, ValueError):
+        cotizacion = get_object_or_404(Cotizacion, codigo=str(id_registro))
+        
+    id_registro = cotizacion.id_registro
     id_area_cotizacion = cotizacion.id_area  # Área de la cotización para segmentar HH
 
     # Obtener diccionarios de cantidades
@@ -6841,8 +6904,6 @@ def reporte_detallado_cotizacion(request, id_registro):
     # ==========================================================
     # GASTOS ENTREGA / LOGÍSTICA (En pausa - Lógica por definir)
     # ==========================================================
-    # Se inicializa temporalmente en 0.00 a la espera de la implementación
-    # final de las reglas de negocio para este módulo.
     costo_gastos_entrega = Decimal("0.00")
     total_gastos_entrega = Decimal("0.00")
     ganancia_gastos_entrega = Decimal("0.00")
@@ -6868,9 +6929,9 @@ def reporte_detallado_cotizacion(request, id_registro):
         
     ganancia_imprevistos = total_imprevistos - costo_imprevistos
 
-    # ==========================================================
+    # ==========================================
     # DESCUENTOS (Usa las nuevas propiedades de la Cabecera)
-    # ==========================================================
+    # ==========================================
     costo_descuento = Decimal("0.00")
     total_descuento = Decimal("0.00")
     
@@ -6880,12 +6941,44 @@ def reporte_detallado_cotizacion(request, id_registro):
 
     ganancia_descuento = Decimal("0.00")
 
+    # ==========================================
+    # MONEDA Y CONVERSIÓN (Tipo Cambio)
+    # ==========================================
+    tipo_moneda = cotizacion.tipo_moneda
+    tipo_cambio = cotizacion.tipo_cambio or Decimal("1.00")
+    factor = tipo_cambio if tipo_moneda == "S" else Decimal("1.00")
+    moneda_simbolo = "S/." if tipo_moneda == "S" else "$"
+
+    # Unificación de Equipos y Materiales en Suministros
+    costo_suministros = (costo_equipos + costo_materiales) * factor
+    total_suministros = (total_equipos + total_materiales) * factor
+    ganancia_suministros = total_suministros - costo_suministros
+
+    # Conversión del resto de conceptos
+    costo_hh_propios = costo_hh_propios * factor
+    total_hh_propios = total_hh_propios * factor
+    ganancia_hh_propios = total_hh_propios - costo_hh_propios
+
+    costo_servicios = costo_servicios * factor
+    total_servicios = total_servicios * factor
+    ganancia_servicios = total_servicios - costo_servicios
+
+    costo_gastos_entrega = costo_gastos_entrega * factor
+    total_gastos_entrega = total_gastos_entrega * factor
+    ganancia_gastos_entrega = total_gastos_entrega - costo_gastos_entrega
+
+    costo_imprevistos = costo_imprevistos * factor
+    total_imprevistos = total_imprevistos * factor
+    ganancia_imprevistos = total_imprevistos - costo_imprevistos
+
+    costo_descuento = costo_descuento * factor
+    total_descuento = total_descuento * factor
+
     # ==========================================================
     # CONSTRUCCIÓN DE LA TABLA FINAL
     # ==========================================================
     datos = [
-        {"concepto": "EQUIPOS", "costo": costo_equipos, "ganancia": ganancia_equipos, "total": total_equipos},
-        {"concepto": "MATERIALES", "costo": costo_materiales, "ganancia": ganancia_materiales, "total": total_materiales},
+        {"concepto": "SUMINISTROS", "costo": costo_suministros, "ganancia": ganancia_suministros, "total": total_suministros},
         {"concepto": "HH PROPIOS", "costo": costo_hh_propios, "ganancia": ganancia_hh_propios, "total": total_hh_propios},
         {"concepto": "COSTO SERVICIOS", "costo": costo_servicios, "ganancia": ganancia_servicios, "total": total_servicios},
         {"concepto": "GASTOS ENTREGA", "costo": costo_gastos_entrega, "ganancia": ganancia_gastos_entrega, "total": total_gastos_entrega},
@@ -6906,7 +6999,7 @@ def reporte_detallado_cotizacion(request, id_registro):
         "total_costo": total_costo_final,
         "total_ganancia": total_ganancia_final,
         "total_final": total_venta_final,
-        "moneda": "$" if cotizacion.tipo_moneda == "D" else "S/.",
+        "moneda": moneda_simbolo,
     }
 
     return render(
@@ -6918,8 +7011,13 @@ def reporte_detallado_cotizacion(request, id_registro):
 @csrf_exempt
 @xframe_options_exempt
 def reporte_resumen_cotizacion(request, id_registro):
-    # Conseguimos la cotización principal usando la nueva PK autoincremental
-    cotizacion = get_object_or_404(Cotizacion, id_registro=id_registro)
+    # Conseguimos la cotización principal usando la nueva PK autoincremental o el código fallback
+    try:
+        cotizacion = Cotizacion.objects.get(id_registro=id_registro)
+    except (Cotizacion.DoesNotExist, ValueError):
+        cotizacion = get_object_or_404(Cotizacion, codigo=str(id_registro))
+        
+    id_registro = cotizacion.id_registro
     codigo_cotizacion = cotizacion.codigo or f"REG-{id_registro}"
     moneda = "$" if cotizacion.tipo_moneda == "D" else "S/."
 
@@ -7031,10 +7129,21 @@ def reporte_resumen_cotizacion(request, id_registro):
     return render(request, "reportes/reporte_resumen_cotizacion.html", context)
 
 @csrf_exempt
+@xframe_options_exempt
 def reporte_venta_total_html(request, num_reg):
+    try:
+        cotizacion = Cotizacion.objects.get(id_registro=num_reg)
+    except (Cotizacion.DoesNotExist, ValueError):
+        cotizacion = get_object_or_404(Cotizacion, codigo=str(num_reg))
+
+    tipo_moneda = cotizacion.tipo_moneda
+    tipo_cambio = cotizacion.tipo_cambio or Decimal("1.00")
+    factor = tipo_cambio if tipo_moneda == "S" else Decimal("1.00")
+    moneda_simbolo = "S/." if tipo_moneda == "S" else "$"
+
     suministros = (
         CotizacionSuministro.objects
-        .filter(id_registro=num_reg)
+        .filter(id_registro=cotizacion.id_registro)
         .order_by("codigo_grupo", "nivel", "orden")
     )
 
@@ -7055,8 +7164,8 @@ def reporte_venta_total_html(request, num_reg):
         # CABECERA DEL GRUPO (nivel = 0)
         if row.nivel == 0:
             grupos[row.codigo_grupo]["titulo_grupo"] = row.nombre_grupo or "SIN TITULO"
-            grupos[row.codigo_grupo]["envio_grupo"] = row.costo_envio_total or Decimal("0.00")
-            grupos[row.codigo_grupo]["total_venta_grupo"] = row.venta_total or Decimal("0.00")
+            grupos[row.codigo_grupo]["envio_grupo"] = (row.costo_envio_total or Decimal("0.00")) * factor
+            grupos[row.codigo_grupo]["total_venta_grupo"] = (row.venta_total or Decimal("0.00")) * factor
 
         # ITEMS DETALLE (nivel > 0)
         else:
@@ -7067,32 +7176,44 @@ def reporte_venta_total_html(request, num_reg):
                 "cod": row.codigo_item,
                 "des": row.descripcion,
                 "can": row.cantidad or Decimal("0"),
-                "puc": row.costo_precio or Decimal("0.00"),
-                "toc": row.costo_total or Decimal("0.00"),
+                "puc": (row.costo_precio or Decimal("0.00")) * factor,
+                "toc": (row.costo_total or Decimal("0.00")) * factor,
                 "por_env": row.porcentaje_envio or Decimal("0.00"),
-                "env_u": row.costo_envio or Decimal("0.00"),
-                "cce": row.costo_con_envio or Decimal("0.00"),
+                "env_u": (row.costo_envio or Decimal("0.00")) * factor,
+                "cce": (row.costo_con_envio or Decimal("0.00")) * factor,
                 "util_porc": row.porcentaje_utilidad or Decimal("0.00"),
-                "tou": row.utilidad or Decimal("0.00"),
-                "val": row.precio_venta or Decimal("0.00"),
-                "tot": subtotal_venta,
-                "util_money": subtotal_venta - subtotal_costo
+                "tou": (row.utilidad or Decimal("0.00")) * factor,
+                "val": (row.precio_venta or Decimal("0.00")) * factor,
+                "tot": subtotal_venta * factor,
+                "util_money": (subtotal_venta - subtotal_costo) * factor
             })
 
     context = {
         "num_reg": num_reg,
         "titulo": "REPORTE DETALLADO DE SUMINISTROS (VENTA TOTAL)",
         "grupos": grupos,
-        "fecha": datetime.now()
+        "fecha": datetime.now(),
+        "moneda": moneda_simbolo
     }
 
     return render(request, "reportes/reporte_venta_total.html", context)
 
 @csrf_exempt
+@xframe_options_exempt
 def reporte_venta_parcial_html(request, num_reg):
+    try:
+        cotizacion = Cotizacion.objects.get(id_registro=num_reg)
+    except (Cotizacion.DoesNotExist, ValueError):
+        cotizacion = get_object_or_404(Cotizacion, codigo=str(num_reg))
+
+    tipo_moneda = cotizacion.tipo_moneda
+    tipo_cambio = cotizacion.tipo_cambio or Decimal("1.00")
+    factor = tipo_cambio if tipo_moneda == "S" else Decimal("1.00")
+    moneda_simbolo = "S/." if tipo_moneda == "S" else "$"
+
     suministros = (
         CotizacionSuministro.objects
-        .filter(id_registro=num_reg)
+        .filter(id_registro=cotizacion.id_registro)
         .order_by("codigo_grupo", "nivel", "orden")
     )
 
@@ -7113,8 +7234,8 @@ def reporte_venta_parcial_html(request, num_reg):
         # CABECERA DEL GRUPO (nivel = 0)
         if row.nivel == 0:
             grupos[row.codigo_grupo]["titulo_grupo"] = row.nombre_grupo or "SIN TITULO"
-            grupos[row.codigo_grupo]["envio_grupo"] = row.costo_envio_total or Decimal("0.00")
-            grupos[row.codigo_grupo]["total_venta_grupo"] = row.venta_total or Decimal("0.00")
+            grupos[row.codigo_grupo]["envio_grupo"] = (row.costo_envio_total or Decimal("0.00")) * factor
+            grupos[row.codigo_grupo]["total_venta_grupo"] = (row.venta_total or Decimal("0.00")) * factor
 
         # ITEMS DEL DETALLE (nivel > 0)
         else:
@@ -7122,21 +7243,22 @@ def reporte_venta_parcial_html(request, num_reg):
                 "cod": row.codigo_item,
                 "des": row.descripcion,
                 "can": row.cantidad or Decimal("0"),
-                "puc": row.costo_precio or Decimal("0.00"),
-                "toc": row.costo_total or Decimal("0.00"),
-                "env_u": row.costo_envio or Decimal("0.00"),
-                "cce": row.costo_con_envio or Decimal("0.00"),
+                "puc": (row.costo_precio or Decimal("0.00")) * factor,
+                "toc": (row.costo_total or Decimal("0.00")) * factor,
+                "env_u": (row.costo_envio or Decimal("0.00")) * factor,
+                "cce": (row.costo_con_envio or Decimal("0.00")) * factor,
                 "util_porc": row.porcentaje_utilidad or Decimal("0.00"),
-                "util_money": row.utilidad or Decimal("0.00"),
-                "val": row.precio_venta or Decimal("0.00"),
-                "tot": row.venta_total or Decimal("0.00")
+                "util_money": (row.utilidad or Decimal("0.00")) * factor,
+                "val": (row.precio_venta or Decimal("0.00")) * factor,
+                "tot": (row.venta_total or Decimal("0.00")) * factor
             })
 
     context = {
         "num_reg": num_reg,
         "titulo": "REPORTE DE SUMINISTROS (VENTA PARCIAL)",
         "grupos": grupos,
-        "fecha": datetime.now()
+        "fecha": datetime.now(),
+        "moneda": moneda_simbolo
     }
     
     return render(request, "reportes/reporte_venta_parcial.html", context)

@@ -1,5 +1,6 @@
 {% load static %}
 {% load humanize %}
+{% load currency %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -110,6 +111,7 @@ tbody tr:hover{
 .text-right{
     text-align:right;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }
 
 .text-center{
@@ -176,14 +178,14 @@ tbody tr:hover{
             <tr>
                 <td class="font-bold" style="color: #475569;">{{ fila.concepto }}</td>
                 <td class="text-right font-bold" style="color: #1e293b;">
-                    {{ moneda }} {{ fila.importe|floatformat:2|intcomma }}
+                    {{ fila.importe|format_custom:moneda }}
                 </td>
             </tr>
             {% endfor %}
             <tr class="total-final">
                 <td class="font-bold" style="text-align:right;">TOTAL FINAL CONSOLIDADO</td>
                 <td class="text-right font-bold" style="font-size: 13px;">
-                    {{ moneda }} {{ total_final|floatformat:2|intcomma }}
+                    {{ total_final|format_custom:moneda }}
                 </td>
             </tr>
         </tbody>
