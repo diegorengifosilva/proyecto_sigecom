@@ -1,4 +1,4 @@
-﻿from django.conf import settings
+from django.conf import settings
 from django.db import models, transaction
 from django.utils import timezone
 from django.core.validators import MinValueValidator
@@ -1008,3 +1008,44 @@ class SisAlmTabDoc(models.Model):
 
     def __str__(self):
         return f"{self.cod} - {self.nom}"
+
+
+# Nuevos modelos mapeados a las tablas reales de la DB
+class Grupo(models.Model):
+    idgrupo = models.AutoField(primary_key=True)
+    descripcion = models.CharField(max_length=100)
+    activo = models.CharField(max_length=45, default="1")
+
+    class Meta:
+        managed = False
+        db_table = 'grupo'
+
+    def __str__(self):
+        return f"{self.idgrupo} - {self.descripcion}"
+
+
+class DocumentoAlmacen(models.Model):
+    iddocumento_almacen = models.AutoField(primary_key=True)
+    descripcion = models.CharField(max_length=45)
+    activo = models.CharField(max_length=45, default="1")
+
+    class Meta:
+        managed = False
+        db_table = 'documento_almacen'
+
+    def __str__(self):
+        return f"{self.iddocumento_almacen} - {self.descripcion}"
+
+
+class CostoAlmacen(models.Model):
+    idcosto_almacen = models.AutoField(primary_key=True)
+    codigo = models.CharField(max_length=45)
+    descripcion = models.CharField(max_length=100)
+    activo = models.CharField(max_length=45, default="1")
+
+    class Meta:
+        managed = False
+        db_table = 'costo_almacen'
+
+    def __str__(self):
+        return f"{self.codigo} - {self.descripcion}"

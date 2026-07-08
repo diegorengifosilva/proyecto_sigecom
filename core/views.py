@@ -504,7 +504,7 @@ def lista_tgasto_detalle(request):
             "error": str(e)
         }, status=500)
 
-@api_view(["GET", "POST"])
+@api_view(["GET", "POST", "PUT", "DELETE"])
 @permission_classes([IsAuthenticated])
 def lista_productos(request):
     """
@@ -688,6 +688,93 @@ def lista_productos(request):
                 "ok": False,
                 "error": str(e)
             }, status=500)
+
+    elif request.method == "PUT":
+        try:
+            id_producto = request.data.get("id_producto")
+            if not id_producto:
+                return Response({"ok": False, "error": "El id_producto es requerido"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            try:
+                producto = Producto.objects.get(pk=id_producto)
+            except Producto.DoesNotExist:
+                return Response({"ok": False, "error": "Producto no encontrado"}, status=status.HTTP_404_NOT_FOUND)
+            
+            # Actualizar campos
+            id_marca = request.data.get("id_marca")
+            if id_marca:
+                try:
+                    marca = TipoMarca.objects.get(id_marca=id_marca)
+                    producto.id_marca = marca
+                except TipoMarca.DoesNotExist:
+                    return Response({"ok": False, "error": "La marca especificada no existe"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            if "codigo" in request.data:
+                producto.codigo = request.data.get("codigo").strip().upper()
+            if "nombre" in request.data:
+                producto.nombre = request.data.get("nombre").strip().upper()
+            if "precio_dolares" in request.data:
+                producto.precio_dolares = float(request.data.get("precio_dolares") or 0)
+            if "precio_soles" in request.data:
+                producto.precio_soles = float(request.data.get("precio_soles") or 0)
+            if "codigo2" in request.data:
+                producto.codigo2 = request.data.get("codigo2")
+            if "contenido_valor" in request.data:
+                producto.contenido_valor = float(request.data.get("contenido_valor") or 1.0)
+            if "descripcion" in request.data:
+                producto.descripcion = request.data.get("descripcion")
+            if "cantidad" in request.data:
+                producto.cantidad = int(request.data.get("cantidad") or 0)
+            if "stock_min" in request.data:
+                producto.stock_min = int(request.data.get("stock_min") or 0)
+            if "stock_max" in request.data:
+                producto.stock_max = int(request.data.get("stock_max") or 0)
+            if "descuento" in request.data:
+                producto.descuento = float(request.data.get("descuento") or 0.0)
+            if "proveedor" in request.data:
+                producto.proveedor = request.data.get("proveedor")
+            if "activo" in request.data:
+                val_activo = request.data.get("activo")
+                producto.activo = 1 if val_activo in [True, "1", 1, "true", "True", "ACTIVO"] else 0
+            
+            id_medida = request.data.get("id_medida")
+            if id_medida:
+                try:
+                    medida = UnidadMedida.objects.get(id_medida=int(id_medida))
+                    producto.id_medida = medida
+                except Exception:
+                    pass
+            
+            producto.save()
+            serializer = ProductoSerializer(producto)
+            return Response({"ok": True, "registro": serializer.data}, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({"ok": False, "error": str(e)}, status=500)
+            
+    elif request.method == "DELETE":
+        try:
+            id_producto = request.data.get("id_producto") or request.query_params.get("id_producto")
+            if not id_producto:
+                return Response({"ok": False, "error": "El id_producto es requerido"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            try:
+                producto = Producto.objects.get(pk=id_producto)
+                producto.delete()
+                return Response({"ok": True, "message": "Producto eliminado correctamente"}, status=status.HTTP_200_OK)
+            except Producto.DoesNotExist:
+                return Response({"ok": False, "error": "Producto no encontrado"}, status=status.HTTP_404_NOT_FOUND)
+            except Exception as e:
+                # Fallback to logical delete if foreign key fails
+                try:
+                    producto = Producto.objects.get(pk=id_producto)
+                    producto.activo = 0
+                    producto.save()
+                    return Response({"ok": True, "message": "El producto tiene transacciones asociadas, se ha desactivado lógicamente"}, status=status.HTTP_200_OK)
+                except Exception:
+                    return Response({"ok": False, "error": "No se puede eliminar ni desactivar el producto"}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"ok": False, "error": str(e)}, status=500)
 
 @api_view(["GET", "POST", "PUT"])
 @permission_classes([IsAuthenticated])

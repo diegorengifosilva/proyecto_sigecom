@@ -117,6 +117,9 @@ from .models import (
     sis_alm_tab_articulos,
     sis_alm_tab_ccosto,
     AlmacenNew,
+    Grupo,
+    DocumentoAlmacen,
+    CostoAlmacen,
 )
 
 from users.models import (
@@ -152,6 +155,9 @@ from .serializers import (
     ArticuloSerializer,
     AlmTabUmedSerializer,
     CcostoSerializer,
+    GrupoSerializer,
+    DocumentoAlmacenSerializer,
+    CostoAlmacenSerializer,
 )
 
 from users.serializers import (
@@ -2725,6 +2731,7 @@ def lista_almacenes_new(request):
             "nombre": a.nombre,
             "direccion": a.direccion or "",
             "activo": a.activo,
+            "usuario_id_usuario": getattr(a, "usuario_id_usuario_id", None) or getattr(a, "usuario_id_usuario", None),
         }
         for a in almacenes
     ])
@@ -2745,10 +2752,47 @@ def crear_almacen_new(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+@api_view(["PUT", "PATCH"])
+@permission_classes([IsAuthenticated])
+def actualizar_almacen_new(request, idalmacen):
+    try:
+        almacen = AlmacenNew.objects.get(idalmacen=idalmacen)
+    except AlmacenNew.DoesNotExist:
+        return Response({"detail": "No encontrado"}, status=status.HTTP_404_NOT_FOUND)
+    
+    serializer = AlmacenNewSerializer(almacen, data=request.data, partial=(request.method == "PATCH"))
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def eliminar_almacen_new(request, idalmacen):
+    try:
+        almacen = AlmacenNew.objects.get(idalmacen=idalmacen)
+        almacen.delete()
+        return Response({"detail": "Eliminado correctamente"}, status=200)
+    except AlmacenNew.DoesNotExist:
+        return Response({"error": "No encontrado"}, status=404)
+    except Exception as e:
+        # Logical deactivate if delete fails due to database constraints
+        try:
+            almacen = AlmacenNew.objects.get(idalmacen=idalmacen)
+            almacen.activo = "0"
+            almacen.save()
+            return Response({"detail": "No se puede eliminar de la base de datos (tiene movimientos asociados), se ha desactivado lógicamente"}, status=200)
+        except Exception:
+            return Response({"error": str(e)}, status=400)
+
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def buscar_usuarios_logistica(request):
     q = (request.GET.get("q", "") or "").strip()
+    limit = min(int(request.GET.get("limit", 200) or 200), 500)
     usuarios = Usuario.objects.filter(activo=1)
     if q:
         usuarios = usuarios.filter(
@@ -2756,7 +2800,7 @@ def buscar_usuarios_logistica(request):
             | Q(usuario__icontains=q)
             | Q(dni__icontains=q)
         )
-    usuarios = usuarios.order_by("nombre_completo")[:30]
+    usuarios = usuarios.order_by("nombre_completo")[:limit]
     return Response([
         {
             "id_usuario": u.id_usuario,
@@ -3885,5 +3929,179 @@ def exportar_excel_barras(request):
     response["Content-Disposition"] = 'attachment; filename="reporte_barras.xlsx"'
     wb.save(response)
     return response
+
+
+# ============================================================
+# VISTAS CRUD PARA GRUPO (tabla 'grupo')
+# ============================================================
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def lista_grupos(request):
+    if request.method == "GET":
+        q = (request.GET.get("q", "") or "").strip()
+        activo = request.GET.get("activo", "todos")
+        grupos = Grupo.objects.all()
+        if activo != "todos":
+            grupos = grupos.filter(activo=activo)
+        if q:
+            grupos = grupos.filter(Q(descripcion__icontains=q) | Q(idgrupo__icontains=q))
+        grupos = grupos.order_by("descripcion")[:100]
+        serializer = GrupoSerializer(grupos, many=True)
+        return Response(serializer.data)
+        
+    elif request.method == "POST":
+        serializer = GrupoSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(["PUT", "PATCH"])
+@permission_classes([IsAuthenticated])
+def actualizar_grupo(request, idgrupo):
+    try:
+        grupo = Grupo.objects.get(pk=idgrupo)
+    except Grupo.DoesNotExist:
+        return Response({"detail": "No encontrado"}, status=status.HTTP_404_NOT_FOUND)
+    
+    serializer = GrupoSerializer(grupo, data=request.data, partial=(request.method == "PATCH"))
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def eliminar_grupo(request, idgrupo):
+    try:
+        grupo = Grupo.objects.get(pk=idgrupo)
+        grupo.delete()
+        return Response({"detail": "Eliminado correctamente"}, status=200)
+    except Grupo.DoesNotExist:
+        return Response({"error": "No encontrado"}, status=404)
+    except Exception as e:
+        try:
+            grupo = Grupo.objects.get(pk=idgrupo)
+            grupo.activo = "0"
+            grupo.save()
+            return Response({"detail": "No se puede eliminar de la base de datos, se ha desactivado lógicamente"}, status=200)
+        except Exception:
+            return Response({"error": str(e)}, status=400)
+
+
+# ============================================================
+# VISTAS CRUD PARA DOCUMENTO ALMACEN (tabla 'documento_almacen')
+# ============================================================
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def lista_documentos_almacen_new(request):
+    if request.method == "GET":
+        q = (request.GET.get("q", "") or "").strip()
+        activo = request.GET.get("activo", "todos")
+        docs = DocumentoAlmacen.objects.all()
+        if activo != "todos":
+            docs = docs.filter(activo=activo)
+        if q:
+            docs = docs.filter(Q(descripcion__icontains=q) | Q(iddocumento_almacen__icontains=q))
+        docs = docs.order_by("descripcion")[:100]
+        serializer = DocumentoAlmacenSerializer(docs, many=True)
+        return Response(serializer.data)
+        
+    elif request.method == "POST":
+        serializer = DocumentoAlmacenSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(["PUT", "PATCH"])
+@permission_classes([IsAuthenticated])
+def actualizar_documento_almacen_new(request, iddocumento_almacen):
+    try:
+        doc = DocumentoAlmacen.objects.get(pk=iddocumento_almacen)
+    except DocumentoAlmacen.DoesNotExist:
+        return Response({"detail": "No encontrado"}, status=status.HTTP_404_NOT_FOUND)
+    
+    serializer = DocumentoAlmacenSerializer(doc, data=request.data, partial=(request.method == "PATCH"))
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def eliminar_documento_almacen_new(request, iddocumento_almacen):
+    try:
+        doc = DocumentoAlmacen.objects.get(pk=iddocumento_almacen)
+        doc.delete()
+        return Response({"detail": "Eliminado correctamente"}, status=200)
+    except DocumentoAlmacen.DoesNotExist:
+        return Response({"error": "No encontrado"}, status=404)
+    except Exception as e:
+        try:
+            doc = DocumentoAlmacen.objects.get(pk=iddocumento_almacen)
+            doc.activo = "0"
+            doc.save()
+            return Response({"detail": "No se puede eliminar de la base de datos, se ha desactivado lógicamente"}, status=200)
+        except Exception:
+            return Response({"error": str(e)}, status=400)
+
+
+# ============================================================
+# VISTAS CRUD PARA COSTO ALMACEN (tabla 'costo_almacen')
+# ============================================================
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def lista_costos_almacen_new(request):
+    if request.method == "GET":
+        q = (request.GET.get("q", "") or "").strip()
+        activo = request.GET.get("activo", "todos")
+        costos = CostoAlmacen.objects.all()
+        if activo != "todos":
+            costos = costos.filter(activo=activo)
+        if q:
+            costos = costos.filter(Q(descripcion__icontains=q) | Q(codigo__icontains=q))
+        costos = costos.order_by("codigo")[:100]
+        serializer = CostoAlmacenSerializer(costos, many=True)
+        return Response(serializer.data)
+        
+    elif request.method == "POST":
+        serializer = CostoAlmacenSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(["PUT", "PATCH"])
+@permission_classes([IsAuthenticated])
+def actualizar_costo_almacen_new(request, idcosto_almacen):
+    try:
+        costo = CostoAlmacen.objects.get(pk=idcosto_almacen)
+    except CostoAlmacen.DoesNotExist:
+        return Response({"detail": "No encontrado"}, status=status.HTTP_404_NOT_FOUND)
+    
+    serializer = CostoAlmacenSerializer(costo, data=request.data, partial=(request.method == "PATCH"))
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def eliminar_costo_almacen_new(request, idcosto_almacen):
+    try:
+        costo = CostoAlmacen.objects.get(pk=idcosto_almacen)
+        costo.delete()
+        return Response({"detail": "Eliminado correctamente"}, status=200)
+    except CostoAlmacen.DoesNotExist:
+        return Response({"error": "No encontrado"}, status=404)
+    except Exception as e:
+        try:
+            costo = CostoAlmacen.objects.get(pk=idcosto_almacen)
+            costo.activo = "0"
+            costo.save()
+            return Response({"detail": "No se puede eliminar de la base de datos, se ha desactivado lógicamente"}, status=200)
+        except Exception:
+            return Response({"error": str(e)}, status=400)
 
 

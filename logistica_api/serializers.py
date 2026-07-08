@@ -1,4 +1,4 @@
-﻿# logistica_api/serializers.py
+# logistica_api/serializers.py
 
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
@@ -29,6 +29,9 @@ from .models import (
     AlmTabUmed,
     sis_alm_tab_ccosto,
     AlmacenNew,
+    Grupo,
+    DocumentoAlmacen,
+    CostoAlmacen,
 )
 from django.contrib.auth import get_user_model
 from django.utils.timezone import localtime
@@ -496,5 +499,24 @@ class ClientesSerializer(serializers.ModelSerializer):
     class Meta:
         model = vc_tab_clientes
         fields = "__all__"
+
+
+class GrupoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Grupo
+        fields = "__all__"
+
+
+class DocumentoAlmacenSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DocumentoAlmacen
+        fields = "__all__"
+
+
+class CostoAlmacenSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CostoAlmacen
+        fields = "__all__"
+
 
 # vc_tab_estado
