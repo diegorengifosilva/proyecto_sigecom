@@ -1,10 +1,17 @@
 import React, { useState, useEffect } from "react";
 import { 
   Users, Home, TrendingUp, Package, Layers, FileText, 
-  Search, PlusCircle, Edit3, ShieldAlert, Check, X, Loader, Trash2
+  Search, PlusCircle, Edit3, ShieldAlert, Check, X, Loader, Trash2,
+  FileSpreadsheet, Download
 } from "lucide-react";
 import api from "@/services/api";
 import { toast } from "react-toastify";
+import XLSX from "xlsx-js-style";
+import jsPDF from "jspdf";
+import autoTable, { applyPlugin } from "jspdf-autotable";
+
+// Register autoTable plugin
+applyPlugin(jsPDF);
 
 const TABS = [
   { id: "proveedores", label: "Proveedores", icon: <Users size={16} /> },
@@ -513,6 +520,259 @@ export default function LogisticaTablas() {
     setShowDeleteModal(true);
   };
 
+  const exportToExcel = () => {
+    const dataToExport = getFilteredData();
+    if (dataToExport.length === 0) {
+      toast.warn("No hay datos filtrados para exportar");
+      return;
+    }
+
+    let mappedData = [];
+    const label = TABS.find(t => t.id === activeTab)?.label || "Reporte";
+    const filename = `${activeTab}_reporte_${new Date().toISOString().slice(0, 10)}.xlsx`;
+
+    if (activeTab === "proveedores") {
+      mappedData = dataToExport.map(item => ({
+        "Código": item.codigo,
+        "Razón Social": item.nombre,
+        "RUC": item.ruc,
+        "Dirección": item.direccion,
+        "Representante Legal": item.representante_legal || "-",
+        "Pág. Web": item.pagina_web || "-",
+        "Estado": item.estado
+      }));
+    } else if (activeTab === "almacenes") {
+      mappedData = dataToExport.map(item => ({
+        "ID Almacén": item.idalmacen,
+        "Nombre Almacén": item.nombre,
+        "Dirección": item.direccion || "-",
+        "Responsable": item.responsable,
+        "Estado": item.estado
+      }));
+    } else if (activeTab === "grupo_analitico") {
+      mappedData = dataToExport.map(item => ({
+        "ID Grupo": item.idgrupo,
+        "Descripción": item.descripcion,
+        "Estado": item.estado
+      }));
+    } else if (activeTab === "productos") {
+      mappedData = dataToExport.map(item => ({
+        "Código": item.codigo,
+        "Código Auxiliar": item.codigo2 || "-",
+        "Nombre / Descripción": item.nombre,
+        "Marca": item.marca_nombre,
+        "U.M.": item.medida_nombre,
+        "Contenido": item.contenido_valor,
+        "Precio Soles": item.precio_soles,
+        "Precio Dólares": item.precio_dolares,
+        "Stock": item.cantidad,
+        "Stock Mínimo": item.stock_min,
+        "Stock Máximo": item.stock_max,
+        "Descuento (%)": item.descuento,
+        "Proveedor": item.proveedor || "-",
+        "Estado": item.estado
+      }));
+    } else if (activeTab === "centros_costo") {
+      mappedData = dataToExport.map(item => ({
+        "Código": item.codigo,
+        "Nombre Centro Costo": item.descripcion,
+        "Estado": item.estado
+      }));
+    } else if (activeTab === "documentos") {
+      mappedData = dataToExport.map(item => ({
+        "ID Doc": item.iddocumento_almacen,
+        "Nombre Documento": item.descripcion,
+        "Estado": item.estado
+      }));
+    }
+
+    // Create Sheet
+    const worksheet = XLSX.utils.json_to_sheet(mappedData);
+
+    // Styling configuration
+    const headerStyle = {
+      fill: { fgColor: { rgb: "4F46E5" } }, // Indigo-600
+      font: { name: "Arial", sz: 10, bold: true, color: { rgb: "FFFFFF" } },
+      alignment: { horizontal: "center", vertical: "center" },
+      border: {
+        top: { style: "thin", color: { rgb: "CBD5E1" } },
+        bottom: { style: "medium", color: { rgb: "312E81" } },
+        left: { style: "thin", color: { rgb: "CBD5E1" } },
+        right: { style: "thin", color: { rgb: "CBD5E1" } }
+      }
+    };
+
+    const cellStyleEven = {
+      font: { name: "Arial", sz: 9, color: { rgb: "1E293B" } },
+      border: {
+        top: { style: "thin", color: { rgb: "F1F5F9" } },
+        bottom: { style: "thin", color: { rgb: "F1F5F9" } },
+        left: { style: "thin", color: { rgb: "F1F5F9" } },
+        right: { style: "thin", color: { rgb: "F1F5F9" } }
+      }
+    };
+
+    const cellStyleOdd = {
+      fill: { fgColor: { rgb: "F8FAFC" } }, // Zebra style (Slate-50)
+      font: { name: "Arial", sz: 9, color: { rgb: "1E293B" } },
+      border: {
+        top: { style: "thin", color: { rgb: "E2E8F0" } },
+        bottom: { style: "thin", color: { rgb: "E2E8F0" } },
+        left: { style: "thin", color: { rgb: "E2E8F0" } },
+        right: { style: "thin", color: { rgb: "E2E8F0" } }
+      }
+    };
+
+    const range = XLSX.utils.decode_range(worksheet["!ref"]);
+    worksheet["!rows"] = [{ hpx: 28 }]; // Header height
+
+    for (let R = range.s.r; R <= range.e.r; ++R) {
+      if (R > 0) worksheet["!rows"][R] = { hpx: 20 }; // Data row height
+
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const cell_ref = XLSX.utils.encode_cell({ c: C, r: R });
+        const cell = worksheet[cell_ref];
+        if (!cell) continue;
+
+        if (R === 0) {
+          cell.s = headerStyle;
+        } else {
+          cell.s = R % 2 === 0 ? cellStyleEven : cellStyleOdd;
+
+          if (typeof cell.v === "number") {
+            cell.s = { ...cell.s, alignment: { horizontal: "right" } };
+          } else if (cell.v === "ACTIVO" || cell.v === "INACTIVO") {
+            cell.s = {
+              ...cell.s,
+              alignment: { horizontal: "center" },
+              font: {
+                ...cell.s.font,
+                bold: true,
+                color: { rgb: cell.v === "ACTIVO" ? "10B981" : "EF4444" } // Green / Red
+              }
+            };
+          }
+        }
+      }
+    }
+
+    // Auto-fit column widths
+    const colWidths = [];
+    for (let C = range.s.c; C <= range.e.c; ++C) {
+      let maxLen = 12;
+      for (let R = range.s.r; R <= range.e.r; ++R) {
+        const cell = worksheet[XLSX.utils.encode_cell({ c: C, r: R })];
+        if (cell && cell.v) {
+          maxLen = Math.max(maxLen, String(cell.v).length);
+        }
+      }
+      colWidths.push({ wch: maxLen + 3 });
+    }
+    worksheet["!cols"] = colWidths;
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, label);
+    XLSX.writeFile(workbook, filename);
+    toast.success(`Reporte de Excel para ${label} exportado correctamente`);
+  };
+
+  const exportToPDF = () => {
+    const dataToExport = getFilteredData();
+    if (dataToExport.length === 0) {
+      toast.warn("No hay datos filtrados para exportar");
+      return;
+    }
+
+    const doc = new jsPDF();
+    const label = TABS.find(t => t.id === activeTab)?.label || "Logística";
+    const title = `Reporte de ${label}`;
+    
+    // Top banner header style
+    doc.setFillColor(79, 70, 229); // Indigo-600
+    doc.rect(0, 0, 220, 38, "F");
+
+    // Title text
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(20);
+    doc.setTextColor(255, 255, 255);
+    doc.text(`REPORTE DE ${label.toUpperCase()}`, 14, 18);
+    
+    // Date and subtitle info
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(224, 231, 255); // Indigo-100
+    const dateStr = new Date().toLocaleDateString() + " " + new Date().toLocaleTimeString();
+    doc.text(`Generado: ${dateStr} | Total registros: ${dataToExport.length}`, 14, 28);
+
+    let columns = [];
+    let rows = [];
+
+    if (activeTab === "proveedores") {
+      columns = ["Código", "Razón Social", "RUC", "Dirección", "Estado"];
+      rows = dataToExport.map(item => [item.codigo, item.nombre, item.ruc, item.direccion || "-", item.estado]);
+    } else if (activeTab === "almacenes") {
+      columns = ["ID", "Nombre Almacén", "Ubicación / Dirección", "Responsable", "Estado"];
+      rows = dataToExport.map(item => [item.idalmacen, item.nombre, item.direccion || "-", item.responsable, item.estado]);
+    } else if (activeTab === "grupo_analitico") {
+      columns = ["ID Grupo", "Descripción", "Estado"];
+      rows = dataToExport.map(item => [item.idgrupo, item.descripcion, item.estado]);
+    } else if (activeTab === "productos") {
+      columns = ["Código", "Descripción", "Marca", "U.M.", "Stock", "Precio S/.", "Estado"];
+      rows = dataToExport.map(item => [
+        item.codigo, 
+        item.nombre, 
+        item.marca_nombre, 
+        item.medida_nombre, 
+        item.cantidad, 
+        `S/. ${parseFloat(item.precio_soles).toFixed(2)}`, 
+        item.estado
+      ]);
+    } else if (activeTab === "centros_costo") {
+      columns = ["Código", "Nombre Centro Costo", "Estado"];
+      rows = dataToExport.map(item => [item.codigo, item.descripcion, item.estado]);
+    } else if (activeTab === "documentos") {
+      columns = ["ID Doc", "Nombre Documento", "Estado"];
+      rows = dataToExport.map(item => [item.iddocumento_almacen, item.descripcion, item.estado]);
+    }
+
+    autoTable(doc, {
+      startY: 46,
+      head: [columns],
+      body: rows,
+      theme: 'striped',
+      headStyles: { 
+        fillColor: [67, 56, 202], // Indigo-700
+        textColor: [255, 255, 255],
+        fontSize: 9,
+        fontStyle: 'bold',
+        halign: 'center'
+      },
+      bodyStyles: { 
+        fontSize: 8, 
+        textColor: [30, 41, 59] // Slate-800
+      },
+      columnStyles: {
+        0: { halign: 'center' },
+        [columns.length - 1]: { halign: 'center' }
+      },
+      didParseCell: function (data) {
+        if (data.column.index === columns.length - 1 && data.cell.section === 'body') {
+          if (data.cell.raw === 'ACTIVO') {
+            data.cell.styles.textColor = [16, 185, 129]; // Emerald-500
+            data.cell.styles.fontStyle = 'bold';
+          } else if (data.cell.raw === 'INACTIVO') {
+            data.cell.styles.textColor = [239, 68, 68]; // Red-500
+            data.cell.styles.fontStyle = 'bold';
+          }
+        }
+      },
+      margin: { top: 46 }
+    });
+
+    doc.save(`${activeTab}_reporte_${new Date().toISOString().slice(0, 10)}.pdf`);
+    toast.success(`Reporte de PDF para ${label} exportado correctamente`);
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       
@@ -550,29 +810,74 @@ export default function LogisticaTablas() {
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
         
         {/* Barra de Herramientas de la Tabla */}
-        <div className="p-4 border-b border-gray-100 flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3">
-          <div className="relative flex-1 max-w-md">
-            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
-              <Search size={16} />
-            </span>
-            <input
-              type="text"
-              placeholder={`Buscar en ${TABS.find(t => t.id === activeTab)?.label}...`}
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="w-full pl-9 pr-4 py-2 text-xs font-semibold border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all bg-gray-50/50"
-            />
+        <div className="p-4 border-b border-gray-100 flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-3">
+          <div className="flex flex-wrap flex-1 max-w-2xl items-center gap-2">
+            <div className="relative flex-1 min-w-[200px] max-w-md">
+              <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                <Search size={16} />
+              </span>
+              <input
+                type="text"
+                placeholder={`Buscar en ${TABS.find(t => t.id === activeTab)?.label}...`}
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="w-full pl-9 pr-8 py-2 text-xs font-semibold border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all bg-gray-50/50"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => {
+                    setSearchQuery("");
+                    setCurrentPage(1);
+                  }}
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 transition-colors"
+                  title="Limpiar búsqueda"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+            {searchQuery && (
+              <button
+                onClick={() => {
+                  setSearchQuery("");
+                  setCurrentPage(1);
+                }}
+                className="px-3 py-1.5 text-xs font-bold text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 border border-gray-200 rounded-xl transition-all whitespace-nowrap"
+              >
+                Limpiar
+              </button>
+            )}
           </div>
-          <button
-            onClick={handleOpenAdd}
-            className="flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all shadow-sm"
-          >
-            <PlusCircle size={16} />
-            Nuevo Registro
-          </button>
+
+          {/* Botones de Acción / Reportes */}
+          <div className="flex items-center gap-2 self-end lg:self-auto">
+            <button
+              onClick={exportToPDF}
+              className="flex items-center justify-center gap-2 px-3 py-2 text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-xs font-bold uppercase tracking-wider rounded-xl transition-all shadow-sm"
+              title="Exportar reporte PDF filtrado"
+            >
+              <Download size={14} />
+              PDF
+            </button>
+            <button
+              onClick={exportToExcel}
+              className="flex items-center justify-center gap-2 px-3 py-2 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-xs font-bold uppercase tracking-wider rounded-xl transition-all shadow-sm"
+              title="Exportar reporte Excel filtrado"
+            >
+              <FileSpreadsheet size={14} />
+              Excel
+            </button>
+            <button
+              onClick={handleOpenAdd}
+              className="flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all shadow-sm ml-1"
+            >
+              <PlusCircle size={16} />
+              Nuevo Registro
+            </button>
+          </div>
         </div>
 
         {/* Tabla */}
