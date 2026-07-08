@@ -241,8 +241,39 @@ export default function NuevaLogisticaModal({
         _soles:       data.resumen?.totalSoles ?? cab.soles ?? 0,
         _dolares:     data.resumen?.totalDolares ?? cab.dolares ?? 0,
       });
-      setItems(
-        (data.items || []).map((it, idx) => ({
+
+      const rawItems = data.items || [];
+      let itemsWithStock = [];
+      if (operacion === "S" && cab.almacen) {
+        itemsWithStock = await Promise.all(
+          rawItems.map(async (it, idx) => {
+            let stockVal = 0;
+            try {
+              const resStock = await api.get("logistica/stock/", {
+                params: { producto_id: it.id_producto, almacen_id: cab.almacen }
+              });
+              stockVal = resStock.data?.cantidad ?? 0;
+            } catch (err) {
+              console.error("Error fetching stock for item", it.id_producto, err);
+            }
+            return {
+              id:            it.id_detalle || idx + 1,
+              id_detalle:    it.id_detalle,
+              id_producto:   it.id_producto || "",
+              codigo:        it.codigo || "",
+              descripcion:   it.descripcion || it.nombre || "",
+              um_id:         it.id_unidad_medida != null ? String(it.id_unidad_medida) : "",
+              um:            it.unidad || "",
+              cant:          Number(it.cantidad || 0),
+              valor:         Number(it.valor_unitario || 0),
+              total:         Number(it.total || 0),
+              observacion:   it.observacion || "",
+              _stock:        stockVal + Number(it.cantidad || 0)
+            };
+          })
+        );
+      } else {
+        itemsWithStock = rawItems.map((it, idx) => ({
           id:            it.id_detalle || idx + 1,
           id_detalle:    it.id_detalle,
           id_producto:   it.id_producto || "",
@@ -254,8 +285,11 @@ export default function NuevaLogisticaModal({
           valor:         Number(it.valor_unitario || 0),
           total:         Number(it.total || 0),
           observacion:   it.observacion || "",
-        }))
-      );
+          _stock:        null
+        }));
+      }
+
+      setItems(itemsWithStock);
     } catch {
       toast.error("Error al cargar el detalle");
     } finally {
@@ -297,6 +331,14 @@ export default function NuevaLogisticaModal({
       if (Number(it.cant || 0) <= 0) {
         toast.warning(`La cantidad para el ítem "${it.descripcion || it.codigo}" debe ser mayor a 0`);
         return false;
+      }
+      if (operacion === "S" && it._stock != null) {
+        const stockDisp = Number(it._stock || 0);
+        const cant = Number(it.cant || 0);
+        if (cant > stockDisp) {
+          toast.warning(`Stock insuficiente para "${it.descripcion || it.codigo}". Disponible: ${stockDisp}, Solicitado: ${cant}`);
+          return false;
+        }
       }
     }
     return true;
@@ -371,6 +413,16 @@ export default function NuevaLogisticaModal({
     setItems((prev) =>
       prev.map((it) => {
         if (it.id !== id) return it;
+        if (field === "cant" && operacion === "S" && it._stock != null) {
+          const newCant = Number(value || 0);
+          const stockDisp = Number(it._stock || 0);
+          if (newCant > stockDisp) {
+            toast.error(`Stock insuficiente para ${it.descripcion}. Disponible: ${stockDisp}, Solicitado: ${newCant}`);
+            const updated = { ...it, cant: stockDisp };
+            updated.total = stockDisp * Number(updated.valor || 0);
+            return updated;
+          }
+        }
         const updated = { ...it, [field]: value };
         updated.total = Number(updated.cant || 0) * Number(updated.valor || 0);
         return updated;
@@ -710,6 +762,11 @@ export default function NuevaLogisticaModal({
                         <input type="text" value={newItem.descripcion}
                           onChange={(e) => setNewItem((p) => ({ ...p, descripcion: e.target.value }))}
                           className="w-full text-[11px] border border-slate-300 rounded px-2 py-1 uppercase" />
+                        {operacion === "S" && newItem._stock != null && (
+                          <div className="text-[10px] text-emerald-600 font-bold mt-0.5">
+                            Stock disp: {newItem._stock}
+                          </div>
+                        )}
                       </td>
                       <td className="px-2 py-1.5">
                         <input type="text" value={newItem.um}
