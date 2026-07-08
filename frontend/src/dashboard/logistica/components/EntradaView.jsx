@@ -1,12 +1,16 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FilePlus, Eye, Loader, Search, RefreshCw, FileDown } from "lucide-react";
+import { FilePlus, Eye, Loader, Search, RefreshCw, X, Download, FileSpreadsheet } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import Table from "@/components/ui/table";
 import { getEstadoColor, getEstadoNombre } from "@/components/ui/colors";
 import NuevaLogisticaModal from "@/modal/logistica/NuevaLogisticaModal";
 import api from "@/services/api";
+import { toast } from "react-toastify";
+import XLSX from "xlsx-js-style";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 const CURRENT_YEAR = new Date().getFullYear().toString();
 const MESES = [
@@ -29,7 +33,6 @@ export default function EntradaView() {
   const [almacen, setAlmacen] = useState("%");
   const [estado, setEstado] = useState("%");
   const [searchInput, setSearchInput] = useState("");
-  const [search, setSearch] = useState("");
 
   const [openNueva, setOpenNueva] = useState(false);
 
@@ -42,22 +45,218 @@ export default function EntradaView() {
   });
 
   const { data, isFetching } = useQuery({
-    queryKey: ["logistica_entradas", { anno, mes, almacen, estado, search }],
+    queryKey: ["logistica_entradas", { anno, mes, almacen, estado }],
     queryFn: () =>
       api.get("logistica/dashboard/", {
-        params: { operacion: "E", anno: anno || "%", mes: mes || "%", almacen: almacen || "%", estado: estado || "%", general: search || "" },
+        params: { operacion: "E", anno: anno || "%", mes: mes || "%", almacen: almacen || "%", estado: estado || "%", general: "" },
       }).then(r => r.data),
     staleTime: 30 * 1000,
   });
 
   const movimientos = (data?.tabla || []).filter(m => m.ope === "E");
 
+  // Filtrado dinámico en tiempo real (mientras escribe)
+  const filteredMovimientos = movimientos.filter(m => {
+    const q = searchInput.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      String(m.num_reg).toLowerCase().includes(q) ||
+      (m.dor || "").toLowerCase().includes(q) ||
+      (m.oco || "").toLowerCase().includes(q) ||
+      (m.nfa || "").toLowerCase().includes(q) ||
+      (m.ngu || "").toLowerCase().includes(q) ||
+      (m.nom_alm || "").toLowerCase().includes(q)
+    );
+  });
+
   const onRefresh = () => queryClient.invalidateQueries({ queryKey: ["logistica_entradas"] });
 
-  const handleReport = () => {
-    const base = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
-    const params = new URLSearchParams({ anno: anno || "%", mes: mes || "%", almacen: almacen || "%", operacion: "E" });
-    window.open(`${base}/api/cotizaciones/reportes/reporte_almacen_dashboard_html/?${params}`, "_blank");
+  const exportToExcel = () => {
+    const dataToExport = filteredMovimientos;
+    if (dataToExport.length === 0) {
+      toast.warn("No hay datos filtrados para exportar");
+      return;
+    }
+
+    const mappedData = dataToExport.map(item => ({
+      "N° Registro": item.num_reg,
+      "Fecha": item.fec,
+      "O/Compra": item.oco || "-",
+      "Nombre / Proveedor": item.dor || "-",
+      "Factura": item.nfa || "-",
+      "Guía": item.ngu || "-",
+      "Almacén": item.nom_alm || "-",
+      "Moneda": item.tmo === "S" ? "Soles" : "Dólares",
+      "Total Soles": item.sol != null ? Number(item.sol) : 0,
+      "Total Dólares": item.dol != null ? Number(item.dol) : 0,
+      "Estado": item.est === "1" ? "ACTIVO" : "ANULADO"
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(mappedData);
+
+    const headerStyle = {
+      fill: { fgColor: { rgb: "0D9488" } }, // Teal-600 (Color del sistema para Entradas)
+      font: { name: "Arial", sz: 10, bold: true, color: { rgb: "FFFFFF" } },
+      alignment: { horizontal: "center", vertical: "center" },
+      border: {
+        top: { style: "thin", color: { rgb: "CBD5E1" } },
+        bottom: { style: "medium", color: { rgb: "0F766E" } },
+        left: { style: "thin", color: { rgb: "CBD5E1" } },
+        right: { style: "thin", color: { rgb: "CBD5E1" } }
+      }
+    };
+
+    const cellStyleEven = {
+      font: { name: "Arial", sz: 9, color: { rgb: "1E293B" } },
+      border: {
+        top: { style: "thin", color: { rgb: "F1F5F9" } },
+        bottom: { style: "thin", color: { rgb: "F1F5F9" } },
+        left: { style: "thin", color: { rgb: "F1F5F9" } },
+        right: { style: "thin", color: { rgb: "F1F5F9" } }
+      }
+    };
+
+    const cellStyleOdd = {
+      fill: { fgColor: { rgb: "F0FDFA" } }, // Zebra style (Teal-50)
+      font: { name: "Arial", sz: 9, color: { rgb: "1E293B" } },
+      border: {
+        top: { style: "thin", color: { rgb: "CCFBF1" } },
+        bottom: { style: "thin", color: { rgb: "CCFBF1" } },
+        left: { style: "thin", color: { rgb: "CCFBF1" } },
+        right: { style: "thin", color: { rgb: "CCFBF1" } }
+      }
+    };
+
+    const range = XLSX.utils.decode_range(worksheet["!ref"]);
+    worksheet["!rows"] = [{ hpx: 28 }];
+
+    for (let R = range.s.r; R <= range.e.r; ++R) {
+      if (R > 0) worksheet["!rows"][R] = { hpx: 20 };
+
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const cell_ref = XLSX.utils.encode_cell({ c: C, r: R });
+        const cell = worksheet[cell_ref];
+        if (!cell) continue;
+
+        if (R === 0) {
+          cell.s = headerStyle;
+        } else {
+          cell.s = R % 2 === 0 ? cellStyleEven : cellStyleOdd;
+
+          if (typeof cell.v === "number") {
+            cell.s = { ...cell.s, alignment: { horizontal: "right" } };
+          } else if (cell.v === "ACTIVO" || cell.v === "ANULADO") {
+            cell.s = {
+              ...cell.s,
+              alignment: { horizontal: "center" },
+              font: {
+                ...cell.s.font,
+                bold: true,
+                color: { rgb: cell.v === "ACTIVO" ? "10B981" : "EF4444" }
+              }
+            };
+          }
+        }
+      }
+    }
+
+    const colWidths = [];
+    for (let C = range.s.c; C <= range.e.c; ++C) {
+      let maxLen = 12;
+      for (let R = range.s.r; R <= range.e.r; ++R) {
+        const cell = worksheet[XLSX.utils.encode_cell({ c: C, r: R })];
+        if (cell && cell.v) {
+          maxLen = Math.max(maxLen, String(cell.v).length);
+        }
+      }
+      colWidths.push({ wch: maxLen + 3 });
+    }
+    worksheet["!cols"] = colWidths;
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Entradas");
+    XLSX.writeFile(workbook, `entradas_reporte_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast.success("Reporte de Excel de Entradas generado correctamente");
+  };
+
+  const exportToPDF = () => {
+    const dataToExport = filteredMovimientos;
+    if (dataToExport.length === 0) {
+      toast.warn("No hay datos filtrados para exportar");
+      return;
+    }
+
+    const doc = new jsPDF();
+    
+    // Header banner (Teal-600)
+    doc.setFillColor(13, 148, 136);
+    doc.rect(0, 0, 220, 38, "F");
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(20);
+    doc.setTextColor(255, 255, 255);
+    doc.text("REPORTE DE ENTRADAS DE ALMACÉN", 14, 18);
+    
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(204, 251, 241); // Teal-100
+    const dateStr = new Date().toLocaleDateString() + " " + new Date().toLocaleTimeString();
+    doc.text(`Generado: ${dateStr} | Total registros: ${dataToExport.length}`, 14, 28);
+
+    const columns = ["N° Reg", "Fecha", "O/C", "Proveedor", "Guía", "Almacén", "Soles", "Dólares", "Estado"];
+    const rows = dataToExport.map(item => [
+      item.num_reg,
+      item.fec ? item.fec.split("T")[0] : "-",
+      item.oco || "-",
+      item.dor || "-",
+      item.ngu || "-",
+      item.nom_alm || "-",
+      item.sol != null ? `S/. ${Number(item.sol).toFixed(2)}` : "-",
+      item.dol != null ? `$ ${Number(item.dol).toFixed(2)}` : "-",
+      item.est === "1" ? "ACTIVO" : "ANULADO"
+    ]);
+
+    autoTable(doc, {
+      startY: 46,
+      head: [columns],
+      body: rows,
+      theme: 'striped',
+      headStyles: { 
+        fillColor: [15, 118, 110], // Teal-700
+        textColor: [255, 255, 255],
+        fontSize: 8,
+        fontStyle: 'bold',
+        halign: 'center'
+      },
+      bodyStyles: { 
+        fontSize: 7.5, 
+        textColor: [30, 41, 59]
+      },
+      columnStyles: {
+        0: { halign: 'center', cellWidth: 15 },
+        1: { halign: 'center', cellWidth: 20 },
+        2: { halign: 'center', cellWidth: 20 },
+        4: { halign: 'center', cellWidth: 18 },
+        6: { halign: 'right', cellWidth: 20 },
+        7: { halign: 'right', cellWidth: 20 },
+        8: { halign: 'center', cellWidth: 18 }
+      },
+      didParseCell: function (data) {
+        if (data.column.index === 8 && data.cell.section === 'body') {
+          if (data.cell.raw === 'ACTIVO') {
+            data.cell.styles.textColor = [16, 185, 129];
+            data.cell.styles.fontStyle = 'bold';
+          } else if (data.cell.raw === 'ANULADO') {
+            data.cell.styles.textColor = [239, 68, 68];
+            data.cell.styles.fontStyle = 'bold';
+          }
+        }
+      },
+      margin: { top: 46 }
+    });
+
+    doc.save(`entradas_reporte_${new Date().toISOString().slice(0, 10)}.pdf`);
+    toast.success("Reporte de PDF de Entradas generado correctamente");
   };
 
   return (
@@ -94,14 +293,24 @@ export default function EntradaView() {
           </select>
         </div>
         <div className="space-y-1">
-          <label className="text-[10px] font-bold text-slate-500 uppercase">Busqueda</label>
-          <div className="flex gap-1">
-            <input type="text" value={searchInput} onChange={e => setSearchInput(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && setSearch(searchInput)}
-              placeholder="N, proveedor..." className="flex-1 text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white" />
-            <button onClick={() => setSearch(searchInput)} className="p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
-              <Search size={13} />
-            </button>
+          <label className="text-[10px] font-bold text-slate-500 uppercase">Búsqueda</label>
+          <div className="relative flex items-center">
+            <input 
+              type="text" 
+              value={searchInput} 
+              onChange={e => setSearchInput(e.target.value)}
+              placeholder="N°, proveedor, O/C..." 
+              className="w-full text-xs border border-slate-200 rounded-lg pl-3 pr-8 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-teal-500 focus:border-teal-500" 
+            />
+            {searchInput && (
+              <button 
+                onClick={() => setSearchInput("")} 
+                className="absolute right-2 text-slate-400 hover:text-slate-600 transition-colors p-1"
+                title="Limpiar búsqueda"
+              >
+                <X size={14} />
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -117,11 +326,11 @@ export default function EntradaView() {
           headers={["N° Registro", "Fecha", "O/Compra", "Nombre", "Factura", "Guia", "Almacen", "Mon.", "Soles", "Dolares", "", ""].map(h => (
             <span key={h} className="text-[10px] font-black uppercase tracking-wider text-slate-800 text-center block">{h}</span>
           ))}
-          data={movimientos}
+          data={filteredMovimientos}
           onRowClick={c => goToDetalle(c.num_reg)}
           renderRow={c => [
             <span className="text-xs font-bold text-indigo-700 tabular-nums">{c.num_reg}</span>,
-            <span className="text-xs text-slate-700">{c.fec}</span>,
+            <span className="text-xs text-slate-700">{c.fec ? c.fec.split("T")[0] : ""}</span>,
             <span className="text-xs text-slate-600">{c.oco || "."}</span>,
             <span className="text-xs font-semibold text-slate-800 uppercase">{c.dor || "."}</span>,
             <span className="text-xs text-slate-600">{c.nfa || "."}</span>,
@@ -151,19 +360,35 @@ export default function EntradaView() {
       <div className="flex justify-between items-center mt-4 gap-3">
         <div className="flex items-center gap-2">
           <span className="text-xs text-slate-500 font-medium">
-            Total: <span className="font-bold text-slate-800">{movimientos.length}</span> registros
+            Total: <span className="font-bold text-slate-800">{filteredMovimientos.length}</span> registros
           </span>
           <button onClick={onRefresh} title="Actualizar" className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-400">
             <RefreshCw size={13} />
           </button>
-          <button onClick={handleReport} title="Reporte HTML" className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-400">
-            <FileDown size={13} />
-          </button>
         </div>
-        <Button onClick={() => setOpenNueva(true)}
-          className="bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold uppercase tracking-widest px-6 h-9 rounded-xl transition-all flex gap-2 shadow-lg shadow-teal-100">
-          <FilePlus size={16} /> Nueva Entrada
-        </Button>
+        
+        <div className="flex items-center gap-2">
+          <button
+            onClick={exportToPDF}
+            className="flex items-center justify-center gap-2 px-3 py-2 text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-xs font-bold uppercase tracking-wider rounded-xl transition-all shadow-sm h-9"
+            title="Exportar reporte PDF"
+          >
+            <Download size={14} />
+            PDF
+          </button>
+          <button
+            onClick={exportToExcel}
+            className="flex items-center justify-center gap-2 px-3 py-2 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-xs font-bold uppercase tracking-wider rounded-xl transition-all shadow-sm h-9"
+            title="Exportar reporte Excel"
+          >
+            <FileSpreadsheet size={14} />
+            Excel
+          </button>
+          <Button onClick={() => setOpenNueva(true)}
+            className="bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold uppercase tracking-widest px-6 h-9 rounded-xl transition-all flex gap-2 shadow-lg shadow-teal-100">
+            <FilePlus size={16} /> Nueva Entrada
+          </Button>
+        </div>
       </div>
 
       {openNueva && (
