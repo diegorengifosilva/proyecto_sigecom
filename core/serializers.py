@@ -13,7 +13,7 @@ from .models import (
     TipoPersonal,
     TipoGastoDetalle,
     Producto,
-    Nota,
+    Nota
 )
 from django.utils.timezone import localtime
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -223,4 +223,4 @@ class NotaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Nota
         fields = ['id_nota', 'codigo', 'descripcion', 'activo']
-
+    

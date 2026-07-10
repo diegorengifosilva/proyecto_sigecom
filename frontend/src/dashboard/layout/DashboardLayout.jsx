@@ -4,6 +4,9 @@ import * as LucideIcons from "lucide-react";
 import logo from "@/assets/logo.png";
 import api from "@/services/api";
 import { useAuth } from "@/context/AuthContext";
+import ActionMenu from "@/components/ui/ActionMenu";
+import { toast } from "react-toastify";
+import NotificationBell from "@/components/notificaciones/NotificationBell";
 
 const Icon = ({ name, className }) => {
   const LucideIcon = LucideIcons[name] || LucideIcons.HelpCircle;
@@ -38,6 +41,62 @@ export default function DashboardLayout() {
   const [breadcrumbOverride, setBreadcrumbOverride] = useState(null);
   const [openMenus, setOpenMenus] = useState({});
 
+  // Modals state
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+
+  const initials = user?.nombre_completo
+    ? user.nombre_completo.split(" ").filter(Boolean).slice(0, 2).map(n => n[0]).join("").toUpperCase()
+    : user?.usuario?.substring(0, 2).toUpperCase() || "US";
+
+  // Form states for password change
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState("");
+
+  const handlePasswordChangeSubmit = async (e) => {
+    e.preventDefault();
+    setPasswordError("");
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setPasswordError("Todos los campos son obligatorios.");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError("La nueva contraseña y su confirmación no coinciden.");
+      return;
+    }
+
+    if (newPassword.length < 4) {
+      setPasswordError("La contraseña debe tener al menos 4 caracteres.");
+      return;
+    }
+
+    try {
+      setIsChangingPassword(true);
+      await api.post("users/cambiar-contrasena/", {
+        contrasena_actual: currentPassword,
+        contrasena_nueva: newPassword
+      });
+      toast.success("Contraseña actualizada con éxito.");
+      
+      // Reset states
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setShowPasswordModal(false);
+    } catch (err) {
+      console.error(err);
+      const errMsg = err.response?.data?.error || "Error al actualizar la contraseña.";
+      setPasswordError(errMsg);
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
   useEffect(() => {
     // Clear override whenever location changes
     setBreadcrumbOverride(null);
@@ -53,6 +112,54 @@ export default function DashboardLayout() {
     window.addEventListener("sigecom-breadcrumb-label", handleOverride);
     return () => window.removeEventListener("sigecom-breadcrumb-label", handleOverride);
   }, [location.pathname]);
+
+  useEffect(() => {
+    const parts = location.pathname.split("/").filter(Boolean);
+    if (parts.length > 0) {
+      let currentPageName = "";
+      if (breadcrumbOverride) {
+        currentPageName = breadcrumbOverride;
+      } else {
+        const lastPart = parts[parts.length - 1];
+        currentPageName = lastPart.charAt(0).toUpperCase() + lastPart.slice(1).replace(/-/g, " ");
+      }
+      document.title = `${currentPageName} | SIGECOM 5.0`;
+    } else {
+      document.title = "SIGECOM 5.0 - ERP";
+    }
+  }, [location.pathname, breadcrumbOverride]);
+
+  useEffect(() => {
+    const img = new Image();
+    img.src = logo;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const size = 32;
+      canvas.width = size;
+      canvas.height = size;
+      
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        const scale = Math.min(size / img.width, size / img.height);
+        const w = img.width * scale;
+        const h = img.height * scale;
+        
+        const x = (size - w) / 2;
+        const y = (size - h) / 2;
+        
+        ctx.clearRect(0, 0, size, size);
+        ctx.drawImage(img, x, y, w, h);
+        
+        let link = document.querySelector("link[rel~='icon']");
+        if (!link) {
+          link = document.createElement('link');
+          link.rel = 'icon';
+          document.head.appendChild(link);
+        }
+        link.href = canvas.toDataURL('image/png');
+      }
+    };
+  }, []);
 
   useEffect(() => {
     setIsMobileOpen(false);
@@ -240,24 +347,65 @@ export default function DashboardLayout() {
         </nav>
 
         <div className="flex-shrink-0 flex border-t border-gray-200 p-4 bg-gray-50/50">
-          <div className="flex items-center w-full min-w-0">
-            <div className="h-9 w-9 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold text-xs shrink-0">
-              {user?.usuario?.substring(0, 2).toUpperCase() || "US"}
-            </div>
-            {isExpanded && (
-              <div className="ml-3 min-w-0 flex-1">
-                <p className="text-sm font-semibold text-gray-700 truncate">
-                  {user?.usuario || "Usuario"}
-                </p>
-                <button
-                  onClick={handleLogout}
-                  className="text-xs font-medium text-gray-500 hover:text-red-600 transition-colors"
-                >
-                  Cerrar sesión
-                </button>
-              </div>
-            )}
-          </div>
+          <ActionMenu
+            align="start"
+            title="Mi Cuenta"
+            options={[
+              {
+                label: "Perfil Usuario",
+                icon: LucideIcons.User,
+                onClick: () => setShowProfileModal(true)
+              },
+              {
+                label: "Cambiar Contraseña",
+                icon: LucideIcons.KeyRound,
+                onClick: () => setShowPasswordModal(true)
+              },
+              {
+                label: "Cambiar módulo",
+                icon: LucideIcons.Layers,
+                hasSubmenu: true,
+                submenuContent: (
+                  <div className="py-0.5">
+                    {NAV_ITEMS.map((item) => (
+                      <button
+                        key={item.path}
+                        className="flex items-center w-full text-left gap-2 px-3 py-2 text-[10px] font-bold uppercase tracking-tight rounded-xl text-slate-600 hover:bg-slate-50 hover:text-indigo-600 transition-colors"
+                        onClick={() => navigate(item.path)}
+                      >
+                        <Icon name={item.icon} className="w-4 h-4 opacity-70" />
+                        <span>{item.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )
+              },
+              { type: "separator" },
+              {
+                label: "Cerrar sesión",
+                icon: LucideIcons.LogOut,
+                variant: "danger",
+                onClick: handleLogout
+              }
+            ]}
+            customTrigger={
+              <button className="flex items-center w-full min-w-0 text-left hover:bg-gray-100/80 p-1.5 rounded-xl transition-all outline-none">
+                <div className="h-9 w-9 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold text-xs shrink-0">
+                  {initials}
+                </div>
+                {isExpanded && (
+                  <div className="ml-3 min-w-0 flex-1 pr-2 relative">
+                    <p className="text-xs font-bold text-gray-800 truncate leading-tight">
+                      {user?.nombre_completo || user?.usuario || "Usuario"}
+                    </p>
+                    <p className="text-[10px] font-semibold text-gray-400 truncate leading-none mt-0.5">
+                      {user?.cargo_nombre || "Miembro"}
+                    </p>
+                  </div>
+                )}
+              </button>
+            }
+          />
         </div>
       </aside>
 
@@ -301,9 +449,7 @@ export default function DashboardLayout() {
           <div className="flex items-center space-x-4">
             {/* Dynamic icons or actions could go here */}
             <div className="h-8 w-px bg-gray-200" />
-            <button className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-gray-50 rounded-lg transition-all">
-              <LucideIcons.Bell className="h-5 w-5" />
-            </button>
+            <NotificationBell />
             <button className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-gray-50 rounded-lg transition-all">
               <LucideIcons.Settings className="h-5 w-5" />
             </button>
@@ -316,6 +462,177 @@ export default function DashboardLayout() {
           </div>
         </main>
       </div>
+
+      {/* MODAL PERFIL USUARIO */}
+      {showProfileModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div 
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" 
+            onClick={() => setShowProfileModal(false)}
+          />
+          <div className="bg-white rounded-3xl p-6 shadow-2xl w-full max-w-md border border-slate-100 relative z-10 animate-in zoom-in-95 duration-200">
+            <button 
+              onClick={() => setShowProfileModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors p-1 rounded-full hover:bg-slate-50"
+            >
+              <LucideIcons.X className="w-5 h-5" />
+            </button>
+
+            <div className="text-center mb-6">
+              <div className="h-20 w-20 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold text-3xl mx-auto shadow-lg shadow-indigo-100 mb-4">
+                {initials}
+              </div>
+              <h3 className="text-lg font-bold text-slate-800">
+                {user?.nombre_completo || "Usuario"}
+              </h3>
+              <p className="text-xs font-semibold text-indigo-600 uppercase tracking-wider mt-0.5">
+                {user?.cargo_nombre || "Miembro"}
+              </p>
+            </div>
+
+            <div className="space-y-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+              <div className="flex justify-between items-center text-xs py-1 border-b border-slate-200/50">
+                <span className="font-semibold text-slate-400 uppercase tracking-tight">Usuario</span>
+                <span className="font-bold text-slate-700">{user?.usuario || "-"}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs py-1 border-b border-slate-200/50">
+                <span className="font-semibold text-slate-400 uppercase tracking-tight">Correo</span>
+                <span className="font-bold text-slate-700">{user?.correo || "-"}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs py-1 border-b border-slate-200/50">
+                <span className="font-semibold text-slate-400 uppercase tracking-tight">DNI / Doc</span>
+                <span className="font-bold text-slate-700">{user?.dni || "-"}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs py-1">
+                <span className="font-semibold text-slate-400 uppercase tracking-tight">Área</span>
+                <span className="font-bold text-slate-700">{user?.area_nombre || "-"}</span>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => setShowProfileModal(false)}
+                className="w-full sm:w-auto px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md shadow-indigo-100"
+              >
+                Aceptar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CAMBIAR CONTRASEÑA */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div 
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" 
+            onClick={() => {
+              if (!isChangingPassword) {
+                setShowPasswordModal(false);
+                setPasswordError("");
+              }
+            }}
+          />
+          <div className="bg-white rounded-3xl p-6 shadow-2xl w-full max-w-md border border-slate-100 relative z-10 animate-in zoom-in-95 duration-200">
+            <button 
+              onClick={() => {
+                if (!isChangingPassword) {
+                  setShowPasswordModal(false);
+                  setPasswordError("");
+                }
+              }}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors p-1 rounded-full hover:bg-slate-50"
+            >
+              <LucideIcons.X className="w-5 h-5" />
+            </button>
+
+            <div className="mb-6">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <LucideIcons.KeyRound className="w-5 h-5 text-indigo-600" />
+                Cambiar Contraseña
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Ingresa tus credenciales para actualizar tu contraseña de acceso.
+              </p>
+            </div>
+
+            <form onSubmit={handlePasswordChangeSubmit} className="space-y-4">
+              {passwordError && (
+                <div className="p-3 bg-red-50 text-red-600 text-xs font-bold rounded-xl border border-red-100">
+                  {passwordError}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                  Contraseña Actual
+                </label>
+                <input
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  className="w-full px-4 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all font-medium text-slate-700 bg-slate-50/50"
+                  placeholder="••••••••"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                  Nueva Contraseña
+                </label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full px-4 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all font-medium text-slate-700 bg-slate-50/50"
+                  placeholder="Mínimo 4 caracteres"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                  Confirmar Nueva Contraseña
+                </label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full px-4 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all font-medium text-slate-700 bg-slate-50/50"
+                  placeholder="Repite la nueva contraseña"
+                />
+              </div>
+
+              <div className="mt-6 flex flex-col-reverse sm:flex-row justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPasswordModal(false);
+                    setPasswordError("");
+                  }}
+                  disabled={isChangingPassword}
+                  className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs uppercase tracking-wider rounded-xl transition-all"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isChangingPassword}
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md shadow-indigo-100 flex items-center justify-center gap-2"
+                >
+                  {isChangingPassword ? (
+                    <>
+                      <LucideIcons.Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Guardando...
+                    </>
+                  ) : (
+                    "Guardar"
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

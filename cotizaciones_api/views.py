@@ -86,7 +86,6 @@ from .models import (
     alm_articulos,
     ObjetivoAnualArea,
     ObjetivoAnual,
-    Notificacion,
     vc_tab_notas,
     vc_mov_orden,
     )
@@ -114,7 +113,6 @@ from .serializers import (
     AlmArticulosSerializer,
     ObjetivoAnualAreaSerializer,
     ObjetivoAnualSerializer,
-    NotificacionSerializer,
     NotasSerializer,
 )
 
@@ -3838,6 +3836,30 @@ def eliminar_cotizacion(request, id_registro):
                     status=404
                 )
 
+            # Buscar si este registro fue creado como copia o nueva versión
+            import re
+            base_log = CotizacionSeguimiento.objects.filter(
+                id_registro=id_registro,
+                detalle__contains="generada a partir del registro base"
+            ).first()
+
+            if base_log:
+                match = re.search(r"registro base\s+([A-Za-z0-9\-]+)", base_log.detalle)
+                if match:
+                    base_codigo = match.group(1).strip()
+                    base_cotizacion = Cotizacion.objects.filter(codigo=base_codigo).first()
+                    if base_cotizacion:
+                        es_version = "Nueva versión" in base_log.detalle
+                        tipo_accion = "nueva versión" if es_version else "copia"
+                        coti_codigo = cotizacion.codigo or f"REG-{cotizacion.id_registro}"
+                        
+                        CotizacionSeguimiento.objects.create(
+                            id_registro=base_cotizacion,
+                            detalle=f"Se eliminó la {tipo_accion} de esta cotización con código {coti_codigo}",
+                            id_usuario=request.user if request.user and request.user.is_authenticated else None,
+                            activo='1'
+                        )
+
             # 2. Eliminar dependencias
             CotizacionSuministro.objects.filter(id_registro=id_registro).delete()
             CotizacionServicio.objects.filter(id_registro=id_registro).delete()
@@ -4865,7 +4887,8 @@ def crear_nueva_version_cotizacion(request, id_registro):
             nueva_coti = Cotizacion(**datos_cabecera)
             nueva_coti.id_registro = obtener_siguiente_num_reg()
             nueva_coti.codigo = nuevo_codigo_version
-            nueva_coti.id_estado_id = 11  # Estado inicial: Oportunidad
+            nueva_coti.id_estado_id = 2  # Estado inicial: Cotización (Pendiente)
+            nueva_coti.estado_oportunidad = 4  # Cotizado
             nueva_coti.envio = 0
             nueva_coti.regus = usuario_codigo
             nueva_coti.fecha = now()
@@ -5000,13 +5023,7 @@ def crear_nueva_version_cotizacion(request, id_registro):
                 except IntegrityError as e:
                     raise IntegrityError(f"Error de duplicidad en lote del modelo [CotizacionSeguimiento]: {str(e)}")
 
-            # Registrar en la trazabilidad de la cotización base
-            CotizacionSeguimiento.objects.create(
-                id_registro=base,
-                detalle=f"Se generó una nueva versión de esta cotización con código {nueva_coti.codigo}",
-                id_usuario=request.user,
-                activo='1'
-            )
+
 
         # Si todo corre perfecto en el bloque atómico:
         return Response({
@@ -5075,7 +5092,8 @@ def generar_copiar_cotizacion(request, id_registro):
             nueva_coti = Cotizacion(**datos_cabecera)
             nueva_coti.id_registro = obtener_siguiente_num_reg()
             nueva_coti.codigo = None # Temporalmente None
-            nueva_coti.id_estado_id = 11  # Estado inicial: Oportunidad
+            nueva_coti.id_estado_id = 2  # Estado inicial: Cotización (Pendiente)
+            nueva_coti.estado_oportunidad = 4  # Cotizado
             nueva_coti.estado_envio = 1
             nueva_coti.regus = usuario_codigo
             nueva_coti.fecha = now()
@@ -5216,13 +5234,7 @@ def generar_copiar_cotizacion(request, id_registro):
             if nuevos_seguimientos:
                 CotizacionSeguimiento.objects.bulk_create(nuevos_seguimientos)
 
-            # Registrar en la trazabilidad de la cotización base
-            CotizacionSeguimiento.objects.create(
-                id_registro=base,
-                detalle=f"Se generó una copia de esta cotización con código {nueva_coti.codigo or '(Sin Código)'}",
-                id_usuario=request.user,
-                activo='1'
-            )
+
 
         return Response({
             "ok": True,
@@ -5396,12 +5408,12 @@ def pasar_a_apertura(request, id_registro):
 def retornar_cotizacion(request, num_reg):
     """
     Retorna una cotización a estado editable.
-    Acción: envio = 0
+    Acción: estado_envio = 0
     """
 
     try:
         with transaction.atomic():
-            cotizacion = Cotizacion.objects.filter(num_reg=num_reg).first()
+            cotizacion = Cotizacion.objects.filter(id_registro=num_reg).first()
 
             if not cotizacion:
                 return Response(
@@ -5410,14 +5422,14 @@ def retornar_cotizacion(request, num_reg):
                 )
 
             # 🔒 Opcional: validar que esté enviada
-            if cotizacion.envio == 0:
+            if cotizacion.estado_envio == 0:
                 return Response(
                     {"message": "La cotización ya está en estado editable"},
                     status=200
                 )
 
-            cotizacion.envio = 0
-            cotizacion.save(update_fields=["envio"])
+            cotizacion.estado_envio = 0
+            cotizacion.save(update_fields=["estado_envio"])
 
         return Response(
             {"message": "La cotización fue retornada correctamente"},
@@ -5430,790 +5442,21 @@ def retornar_cotizacion(request, num_reg):
             status=500
         )
 
-#========================================================================================
 
-##===================##
-## OBJETIVOS ANUALES ##
-##===================##
-@api_view(["GET", "POST", "PUT"])
-def objetivos_anuales(request):
-    # Mantenemos la referencia pero ya no será el filtro principal
-    usuario_codigo = request.user.usuario
 
-    # =================
-    # LISTAR (Global)
-    # =================
-    if request.method == "GET":
-        anno = request.query_params.get("anno")
 
-        if not anno:
-            return Response({"error": "Debe enviar el año"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # CAMBIO CLAVE: Cambiamos .get() por .filter() para traer todos los objetivos del año.
-        # Quitamos: encargado=usuario_codigo
-        objetivos = ObjetivoAnual.objects.prefetch_related("areas").filter(
-            anno=anno,
-            activo=True
-        )
 
-        if objetivos.exists():
-            # many=True porque ahora sumaremos todas las metas activas del año
-            serializer = ObjetivoAnualSerializer(objetivos, many=True)
-            return Response(serializer.data)
-        else:
-            return Response(
-                {"message": "No existen objetivos activos para ese año"},
-                status=status.HTTP_200_OK
-            )
 
-    # =================
-    # CREAR (Global)
-    # =================
-    if request.method == "POST":
-        # Ahora desactivamos TODOS los objetivos del año indicado para "resetear" la meta global
-        anno_post = request.data.get("anno")
-        ObjetivoAnual.objects.filter(
-            anno=anno_post,
-            activo=True
-        ).update(activo=False)
 
-        serializer = ObjetivoAnualSerializer(data=request.data)
-        if serializer.is_valid():
-            # El encargado sigue siendo quien CREA el registro por auditoría
-            serializer.save(encargado=usuario_codigo) 
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    # =================
-    # ACTUALIZAR
-    # =================
-    if request.method == "PUT":
-        anno = request.data.get("anno")
-        # Aquí podrías usar el ID del objetivo para ser más preciso, 
-        # pero si mantienes anno, filtramos el que esté activo.
-        try:
-            objetivo = ObjetivoAnual.objects.get(
-                anno=anno,
-                activo=True
-                # encargado=usuario_codigo <-- Eliminado
-            )
-        except ObjetivoAnual.DoesNotExist:
-            return Response({"error": "No existe ese objetivo"}, status=status.HTTP_404_NOT_FOUND)
 
-        serializer = ObjetivoAnualSerializer(objetivo, data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
 
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-##=========##
-## RESUMEN ##
-##=========##
-@api_view(["GET"])
-def resumen_dashboard(request):
 
-    usuario_codigo = request.user.usuario
-    nombre_corto = request.user.nombre_completo
 
-    anno = timezone.now().year
-    mes = timezone.now().month
-
-    # ===============================
-    # OBJETIVO ANUAL
-    # ===============================
-    try:
-        objetivo = ObjetivoAnual.objects.prefetch_related("areas").get(
-            encargado=usuario_codigo,
-            anno=anno,
-            activo=True
-        )
-    except ObjetivoAnual.DoesNotExist:
-        return Response({"message": "Sin objetivo configurado"})
-
-    # ===============================
-    # COTIZACIONES ANUALES
-    # ===============================
-    base = Cotizacion.objects.filter(
-        nombc=nombre_corto
-    )
-
-    base = aplicar_filtros(base, request)
-
-    cotizaciones_anuales = base.filter(fecha__year=anno)
-    cotizaciones_mes = base.filter(
-        fecha__year=anno,
-        fecha__month=mes
-    )
-
-    # ===============================
-    # COTIZACIONES MENSUALES
-    # ===============================
-    cotizaciones_mes = Cotizacion.objects.filter(
-        nombc=nombre_corto,
-        fecha__year=anno,
-        fecha__month=mes
-    ).values_list("num_reg", flat=True)
-
-    # ===============================
-    # EXPRESIÓN UTILIDAD
-    # ===============================
-    utilidad_expr = ExpressionWrapper(
-        F("tou") * F("tde") * F("can"),
-        output_field=DecimalField(max_digits=18, decimal_places=2)
-    )
-
-    # ===============================
-    # ANUAL
-    # ===============================
-    hh_anual = CotizacionServicio.objects.filter(
-        num_reg__in=cotizaciones_anuales,
-        cog__regex=r"^\d{3}4",
-        nig=2
-    ).aggregate(total=Coalesce(Sum("toc"), Decimal("0")))["total"]
-
-    utilidad_anual = CotizacionServicio.objects.filter(
-        num_reg__in=cotizaciones_anuales,
-        cog__regex=r"^\d{3}[46]"
-    ).aggregate(total=Coalesce(Sum(utilidad_expr), Decimal("0")))["total"]
-
-    logrado_anual = hh_anual + utilidad_anual
-
-    # ===============================
-    # MENSUAL
-    # ===============================
-    hh_mes = CotizacionServicio.objects.filter(
-        num_reg__in=cotizaciones_mes,
-        cog__regex=r"^\d{3}4",
-        nig=2
-    ).aggregate(total=Coalesce(Sum("toc"), Decimal("0")))["total"]
-
-    utilidad_mes = CotizacionServicio.objects.filter(
-        num_reg__in=cotizaciones_mes,
-        cog__regex=r"^\d{3}[46]"
-    ).aggregate(total=Coalesce(Sum(utilidad_expr), Decimal("0")))["total"]
-
-    logrado_mes = hh_mes + utilidad_mes
-
-    # ===============================
-    # METAS
-    # ===============================
-    min_anual = sum(a.minimo for a in objetivo.areas.all())
-    max_anual = sum(a.maximo for a in objetivo.areas.all())
-
-    meta_mensual = min_anual / Decimal("12")
-
-    # ===============================
-    # SEMÁFOROS
-    # ===============================
-    def calcular_estado(valor, minimo, maximo):
-        if valor < minimo:
-            return "rojo"
-        elif minimo <= valor < maximo:
-            return "amarillo"
-        return "verde"
-
-    estado_anual = calcular_estado(logrado_anual, min_anual, max_anual)
-    estado_mes = calcular_estado(logrado_mes, meta_mensual, max_anual / 12)
-
-    # ===============================
-    # RESPUESTA FINAL
-    # ===============================
-    return Response({
-        "anual": {
-            "logrado": logrado_anual,
-            "min": min_anual,
-            "max": max_anual,
-            "estado": estado_anual
-        },
-        "mensual": {
-            "logrado": logrado_mes,
-            "meta": meta_mensual,
-            "estado": estado_mes
-        }
-    })
-
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def logrado_dashboard(request):
-
-    anno = int(request.GET.get("anno", datetime.now().year))
-    mes_actual = str(datetime.now().month).zfill(2)  # 01, 02, etc
-
-    print(f"DEBUG: Año = {anno}, Mes actual = {mes_actual}")
-
-    # Cotizaciones aprobadas del año
-    cotizaciones_anuales = Cotizacion.objects.filter(
-        anno=anno,
-        envio="3",
-    )
-    print(f"DEBUG: Cotizaciones anuales encontradas = {cotizaciones_anuales.count()}")
-
-    # Cotizaciones del mes actual
-    cotizaciones_mensuales = cotizaciones_anuales.filter(
-        mes=mes_actual
-    )
-    print(f"DEBUG: Cotizaciones mensuales encontradas = {cotizaciones_mensuales.count()}")
-
-    utilidad_expr = ExpressionWrapper(
-        F("tou") * F("can") * F("tde"),
-        output_field=DecimalField(max_digits=18, decimal_places=2),
-    )
-
-    def calcular_logrado(cotizaciones):
-        total_hh = Decimal("0.00")
-        total_utilidad = Decimal("0.00")
-
-        num_regs = [coti.num_reg for coti in cotizaciones]
-        if not num_regs:
-            return Decimal("0.00")
-
-        # HH PROPIOS
-        hh_agg = CotizacionServicio.objects.filter(
-            num_reg__in=num_regs,
-            cog__regex=r"^\d{3}4",
-            nig=2,
-        ).aggregate(
-            total=Coalesce(Sum("toc"), Decimal("0.00"), output_field=DecimalField(max_digits=18, decimal_places=2))
-        )
-        total_hh = hh_agg["total"]
-
-        # UTILIDAD
-        utilidad_agg = CotizacionServicio.objects.filter(
-            num_reg__in=num_regs,
-        ).aggregate(
-            total=Coalesce(Sum(utilidad_expr), Decimal("0.00"))
-        )
-        total_utilidad = utilidad_agg["total"]
-
-        return total_hh + total_utilidad
-
-    total_anual = calcular_logrado(cotizaciones_anuales)
-    total_mensual = calcular_logrado(cotizaciones_mensuales)
-
-    print(f"DEBUG: Total anual = {total_anual}, Total mensual = {total_mensual}")
-
-    return JsonResponse({
-        "anual": float(total_anual),
-        "mensual": float(total_mensual),
-    })
-
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def kpis_dashboard(request):
-    from datetime import datetime
-    from django.db.models import Sum, Count
-    from django.db.models.functions import Coalesce, ExtractMonth
-    from decimal import Decimal
-
-    anno = int(request.GET.get("anno", datetime.now().year))
-    mes_actual_num = datetime.now().month
-    mes_actual_str = str(mes_actual_num).zfill(2)
-    
-    # Manejo de mes anterior para variaciones
-    mes_anterior_num = 12 if mes_actual_num == 1 else mes_actual_num - 1
-    anno_para_mes_anterior = anno - 1 if mes_actual_num == 1 else anno
-    mes_anterior_str = str(mes_anterior_num).zfill(2)
-
-    # ==========================================
-    # 1. QUERIES BASE (Cotizaciones y Ventas)
-    # ==========================================
-    # Cotizaciones (Ofertas)
-    qs_cot_anual = Cotizacion.objects.filter(anno=anno)
-    qs_cot_mes = qs_cot_anual.filter(mes=mes_actual_str)
-    qs_cot_prev = Cotizacion.objects.filter(anno=anno_para_mes_anterior, mes=mes_anterior_str)
-
-    # Ventas Reales (Órdenes de Compra Adjudicadas oesta=1)
-    qs_ventas_anual = vc_mov_orden.objects.filter(anno_a=str(anno), oesta=1)
-    qs_ventas_mes = qs_ventas_anual.annotate(m=ExtractMonth("ofec")).filter(m=mes_actual_num)
-    qs_ventas_prev = vc_mov_orden.objects.filter(anno_a=str(anno_para_mes_anterior), oesta=1)\
-                        .annotate(m=ExtractMonth("ofec")).filter(m=mes_anterior_num)
-
-    # ==========================================
-    # 2. CÁLCULOS DE MÉTRICAS
-    # ==========================================
-    def get_monto(qs, field="tot_c"):
-        return qs.aggregate(total=Coalesce(Sum(field), Decimal("0.00")))["total"]
-
-    def calc_var(actual, anterior):
-        if anterior and anterior != 0:
-            return round(((float(actual) - float(anterior)) / float(anterior)) * 100, 1)
-        return 0
-
-    # --- KPI 1: Cantidad de Cotizaciones ---
-    cant_mes = qs_cot_mes.count()
-    cant_anual = qs_cot_anual.count()
-    var_cant = calc_var(cant_mes, qs_cot_prev.count())
-
-    # --- KPI 2: Monto Cotizado ---
-    monto_cot_mes = get_monto(qs_cot_mes)
-    monto_cot_anual = get_monto(qs_cot_anual)
-    var_monto_cot = calc_var(monto_cot_mes, get_monto(qs_cot_prev))
-
-    # --- KPI 3: Ventas Reales (OC) ---
-    monto_v_mes = get_monto(qs_ventas_mes, "otot")
-    monto_v_anual = get_monto(qs_ventas_anual, "otot")
-    var_v = calc_var(monto_v_mes, get_monto(qs_ventas_prev, "otot"))
-
-    # --- KPI 4: Efectividad (% Conversión de Monto) ---
-    # Calculamos qué porcentaje del monto cotizado se convirtió en venta real
-    def calc_efec(venta, coti):
-        return round((float(venta) / float(coti) * 100), 1) if coti > 0 else 0
-
-    efec_mes = calc_efec(monto_v_mes, monto_cot_mes)
-    efec_anual = calc_efec(monto_v_anual, monto_cot_anual)
-
-    # ==========================================
-    # 3. RESPUESTA ESTRUCTURADA PARA EL FRONTEND
-    # ==========================================
-    return JsonResponse({
-        # Cantidad de documentos
-        "total_cotizaciones": {
-            "anual": cant_anual,
-            "variacion": var_cant
-        },
-        "cotizaciones_mes": cant_mes,
-
-        # Monto ofertado
-        "monto_total": {
-            "anual": float(monto_cot_anual),
-            "variacion": var_monto_cot
-        },
-        "monto_mes": float(monto_cot_mes),
-
-        # Venta Real (OC)
-        "ventas_reales_anual": float(monto_v_anual),
-        "ventas_reales_mes": float(monto_v_mes),
-        "ventas_variacion": var_v,
-
-        # Ratios de eficiencia
-        "porcentaje_aprobacion": efec_anual,
-        "porcentaje_aprobacion_mes": efec_mes,
-        
-        # Extra (opcional por si lo usas en el footer)
-        "ticket_promedio": float(monto_v_anual / qs_ventas_anual.count()) if qs_ventas_anual.count() > 0 else 0
-    })
-
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def tendencias_dashboard(request):
-    # 1. Obtener el año del request
-    anno_buscado = str(request.GET.get("anno", datetime.now().year))
-
-    # 2. DEFINIR LA BASE DE COTIZACIONES (Lo que se ofertó)
-    base = Cotizacion.objects.filter(num_reg__startswith=anno_buscado)
-    base = aplicar_filtros(base, request)
-
-    # --- LÓGICA DE VENTAS REALES (OC) ---
-    # Filtramos por el campo anno_a y solo ADJUDICADAS (oesta=1)
-    ventas_reales_qs = (
-        vc_mov_orden.objects.filter(
-            anno_a=anno_buscado, 
-            oesta=1
-        )
-        .annotate(mes_num=ExtractMonth("ofec"))
-        .values("mes_num")
-        .annotate(total_oc=Coalesce(Sum("otot"), Decimal("0.00")))
-    )
-    
-    ventas_reales_dict = {
-        str(item["mes_num"]).zfill(2): item["total_oc"] 
-        for item in ventas_reales_qs
-    }
-
-    # ============================
-    # 1️⃣ VENTAS MENSUALES
-    # ============================
-    cotizaciones_raw = (
-        base.values("mes")
-        .annotate(
-            total=Coalesce(Sum("tot_c"), Decimal("0.00")),
-            cantidad=Count("num_reg")
-        )
-        .order_by("mes")
-    )
-    
-    cot_mensuales_dict = {item["mes"]: item for item in cotizaciones_raw}
-    
-    ventas_mensuales = []
-    for m in range(1, 13):
-        mes_str = str(m).zfill(2)
-        cot_data = cot_mensuales_dict.get(mes_str, {})
-        
-        ventas_mensuales.append({
-            "mes": mes_str,
-            "total": float(cot_data.get("total") or 0),
-            "oc": float(ventas_reales_dict.get(mes_str) or 0),
-            "cantidad": cot_data.get("cantidad") or 0
-        })
-
-    # ============================
-    # 2️⃣ TOP VENTAS COMERCIAL
-    # ============================
-    dnis_permitidos = ['43662598', '20068421', '70942025']
-    usuarios_qs = Usuario.objects.filter(dni__in=dnis_permitidos).values('dni', 'nombre_completo', 'usuario')
-    mapa_usuarios = {u['dni']: (u['nombre_completo'] or u['usuario']).strip().upper() for u in usuarios_qs}
-
-    cotizados_raw = (
-        base.filter(envio=3, codic__in=dnis_permitidos)
-        .values("codic")
-        .annotate(
-            monto_cotizado=Coalesce(Sum("tot_c"), Decimal("0.00")),
-            cantidad_cot=Count("num_reg")
-        )
-    )
-    dict_cotizados = {item['codic']: item for item in cotizados_raw}
-
-    # Filtro de VENTAS por VENDEDOR (Agregando oesta=1)
-    base_vendedores = base.filter(codic__in=dnis_permitidos)
-    cotizaciones_ids = base_vendedores.values_list('numero', flat=True) 
-    
-    ventas_raw = (
-        vc_mov_orden.objects.filter(
-            cotin__in=cotizaciones_ids, 
-            oesta=1  # <--- SOLO ADJUDICADAS
-        )
-        .exclude(otot__isnull=True)
-        .values('cotin') 
-        .annotate(total_venta_cotin=Sum('otot'))
-    )
-    dict_ventas_monto = {item['cotin']: item['total_venta_cotin'] for item in ventas_raw}
-
-    ranking_comercial_unificado = []
-    for codic, data_cot in dict_cotizados.items():
-        nombre_vendedor = mapa_usuarios.get(codic, f"DNI: {codic}")
-        ids_vendedor = base_vendedores.filter(codic=codic).values_list('numero', flat=True)
-        
-        venta_total = sum(float(dict_ventas_monto.get(cotin, 0) or 0) for cotin in ids_vendedor)
-        monto_cotizado = float(data_cot['monto_cotizado'])
-        cantidad = data_cot['cantidad_cot']
-
-        ranking_comercial_unificado.append({
-            "vendedor": nombre_vendedor,
-            "monto": venta_total,
-            "cotizado": monto_cotizado,
-            "cantidad": cantidad,
-            "ticket_promedio": venta_total / cantidad if cantidad > 0 else 0,
-            "color": "#008B8B" 
-        })
-
-    ranking_comercial = sorted(ranking_comercial_unificado, key=lambda x: x['monto'], reverse=True)
-
-    # ============================
-    # 3️⃣ EMBUDO
-    # ============================
-    embudo = [
-        {"etapa": "Cotizadas", "valor": base.count()},
-        {"etapa": "Aprobadas", "valor": base.filter(envio=3).count()},
-    ]
-
-    # ============================
-    # 4️⃣ DISTRIBUCIÓN POR ÁREA (Agregando oesta=1)
-    # ============================
-    AREA_MAP = {"1": "IND", "2": "MIN", "4": "OIL", "8": "SFY"}
-    areas_cotizadas_raw = base.values("area_codigo").exclude(area_codigo="3").annotate(
-        total_proyectos=Count("num_reg"),
-        monto_cotizado=Coalesce(Sum("tot_c"), Decimal("0.00"))
-    )
-
-    areas_final = []
-    for a in areas_cotizadas_raw:
-        cod_area = str(a["area_codigo"])
-        if cod_area not in AREA_MAP: continue
-            
-        ids_cotizaciones_area = base.filter(area_codigo=cod_area).values_list('numero', flat=True)
-        
-        # Filtro de Venta Real por Área con oesta=1
-        venta_real_area = vc_mov_orden.objects.filter(
-            cotin__in=ids_cotizaciones_area,
-            oesta=1  # <--- SOLO ADJUDICADAS
-        ).aggregate(total=Sum('otot'))['total'] or Decimal("0.00")
-
-        areas_final.append({
-            "area": AREA_MAP.get(cod_area),
-            "total": a["total_proyectos"],
-            "cotizado": float(a["monto_cotizado"]),
-            "monto": float(venta_real_area)
-        })
-
-    areas_final = sorted(areas_final, key=lambda x: x['monto'], reverse=True)
-
-    # ============================
-    # 5️⃣ CLIENTES RECURRENTES
-    # ============================
-    agrupados_qs = (
-        base.values("cliente_codigo")
-        .annotate(
-            total_cotizaciones=Count("num_reg"),
-            monto_cotizado=Coalesce(Sum("tot_c"), Decimal("0.00"))
-        )
-        .order_by("-total_cotizaciones")[:10]
-    )
-
-    # PASO 2: Mapeo de nombres (Convertimos el entero a string para comparar)
-    # Extraemos los códigos y evitamos errores si hay Nones
-    codigos_top = [item["cliente_codigo"].strip() for item in agrupados_qs if item["cliente_codigo"]]
-    
-    clientes_db = Cliente.objects.filter(codigo__in=codigos_top)
-    
-    # IMPORTANTE: Convertimos c.codigo a str() antes de hacer .strip()
-    mapa_nombres = {
-        str(c.codigo).strip(): c.nombre.strip() 
-        for c in clientes_db
-    }
-
-    clientes_final = []
-    for item in agrupados_qs:
-        codigo_raw = item["cliente_codigo"] or ""
-        codigo_limpio = codigo_raw.strip()
-        
-        # Buscamos en el mapa usando el string limpio
-        nombre_real = mapa_nombres.get(codigo_limpio) or f"Cod: {codigo_limpio}"
-
-        # PASO 3: Ventas Reales
-        ids_cotizaciones_cliente = base.filter(cliente_codigo=codigo_raw).values_list('numero', flat=True)
-        
-        venta_real_cliente = vc_mov_orden.objects.filter(
-            cotin__in=ids_cotizaciones_cliente,
-            oesta=1
-        ).aggregate(total=Sum('otot'))['total'] or Decimal("0.00")
-
-        monto_c = float(item["monto_cotizado"])
-        monto_v = float(venta_real_cliente)
-
-        clientes_final.append({
-            "codigo": codigo_limpio,
-            "nombre": nombre_real,
-            "cotizaciones": item["total_cotizaciones"],
-            "monto_cotizado": monto_c,
-            "monto_real": monto_v,
-            "conversion": round((monto_v / monto_c * 100), 1) if monto_c > 0 else 0
-        })
-
-    clientes_recurrentes = sorted(clientes_final, key=lambda x: x['monto_real'], reverse=True)
-
-    return Response({
-        "ventas_mensuales": list(ventas_mensuales),
-        "ranking_comercial": ranking_comercial,
-        "embudo": embudo,
-        "areas": areas_final,
-        "clientes_recurrentes": clientes_recurrentes,
-    })
-
-def aplicar_filtros(base, request):
-
-    fecha_inicio = request.GET.get("fecha_inicio")
-    fecha_fin = request.GET.get("fecha_fin")
-    area = request.GET.get("area")
-    usuario = request.GET.get("usuario")
-    tipo = request.GET.get("tipo")  # P, S, V
-
-    # Rango de fechas
-    if fecha_inicio and fecha_fin:
-        base = base.filter(
-            fecha__range=[fecha_inicio, fecha_fin]
-        )
-
-    # Área
-    if area:
-        base = base.filter(area_codigo=area)
-
-    # Comercial (nombc guarda el nombre corto)
-    if usuario:
-        base = base.filter(nombc=usuario)
-
-    # Tipo de cotización
-    if tipo:
-        base = base.filter(cotit=tipo)
-
-    return base
-
-##==========##
-## ANALISIS ##
-##==========##
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def cotizaciones_analisis_view(request):
-    try:
-        from django.db.models import Sum, Count, Avg
-        from datetime import date
-
-        dimension = request.data.get("dimension")
-        metrica = request.data.get("metrica", "monto")
-        filtros = request.data.get("filtros", {})
-
-        qs = Cotizacion.objects.all()
-
-        # ==========================
-        # Filtros globales
-        # ==========================
-        anno = filtros.get("anno", date.today().year)
-        mes = filtros.get("mes")
-
-        qs = qs.filter(fecha__year=anno)
-
-        if mes:
-            qs = qs.filter(fecha__month=mes)
-
-        # Aquí puedes reutilizar tu lógica de filtros actual
-        # cliente, estado, area, etc.
-
-        # ==========================
-        # Dimensión dinámica
-        # ==========================
-        DIMENSION_MAP = {
-            "area": "area_codigo",
-            "estado": "estado_nombre",
-            "cliente": "cliente_nombre",
-            "moneda": "tmone",
-            "mes": "fecha__month",
-            "vendedor": "nombt",
-        }
-
-        campo = DIMENSION_MAP.get(dimension)
-
-        if not campo:
-            return Response({"error": "Dimensión no válida"}, status=400)
-
-        # ==========================
-        # Métrica dinámica
-        # ==========================
-        if metrica == "monto":
-            agg = Sum("tot_c")
-        elif metrica == "cantidad":
-            agg = Count("num_reg")
-        elif metrica == "promedio":
-            agg = Avg("tot_c")
-        else:
-            agg = Sum("tot_c")
-
-        data = (
-            qs.values(campo)
-            .annotate(valor=agg)
-            .order_by("-valor")
-        )
-
-        # ==========================
-        # Formato frontend
-        # ==========================
-        resultado = []
-
-        for r in data:
-            resultado.append({
-                dimension: r[campo],
-                "valor": round(float(r["valor"] or 0), 2)
-            })
-
-        return Response(resultado)
-
-    except Exception as e:
-        import traceback
-        print(traceback.format_exc())
-        return Response({"error": str(e)}, status=500)
-
-##================##
-## NOTIFICACIONES ##
-##================##
-# OBTEER NOTIFACIONES
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def notificaciones_usuario(request):
-
-    usuario = request.user
-
-    notificaciones = Notificacion.objects.filter(
-        usuario=usuario
-    )[:10]
-
-    serializer = NotificacionSerializer(notificaciones, many=True)
-
-    return Response(serializer.data)
-
-# MARCAR COMO LEIDO
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-def marcar_notificacion(request, pk):
-
-    try:
-        notif = Notificacion.objects.get(pk=pk, usuario=request.user)
-        notif.leido = True
-        notif.save()
-        return Response({"ok": True})
-    except Notificacion.DoesNotExist:
-        return Response({"error": "No encontrada"}, status=404)
-
-# NO LEIDAS
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def notificaciones_no_leidas(request):
-
-    total = Notificacion.objects.filter(
-        usuario=request.user,
-        leido=False
-    ).count()
-
-    return Response({"total": total})
-
-# MAARCAR TODAS
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-def marcar_todas_notificaciones(request):
-
-    Notificacion.objects.filter(
-        usuario=request.user,
-        leido=False
-    ).update(leido=True)
-
-    return Response({"ok": True})
-
-# GENERADOR
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-def generar_alertas(request):
-
-    alertas_sin_respuesta()
-
-    # Aquí luego agregarás:
-    # alertas_caida_conversion()
-    # alertas_clientes_inactivos()
-    # alertas_ticket_promedio()
-
-    return Response({"ok": True})
-
-# SIN RESPUESTA
-def alertas_sin_respuesta():
-
-    hoy = timezone.now().date()
-    limite = hoy - timedelta(days=7)
-
-    cotis = Cotizacion.objects.filter(
-        fecha__lte=limite,
-        envio__isnull=True
-    )
-
-    for usuario in Usuario.objects.filter(activo=1):
-
-        cantidad = cotis.filter(
-            nombc=usuario.nombre_completo
-        ).count()
-
-        if cantidad > 0:
-
-            existe = Notificacion.objects.filter(
-                usuario=usuario,
-                titulo="Cotizaciones sin respuesta",
-                leido=False
-            ).exists()
-
-            if not existe:
-                Notificacion.objects.create(
-                    usuario=usuario,
-                    tipo="urgente",
-                    titulo="Cotizaciones sin respuesta",
-                    descripcion=f"Tienes {cantidad} cotizaciones con más de 7 días sin respuesta",
-                    cantidad=cantidad
-                )
+# (Las vistas y generadores de notificaciones se trasladaron a la app notificaciones_api)
 
 #========================================================================================
 
@@ -6312,8 +5555,10 @@ def lista_notas(request):
 @csrf_exempt
 @xframe_options_exempt
 def reporte_cotizaciones_dashboard_html(request):
+    tipo_reporte = request.GET.get("tipo_reporte", "cotizaciones")  # cotizaciones, oportunidades, aperturas
+
     # =========================
-    # Filtros (Homologados con lista_cotizaciones)
+    # Filtros Comunes
     # =========================
     anno = request.GET.get("anno", date.today().year)
     mes = request.GET.get("mes", "%")
@@ -6321,14 +5566,12 @@ def reporte_cotizaciones_dashboard_html(request):
     anno_hasta = request.GET.get("anno_hasta")
     mes_desde = request.GET.get("mes_desde")
     mes_hasta = request.GET.get("mes_hasta")
-    id_probabilidad = request.GET.get("probabilidad", "%")
     id_cliente = request.GET.get("cliente", "%")
-    comercial_search = request.GET.get("comercial_search", "%")
-    tecnico_search = request.GET.get("tecnico_search", "%")
-    id_estado = request.GET.get("estado", "%")
-    id_area = request.GET.get("area", "%")
     envio = request.GET.get("envio", "%")
-    id_representante = request.GET.get("id_representante")
+    campo = request.GET.get("campo")
+    valor = request.GET.get("valor")
+    fecha_inicio = request.GET.get("fechaInicio")
+    fecha_fin = request.GET.get("fechaFin")
 
     # Mapeo de búsqueda flexible general
     CAMPOS_BUSQUEDA = {
@@ -6341,140 +5584,6 @@ def reporte_cotizaciones_dashboard_html(request):
         "total": "total_cotizacion",
         "probabilidad": "probabilidad",
     }
-    campo = request.GET.get("campo")
-    valor = request.GET.get("valor")
-    fecha_inicio = request.GET.get("fechaInicio")
-    fecha_fin = request.GET.get("fechaFin")
-
-    # Query base (Excluyendo ID_ESTADO = 11: Oportunidad)
-    qs = Cotizacion.objects.select_related(
-        'id_cliente', 'id_estado', 'id_comercial', 'id_tecnico', 'id_tipo'
-    ).exclude(id_estado=11)
-
-    # Filtro Rango de Periodos o Periodo Único
-    if anno_desde and anno_hasta and mes_desde and mes_hasta:
-        try:
-            periodo_min = int(anno_desde) * 100 + int(mes_desde)
-            periodo_max = int(anno_hasta) * 100 + int(mes_hasta)
-            qs = qs.filter(año_apertura__isnull=False, mes__isnull=False).annotate(
-                periodo_operativo=ExpressionWrapper(
-                    F('año_apertura') * 100 + F('mes'),
-                    output_field=IntegerField()
-                )
-            ).filter(periodo_operativo__gte=periodo_min, periodo_operativo__lte=periodo_max)
-        except (ValueError, TypeError):
-            pass
-    else:
-        if anno and anno != "%":
-            qs = qs.filter(año_apertura=int(anno))
-        if mes and mes != "%":
-            qs = qs.filter(mes=int(mes))
-
-    if id_probabilidad and id_probabilidad != "%":
-        qs = qs.filter(probabilidad=int(id_probabilidad))
-    if id_cliente and id_cliente != "%":
-        qs = qs.filter(id_cliente=id_cliente)
-    if id_representante:
-        qs = qs.filter(id_representante=id_representante)
-    if id_area and id_area != "%":
-        qs = qs.filter(id_area=id_area)
-    if envio and envio != "%":
-        qs = qs.filter(estado_envio=envio)
-
-    # Filtro de Estado múltiple/único (soporta IDs o nombres de estado)
-    if id_estado and id_estado != "%":
-        estados = [e.strip() for e in id_estado.split(",") if e]
-        if estados:
-            if estados[0].isdigit():
-                qs = qs.filter(id_estado__in=[int(e) for e in estados]) if len(estados) > 1 else qs.filter(id_estado=int(estados[0]))
-            else:
-                qs = qs.filter(id_estado__nombre__iexact=estados[0]) if len(estados) == 1 else qs.filter(id_estado__nombre__in=estados)
-
-    # Filtros de Responsables
-    if comercial_search and comercial_search != "%":
-        qs = qs.filter(id_comercial__nombre_completo__icontains=comercial_search)
-    if tecnico_search and tecnico_search != "%":
-        qs = qs.filter(id_tecnico__nombre_completo__icontains=tecnico_search)
-
-    if fecha_inicio:
-        qs = qs.filter(fecha__gte=fecha_inicio)
-    if fecha_fin:
-        qs = qs.filter(fecha__lte=fecha_fin)
-
-    # Búsqueda Flexible
-    if campo and valor not in (None, "", " "):
-        if campo == "all":
-            from django.db.models import Q
-            from datetime import datetime
-            valor_clean = valor.lower().strip()
-            
-            # Envío
-            q_envio = Q()
-            if "enviado" in valor_clean:
-                q_envio = Q(estado_envio=2)
-            elif "pendiente" in valor_clean:
-                q_envio = Q(estado_envio=1)
-            
-            # Áreas
-            AREA_MAP = {
-                1: "Industria",
-                2: "Minería",
-                3: "Mantenimiento",
-                4: "Petroquímica",
-                8: "Seguridad de Maquinaria",
-            }
-            area_keys = [k for k, v in AREA_MAP.items() if valor_clean in v.lower()]
-            q_area = Q(id_area__in=area_keys) if area_keys else Q()
-            
-            # Intentar convertir valor_clean a número para buscar por total, id_registro
-            q_numero = Q()
-            try:
-                clean_num_str = valor_clean.replace("$", "").replace(",", "").strip()
-                val_num = float(clean_num_str)
-                q_numero = Q(total_cotizacion=val_num) | Q(id_registro=int(val_num) if val_num.is_integer() else 0)
-            except ValueError:
-                pass
-
-            # Intentar parsear fecha
-            q_fecha = Q()
-            for fmt in ("%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d"):
-                try:
-                    parsed_date = datetime.strptime(valor_clean, fmt).date()
-                    q_fecha = Q(fecha=parsed_date)
-                    break
-                except ValueError:
-                    pass
-            
-            if valor_clean.isdigit() and len(valor_clean) == 4:
-                q_fecha = q_fecha | Q(fecha__year=int(valor_clean))
-
-            qs = qs.filter(
-                Q(codigo__icontains=valor_clean) |
-                Q(referencia__icontains=valor_clean) |
-                Q(id_cliente__nombre__icontains=valor_clean) |
-                Q(representante_nombre__icontains=valor_clean) |
-                Q(id_estado__nombre__icontains=valor_clean) |
-                q_envio |
-                q_area |
-                q_numero |
-                q_fecha
-            )
-        else:
-            campo_real = CAMPOS_BUSQUEDA.get(campo)
-            if campo_real:
-                qs = qs.filter(**{f"{campo_real}__icontains": valor})
-
-    # =========================
-    # Agrupación por área
-    # =========================
-    data = (
-        qs.values("id_area")
-        .annotate(
-            cantidad=Count("id_registro"),
-            importe=Sum("total_cotizacion")
-        )
-        .order_by("id_area")
-    )
 
     AREA_MAP = {
         1: "Industria",
@@ -6487,32 +5596,271 @@ def reporte_cotizaciones_dashboard_html(request):
     resultados = []
     total_general = Decimal("0.00")
 
-    for row in data:
-        id_area_val = row["id_area"]
-        importe = row["importe"] or Decimal("0.00")
-        total_general += importe
-        
-        try:
-            area_key = int(id_area_val) if id_area_val is not None else None
-        except (ValueError, TypeError):
-            area_key = id_area_val
+    if tipo_reporte == "aperturas":
+        # ==========================================
+        # Flujo: APERTURAS
+        # ==========================================
+        id_estado_orden = request.GET.get("estado_orden", "%")
+        prio = request.GET.get("prio", "%")
 
-        resultados.append({
-            "area": AREA_MAP.get(area_key, "Sin Área"),
-            "cantidad": row["cantidad"],
-            "importe": round(importe, 2),
-        })
+        qs = CotizacionApertura.objects.select_related(
+            'id_registro', 'id_registro__id_cliente', 'id_registro__id_estado'
+        )
+
+        if anno_desde and anno_hasta and mes_desde and mes_hasta:
+            try:
+                periodo_min = int(anno_desde) * 100 + int(mes_desde)
+                periodo_max = int(anno_hasta) * 100 + int(mes_hasta)
+                qs = qs.filter(anno__isnull=False, mes__isnull=False).annotate(
+                    periodo_operativo=ExpressionWrapper(
+                        F('anno') * 100 + F('mes'),
+                        output_field=IntegerField()
+                    )
+                ).filter(periodo_operativo__gte=periodo_min, periodo_operativo__lte=periodo_max)
+            except (ValueError, TypeError):
+                pass
+        else:
+            if anno and anno != "%":
+                qs = qs.filter(anno=int(anno))
+            if mes and mes != "%":
+                qs = qs.filter(mes=int(mes))
+
+        if id_cliente and id_cliente != "%":
+            qs = qs.filter(id_registro__id_cliente_id=id_cliente)
+        if id_estado_orden and id_estado_orden != "%":
+            qs = qs.filter(estado_orden=int(id_estado_orden))
+        if prio and prio != "%":
+            qs = qs.filter(prio=str(prio))
+        if envio and envio != "%":
+            qs = qs.filter(envio=int(envio))
+
+        if fecha_inicio:
+            qs = qs.filter(fecha_orden__gte=fecha_inicio)
+        if fecha_fin:
+            qs = qs.filter(fecha_orden__lte=fecha_fin)
+
+        if campo and valor not in (None, "", " "):
+            CAMPOS_BUSQUEDA_APERTURA = {
+                "id_apertura": "id_apertura",
+                "numero_orden": "numero_orden",
+                "cotizacion_codigo": "id_registro__codigo",
+                "cliente_nombre": "id_registro__id_cliente__nombre",
+                "referencia": "id_registro__referencia",
+                "total_orden": "total_orden",
+            }
+            if campo == "all":
+                from django.db.models import Q
+                valor_clean = valor.lower().strip()
+                qs = qs.filter(
+                    Q(numero_orden__icontains=valor_clean) |
+                    Q(id_registro__codigo__icontains=valor_clean) |
+                    Q(id_registro__id_cliente__nombre__icontains=valor_clean) |
+                    Q(id_registro__referencia__icontains=valor_clean)
+                )
+            else:
+                campo_real = CAMPOS_BUSQUEDA_APERTURA.get(campo)
+                if campo_real:
+                    qs = qs.filter(**{f"{campo_real}__icontains": valor})
+
+        # Agrupación por área de la cotización asociada
+        data = (
+            qs.values("id_registro__id_area")
+            .annotate(
+                cantidad=Count("id_apertura"),
+                importe=Sum("total_orden")
+            )
+            .order_by("id_registro__id_area")
+        )
+
+        for row in data:
+            id_area_val = row["id_registro__id_area"]
+            importe = row["importe"] or Decimal("0.00")
+            total_general += importe
+            
+            try:
+                area_key = int(id_area_val) if id_area_val is not None else None
+            except (ValueError, TypeError):
+                area_key = id_area_val
+
+            resultados.append({
+                "area": AREA_MAP.get(area_key, "Sin Área"),
+                "cantidad": row["cantidad"],
+                "importe": round(importe, 2),
+            })
+
+        titulo = "Reporte de Aperturas"
+        tipo_registro_label = "APERTURAS"
+
+    else:
+        # ==========================================
+        # Flujo: COTIZACIONES / OPORTUNIDADES
+        # ==========================================
+        comercial_search = request.GET.get("comercial_search", "%")
+        tecnico_search = request.GET.get("tecnico_search", "%")
+        id_probabilidad = request.GET.get("probabilidad", "%")
+        id_estado = request.GET.get("estado", "%")
+        id_area = request.GET.get("area", "%")
+        id_representante = request.GET.get("id_representante")
+
+        if tipo_reporte == "oportunidades":
+            estado_oportunidad = request.GET.get("estado_oportunidad", "%")
+            qs = Cotizacion.objects.select_related(
+                'id_cliente', 'id_estado', 'id_comercial', 'id_tecnico', 'id_tipo'
+            ).filter(recepcion_solicitud__isnull=False)
+            
+            if estado_oportunidad and estado_oportunidad != "%":
+                qs = qs.filter(estado_oportunidad=int(estado_oportunidad))
+            
+            titulo = "Reporte de Oportunidades"
+            tipo_registro_label = "OPORTUNIDADES"
+        else:
+            qs = Cotizacion.objects.select_related(
+                'id_cliente', 'id_estado', 'id_comercial', 'id_tecnico', 'id_tipo'
+            ).exclude(id_estado=11)
+            
+            titulo = "Reporte de Cotizaciones"
+            tipo_registro_label = "COTIZACIONES"
+
+        # Aplicar filtros de periodos
+        if anno_desde and anno_hasta and mes_desde and mes_hasta:
+            try:
+                periodo_min = int(anno_desde) * 100 + int(mes_desde)
+                periodo_max = int(anno_hasta) * 100 + int(mes_hasta)
+                qs = qs.filter(año_apertura__isnull=False, mes__isnull=False).annotate(
+                    periodo_operativo=ExpressionWrapper(
+                        F('año_apertura') * 100 + F('mes'),
+                        output_field=IntegerField()
+                    )
+                ).filter(periodo_operativo__gte=periodo_min, periodo_operativo__lte=periodo_max)
+            except (ValueError, TypeError):
+                pass
+        else:
+            if anno and anno != "%":
+                qs = qs.filter(año_apertura=int(anno))
+            if mes and mes != "%":
+                qs = qs.filter(mes=int(mes))
+
+        if id_probabilidad and id_probabilidad != "%":
+            qs = qs.filter(probabilidad=int(id_probabilidad))
+        if id_cliente and id_cliente != "%":
+            qs = qs.filter(id_cliente=id_cliente)
+        if id_representante:
+            qs = qs.filter(id_representante=id_representante)
+        if id_area and id_area != "%":
+            qs = qs.filter(id_area=id_area)
+        if envio and envio != "%":
+            qs = qs.filter(estado_envio=envio)
+
+        if id_estado and id_estado != "%":
+            estados = [e.strip() for e in id_estado.split(",") if e]
+            if estados:
+                if estados[0].isdigit():
+                    qs = qs.filter(id_estado__in=[int(e) for e in estados]) if len(estados) > 1 else qs.filter(id_estado=int(estados[0]))
+                else:
+                    qs = qs.filter(id_estado__nombre__iexact=estados[0]) if len(estados) == 1 else qs.filter(id_estado__nombre__in=estados)
+
+        if comercial_search and comercial_search != "%":
+            qs = qs.filter(id_comercial__nombre_completo__icontains=comercial_search)
+        if tecnico_search and tecnico_search != "%":
+            qs = qs.filter(id_tecnico__nombre_completo__icontains=tecnico_search)
+
+        if fecha_inicio:
+            if tipo_reporte == "oportunidades":
+                qs = qs.filter(recepcion_solicitud__gte=fecha_inicio)
+            else:
+                qs = qs.filter(fecha__gte=fecha_inicio)
+        if fecha_fin:
+            if tipo_reporte == "oportunidades":
+                qs = qs.filter(recepcion_solicitud__lte=fecha_fin)
+            else:
+                qs = qs.filter(fecha__lte=fecha_fin)
+
+        if campo and valor not in (None, "", " "):
+            if campo == "all":
+                from django.db.models import Q
+                from datetime import datetime
+                valor_clean = valor.lower().strip()
+                
+                q_envio = Q()
+                if "enviado" in valor_clean:
+                    q_envio = Q(estado_envio=2)
+                elif "pendiente" in valor_clean:
+                    q_envio = Q(estado_envio=1)
+                
+                area_keys = [k for k, v in AREA_MAP.items() if valor_clean in v.lower()]
+                q_area = Q(id_area__in=area_keys) if area_keys else Q()
+                
+                q_numero = Q()
+                try:
+                    clean_num_str = valor_clean.replace("$", "").replace(",", "").strip()
+                    val_num = float(clean_num_str)
+                    q_numero = Q(total_cotizacion=val_num) | Q(id_registro=int(val_num) if val_num.is_integer() else 0)
+                except ValueError:
+                    pass
+
+                q_fecha = Q()
+                for fmt in ("%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d"):
+                    try:
+                        parsed_date = datetime.strptime(valor_clean, fmt).date()
+                        q_fecha = Q(fecha=parsed_date)
+                        break
+                    except ValueError:
+                        pass
+                
+                if valor_clean.isdigit() and len(valor_clean) == 4:
+                    q_fecha = q_fecha | Q(fecha__year=int(valor_clean))
+
+                qs = qs.filter(
+                    Q(codigo__icontains=valor_clean) |
+                    Q(referencia__icontains=valor_clean) |
+                    Q(id_cliente__nombre__icontains=valor_clean) |
+                    Q(representante_nombre__icontains=valor_clean) |
+                    Q(id_estado__nombre__icontains=valor_clean) |
+                    q_envio |
+                    q_area |
+                    q_numero |
+                    q_fecha
+                )
+            else:
+                campo_real = CAMPOS_BUSQUEDA.get(campo)
+                if campo_real:
+                    qs = qs.filter(**{f"{campo_real}__icontains": valor})
+
+        # Agrupación por área
+        data = (
+            qs.values("id_area")
+            .annotate(
+                cantidad=Count("id_registro"),
+                importe=Sum("total_cotizacion")
+            )
+            .order_by("id_area")
+        )
+
+        for row in data:
+            id_area_val = row["id_area"]
+            importe = row["importe"] or Decimal("0.00")
+            total_general += importe
+            
+            try:
+                area_key = int(id_area_val) if id_area_val is not None else None
+            except (ValueError, TypeError):
+                area_key = id_area_val
+
+            resultados.append({
+                "area": AREA_MAP.get(area_key, "Sin Área"),
+                "cantidad": row["cantidad"],
+                "importe": round(importe, 2),
+            })
 
     context = {
         "resultados": resultados,
         "total_general": round(total_general, 2),
-        "titulo": "Reporte de Cotizaciones",
+        "titulo": titulo,
+        "tipo_registro_label": tipo_registro_label,
         "filtros": {
             "anno": anno,
             "mes": mes,
-            "estado": id_estado,
             "cliente": id_cliente,
-            "area": id_area,
             "campo": campo,
             "valor": valor,
         }
@@ -6825,38 +6173,20 @@ def reporte_detallado_cotizacion(request, id_registro):
             cantidades_servicios[prefijo] = cant or 1
 
     # ==========================================================
-    # EQUIPOS (Suministros con nivel=1 donde el TipoGasto sea Equipos)
+    # SUMINISTROS (Suministros con nivel=1 donde el TipoGasto sea Equipos o Materiales)
     # ==========================================================
-    qs_equipos = CotizacionSuministro.objects.filter(
+    qs_suministros = CotizacionSuministro.objects.filter(
         id_registro_id=id_registro,
         nivel=1,
-        id_tipo_gasto_id=1
+        id_tipo_gasto_id__in=[1, 2]
     )
 
-    costo_equipos = Decimal("0.00")
-    total_equipos = Decimal("0.00")
-    for item in qs_equipos:
+    costo_suministros = Decimal("0.00")
+    total_suministros = Decimal("0.00")
+    for item in qs_suministros:
         cant_grupo = Decimal(str(cantidades_suministros.get(item.codigo_grupo, 1) or 1))
-        costo_equipos += (item.costo_total or Decimal("0.00")) * cant_grupo
-        total_equipos += (item.venta_total or Decimal("0.00")) * cant_grupo
-    ganancia_equipos = total_equipos - costo_equipos
-
-    # ==========================================================
-    # MATERIALES (Suministros con nivel=1 donde el TipoGasto sea Materiales)
-    # ==========================================================
-    qs_materiales = CotizacionSuministro.objects.filter(
-        id_registro_id=id_registro,
-        nivel=1,
-        id_tipo_gasto_id=2
-    )
-
-    costo_materiales = Decimal("0.00")
-    total_materiales = Decimal("0.00")
-    for item in qs_materiales:
-        cant_grupo = Decimal(str(cantidades_suministros.get(item.codigo_grupo, 1) or 1))
-        costo_materiales += (item.costo_total or Decimal("0.00")) * cant_grupo
-        total_materiales += (item.venta_total or Decimal("0.00")) * cant_grupo
-    ganancia_materiales = total_materiales - costo_materiales
+        costo_suministros += (item.costo_total or Decimal("0.00")) * cant_grupo
+        total_suministros += (item.venta_total or Decimal("0.00")) * cant_grupo
 
     # ==========================================================
     # HH PROPIOS (Servicios nivel=2 pertenecientes al área de la cotización)
@@ -6876,8 +6206,6 @@ def reporte_detallado_cotizacion(request, id_registro):
         
         costo_hh_propios += (item.costo_total or Decimal("0.00")) * cant_grupo
         total_hh_propios += (item.cotizado_total or Decimal("0.00")) * cant_grupo
-        
-    ganancia_hh_propios = total_hh_propios - costo_hh_propios
 
     # ==========================================================
     # COSTO SERVICIOS / SUBCONTRATOS (Tipo Gasto Servicios/Subcontratos)
@@ -6897,16 +6225,12 @@ def reporte_detallado_cotizacion(request, id_registro):
         
         costo_servicios += (item.costo_total or Decimal("0.00")) * cant_grupo
         total_servicios += (item.cotizado_total or Decimal("0.00")) * cant_grupo
-        
-    # 4. Cálculo de la ganancia marginal del bloque
-    ganancia_servicios = total_servicios - costo_servicios
 
     # ==========================================================
     # GASTOS ENTREGA / LOGÍSTICA (En pausa - Lógica por definir)
     # ==========================================================
     costo_gastos_entrega = Decimal("0.00")
     total_gastos_entrega = Decimal("0.00")
-    ganancia_gastos_entrega = Decimal("0.00")
 
     # ==========================================================
     # IMPREVISTOS
@@ -6926,12 +6250,10 @@ def reporte_detallado_cotizacion(request, id_registro):
         
         costo_imprevistos += (item.costo_total or Decimal("0.00")) * cant_grupo
         total_imprevistos += (item.cotizado_total or Decimal("0.00")) * cant_grupo
-        
-    ganancia_imprevistos = total_imprevistos - costo_imprevistos
 
-    # ==========================================
+    # ==========================================================
     # DESCUENTOS (Usa las nuevas propiedades de la Cabecera)
-    # ==========================================
+    # ==========================================================
     costo_descuento = Decimal("0.00")
     total_descuento = Decimal("0.00")
     
@@ -6939,40 +6261,37 @@ def reporte_detallado_cotizacion(request, id_registro):
         costo_descuento = cotizacion.descuento_monto or Decimal("0.00")
         total_descuento = -costo_descuento
 
-    ganancia_descuento = Decimal("0.00")
-
-    # ==========================================
-    # MONEDA Y CONVERSIÓN (Tipo Cambio)
-    # ==========================================
+    # ==========================================================
+    # APLICACIÓN DE MONEDA / TIPO CAMBIO
+    # ==========================================================
     tipo_moneda = cotizacion.tipo_moneda
     tipo_cambio = cotizacion.tipo_cambio or Decimal("1.00")
     factor = tipo_cambio if tipo_moneda == "S" else Decimal("1.00")
     moneda_simbolo = "S/." if tipo_moneda == "S" else "$"
 
-    # Unificación de Equipos y Materiales en Suministros
-    costo_suministros = (costo_equipos + costo_materiales) * factor
-    total_suministros = (total_equipos + total_materiales) * factor
+    costo_suministros = round(costo_suministros * factor, 2)
+    total_suministros = round(total_suministros * factor, 2)
     ganancia_suministros = total_suministros - costo_suministros
 
-    # Conversión del resto de conceptos
-    costo_hh_propios = costo_hh_propios * factor
-    total_hh_propios = total_hh_propios * factor
+    costo_hh_propios = round(costo_hh_propios * factor, 2)
+    total_hh_propios = round(total_hh_propios * factor, 2)
     ganancia_hh_propios = total_hh_propios - costo_hh_propios
 
-    costo_servicios = costo_servicios * factor
-    total_servicios = total_servicios * factor
+    costo_servicios = round(costo_servicios * factor, 2)
+    total_servicios = round(total_servicios * factor, 2)
     ganancia_servicios = total_servicios - costo_servicios
 
-    costo_gastos_entrega = costo_gastos_entrega * factor
-    total_gastos_entrega = total_gastos_entrega * factor
+    costo_gastos_entrega = round(costo_gastos_entrega * factor, 2)
+    total_gastos_entrega = round(total_gastos_entrega * factor, 2)
     ganancia_gastos_entrega = total_gastos_entrega - costo_gastos_entrega
 
-    costo_imprevistos = costo_imprevistos * factor
-    total_imprevistos = total_imprevistos * factor
+    costo_imprevistos = round(costo_imprevistos * factor, 2)
+    total_imprevistos = round(total_imprevistos * factor, 2)
     ganancia_imprevistos = total_imprevistos - costo_imprevistos
 
-    costo_descuento = costo_descuento * factor
-    total_descuento = total_descuento * factor
+    costo_descuento = round(costo_descuento * factor, 2)
+    total_descuento = round(total_descuento * factor, 2)
+    ganancia_descuento = Decimal("0.00")
 
     # ==========================================================
     # CONSTRUCCIÓN DE LA TABLA FINAL
@@ -7019,7 +6338,10 @@ def reporte_resumen_cotizacion(request, id_registro):
         
     id_registro = cotizacion.id_registro
     codigo_cotizacion = cotizacion.codigo or f"REG-{id_registro}"
-    moneda = "$" if cotizacion.tipo_moneda == "D" else "S/."
+    tipo_moneda = cotizacion.tipo_moneda
+    tipo_cambio = cotizacion.tipo_cambio or Decimal("1.00")
+    factor = tipo_cambio if tipo_moneda == "S" else Decimal("1.00")
+    moneda = "S/." if tipo_moneda == "S" else "$"
 
     # Obtener diccionarios de cantidades para Suministros
     cantidades_suministros = dict(
@@ -7106,13 +6428,13 @@ def reporte_resumen_cotizacion(request, id_registro):
     # CONSTRUCCIÓN DEL ESTRUCTURADO CONSOLIDADO (Costo vs Utilidad)
     # -----------------------------------------------------------------
     resumen = [
-        {"concepto": "GASTOS", "importe": costo_equipos + costo_servicios + costo_materiales},
+        {"concepto": "GASTOS", "importe": (costo_equipos + costo_servicios + costo_materiales) * factor},
         {"concepto": "GANANCIAS", "importe": (ganancia_equipos + ganancia_materiales + 
                                              ganancia_hh_propios + ganancia_imprevistos + 
-                                             ganancia_gastos_entrega + ganancia_servicios)},
-        {"concepto": "HH PROPIOS", "importe": costo_hh_propios},
-        {"concepto": "IMPREVISTOS", "importe": costo_imprevistos},
-        {"concepto": "GASTOS ENTREGA", "importe": costo_gastos_entrega},
+                                             ganancia_gastos_entrega + ganancia_servicios) * factor},
+        {"concepto": "HH PROPIOS", "importe": costo_hh_propios * factor},
+        {"concepto": "IMPREVISTOS", "importe": costo_imprevistos * factor},
+        {"concepto": "GASTOS ENTREGA", "importe": costo_gastos_entrega * factor},
     ]
 
     total_final = sum(d["importe"] for d in resumen)

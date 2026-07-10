@@ -1,6 +1,6 @@
 // src/auth/users/login/LoginPage.jsx
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
 import api from "@/services/api"; // ✅ Usa la configuración centralizada
@@ -9,6 +9,39 @@ import fondo from "@/assets/Fondo.jpg";
 
 export default function LoginPage() {
   const navigate = useNavigate();
+
+  useEffect(() => {
+    document.title = "Iniciar Sesión | SIGECOM 5.0";
+    const img = new Image();
+    img.src = logo;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const size = 32;
+      canvas.width = size;
+      canvas.height = size;
+      
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        const scale = Math.min(size / img.width, size / img.height);
+        const w = img.width * scale;
+        const h = img.height * scale;
+        
+        const x = (size - w) / 2;
+        const y = (size - h) / 2;
+        
+        ctx.clearRect(0, 0, size, size);
+        ctx.drawImage(img, x, y, w, h);
+        
+        let link = document.querySelector("link[rel~='icon']");
+        if (!link) {
+          link = document.createElement('link');
+          link.rel = 'icon';
+          document.head.appendChild(link);
+        }
+        link.href = canvas.toDataURL('image/png');
+      }
+    };
+  }, []);
 
   const [form, setForm] = useState({
     usuario: "",

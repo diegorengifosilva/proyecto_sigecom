@@ -17,5 +17,8 @@ class VCRouter:
         return True
 
     def allow_migrate(self, db, app_label, model_name=None, **hints):
-        # Evita migraciones sobre la DB
+        # Permitir migraciones solo para la app de notificaciones y django internals
+        if app_label in ["notificaciones_api", "auth", "contenttypes", "sessions", "admin", "messages"]:
+            return True
+        # Evita migraciones sobre las DB legacy
         return False

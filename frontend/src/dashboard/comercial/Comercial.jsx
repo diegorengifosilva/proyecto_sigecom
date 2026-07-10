@@ -139,9 +139,194 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
   }, [defaultTab]);
 
   // ESTADOS DE FILTROS
-  const [globalSearch, setGlobalSearch] = useState(() => getSessionValue("comercial_filter_globalSearch", ""));
-  const [statusFilter, setStatusFilter] = useState(() => getSessionValue("comercial_filter_statusFilter", "TODAS"));
+  const getInitialTabFilters = (tabName) => {
+    if (tabName === "cotizaciones") {
+      return {
+        globalSearch: getSessionValue("comercial_filter_globalSearch", ""),
+        selectedAnno: getSessionValue("comercial_filter_selectedAnno", new Date().getFullYear()),
+        selectedMes: getSessionValue("comercial_filter_selectedMes", "%"),
+        statusFilter: getSessionValue("comercial_filter_statusFilter", "TODAS"),
+        envioFilter: getSessionValue("comercial_filter_envioFilter", "%"),
+        probabilidadFilter: getSessionValue("comercial_filter_probabilidadFilter", "%"),
+        responsableTipo: getSessionValue("comercial_filter_responsableTipo", "COMERCIAL"),
+        comercialSearch: getSessionValue("comercial_filter_comercialSearch", "%"),
+        tecnicoSearch: getSessionValue("comercial_filter_tecnicoSearch", "%"),
+        inputBusqueda: getSessionValue("comercial_filter_inputBusqueda", ""),
+        responsableNombre: getSessionValue("comercial_filter_responsableNombre", "%"),
+        suministrosValor: getSessionValue("comercial_filter_suministrosValor", ""),
+        suministrosUnidad: getSessionValue("comercial_filter_suministrosUnidad", "D"),
+        serviciosValor: getSessionValue("comercial_filter_serviciosValor", ""),
+        serviciosUnidad: getSessionValue("comercial_filter_serviciosUnidad", "D"),
+        ofertaValor: getSessionValue("comercial_filter_ofertaValor", ""),
+        ofertaUnidad: getSessionValue("comercial_filter_ofertaUnidad", "D"),
+        activeFilterTab: getSessionValue("comercial_filter_activeFilterTab", "RANGO"),
+        annoDesde: getSessionValue("comercial_filter_annoDesde", ""),
+        annoHasta: getSessionValue("comercial_filter_annoHasta", ""),
+        mesDesde: getSessionValue("comercial_filter_mesDesde", ""),
+        mesHasta: getSessionValue("comercial_filter_mesHasta", ""),
+        estadoOportunidad: getSessionValue("comercial_filter_estadoOportunidad", "%"),
+        estadoOrdenFilter: getSessionValue("comercial_filter_estadoOrdenFilter", "%"),
+        prioFilter: getSessionValue("comercial_filter_prioFilter", "%"),
+        plazoValor: getSessionValue("comercial_filter_plazoValor", ""),
+        plazoUnidad: getSessionValue("comercial_filter_plazoUnidad", "D")
+      };
+    }
+    return {
+      globalSearch: "",
+      selectedAnno: new Date().getFullYear(),
+      selectedMes: "%",
+      statusFilter: "TODAS",
+      envioFilter: "%",
+      probabilidadFilter: "%",
+      responsableTipo: "COMERCIAL",
+      comercialSearch: "%",
+      tecnicoSearch: "%",
+      inputBusqueda: "",
+      responsableNombre: "%",
+      suministrosValor: "",
+      suministrosUnidad: "D",
+      serviciosValor: "",
+      serviciosUnidad: "D",
+      ofertaValor: "",
+      ofertaUnidad: "D",
+      activeFilterTab: "RANGO",
+      annoDesde: "",
+      annoHasta: "",
+      mesDesde: "",
+      mesHasta: "",
+      estadoOportunidad: "%",
+      estadoOrdenFilter: "%",
+      prioFilter: "%",
+      plazoValor: "",
+      plazoUnidad: "D"
+    };
+  };
+
+  const [tabFilters, setTabFilters] = useState(() => {
+    const saved = getSessionValue("comercial_tab_filters", null);
+    if (saved) return saved;
+    return {
+      cotizaciones: getInitialTabFilters("cotizaciones"),
+      oportunidades: getInitialTabFilters("oportunidades"),
+      aperturas: getInitialTabFilters("aperturas"),
+      programacion: getInitialTabFilters("programacion")
+    };
+  });
+
+  const currentFilters = tabFilters[currentTab] || getInitialTabFilters(currentTab);
+
+  const updateFilter = (key, value) => {
+    setTabFilters(prev => {
+      const currentVal = prev[currentTab]?.[key];
+      const nextVal = typeof value === 'function' ? value(currentVal) : value;
+      const updated = {
+        ...prev,
+        [currentTab]: {
+          ...(prev[currentTab] || getInitialTabFilters(currentTab)),
+          [key]: nextVal
+        }
+      };
+      sessionStorage.setItem("comercial_tab_filters", JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const resetFilters = () => {
+    setTabFilters(prev => {
+      const updated = {
+        ...prev,
+        [currentTab]: getInitialTabFilters(currentTab)
+      };
+      sessionStorage.setItem("comercial_tab_filters", JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const globalSearch = currentFilters.globalSearch;
+  const setGlobalSearch = (val) => updateFilter("globalSearch", val);
+
+  const statusFilter = currentFilters.statusFilter;
+  const setStatusFilter = (val) => updateFilter("statusFilter", val);
+
+  const selectedAnno = currentFilters.selectedAnno;
+  const setSelectedAnno = (val) => updateFilter("selectedAnno", val);
+
+  const selectedMes = currentFilters.selectedMes;
+  const setSelectedMes = (val) => updateFilter("selectedMes", val);
+
+  const envioFilter = currentFilters.envioFilter;
+  const setEnvioFilter = (val) => updateFilter("envioFilter", val);
+
+  const probabilidadFilter = currentFilters.probabilidadFilter;
+  const setProbabilidadFilter = (val) => updateFilter("probabilidadFilter", val);
+
+  const responsableTipo = currentFilters.responsableTipo;
+  const setResponsableTipo = (val) => updateFilter("responsableTipo", val);
+
+  const comercialSearch = currentFilters.comercialSearch;
+  const setComercialSearch = (val) => updateFilter("comercialSearch", val);
+
+  const tecnicoSearch = currentFilters.tecnicoSearch;
+  const setTecnicoSearch = (val) => updateFilter("tecnicoSearch", val);
+
+  const inputBusqueda = currentFilters.inputBusqueda;
+  const setInputBusqueda = (val) => updateFilter("inputBusqueda", val);
+
+  const responsableNombre = currentFilters.responsableNombre;
+  const setResponsableNombre = (val) => updateFilter("responsableNombre", val);
+
+  const suministrosValor = currentFilters.suministrosValor;
+  const setSuministrosValor = (val) => updateFilter("suministrosValor", val);
+
+  const suministrosUnidad = currentFilters.suministrosUnidad;
+  const setSuministrosUnidad = (val) => updateFilter("suministrosUnidad", val);
+
+  const serviciosValor = currentFilters.serviciosValor;
+  const setServiciosValor = (val) => updateFilter("serviciosValor", val);
+
+  const serviciosUnidad = currentFilters.serviciosUnidad;
+  const setServiciosUnidad = (val) => updateFilter("serviciosUnidad", val);
+
+  const ofertaValor = currentFilters.ofertaValor;
+  const setOfertaValor = (val) => updateFilter("ofertaValor", val);
+
+  const ofertaUnidad = currentFilters.ofertaUnidad;
+  const setOfertaUnidad = (val) => updateFilter("ofertaUnidad", val);
+
+  const activeFilterTab = currentFilters.activeFilterTab;
+  const setActiveFilterTab = (val) => updateFilter("activeFilterTab", val);
+
+  const annoDesde = currentFilters.annoDesde;
+  const setAnnoDesde = (val) => updateFilter("annoDesde", val);
+
+  const annoHasta = currentFilters.annoHasta;
+  const setAnnoHasta = (val) => updateFilter("annoHasta", val);
+
+  const mesDesde = currentFilters.mesDesde;
+  const setMesDesde = (val) => updateFilter("mesDesde", val);
+
+  const mesHasta = currentFilters.mesHasta;
+  const setMesHasta = (val) => updateFilter("mesHasta", val);
+
+  const estadoOportunidad = currentFilters.estadoOportunidad;
+  const setEstadoOportunidad = (val) => updateFilter("estadoOportunidad", val);
+
+  const estadoOrdenFilter = currentFilters.estadoOrdenFilter;
+  const setEstadoOrdenFilter = (val) => updateFilter("estadoOrdenFilter", val);
+
+  const prioFilter = currentFilters.prioFilter;
+  const setPrioFilter = (val) => updateFilter("prioFilter", val);
+
+  const plazoValor = currentFilters.plazoValor;
+  const setPlazoValor = (val) => updateFilter("plazoValor", val);
+
+  const plazoUnidad = currentFilters.plazoUnidad;
+  const setPlazoUnidad = (val) => updateFilter("plazoUnidad", val);
+
   const [showNewModal, setShowNewModal] = useState(false);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const filterPanelRef = useRef(null);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   // ESTADOS Y EFECTOS PARA REPORTE DASHBOARD EN MODAL
   const [reporteDashboardOpen, setReporteDashboardOpen] = useState(false);
@@ -195,33 +380,6 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
       return () => clearTimeout(timer);
     }
   }, [reporteDashboardOpen]);
-  const [selectedAnno, setSelectedAnno] = useState(() => getSessionValue("comercial_filter_selectedAnno", new Date().getFullYear()));
-  const [selectedMes, setSelectedMes] = useState(() => getSessionValue("comercial_filter_selectedMes", "%")); // "%" para mostrar todo el año
-
-  // ESTADO PARA PANEL DE FILTROS
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-  const filterPanelRef = useRef(null); // Para cerrar al hacer clic fuera
-  const [envioFilter, setEnvioFilter] = useState(() => getSessionValue("comercial_filter_envioFilter", "%"));
-  const [probabilidadFilter, setProbabilidadFilter] = useState(() => getSessionValue("comercial_filter_probabilidadFilter", "%"));
-  const [responsableTipo, setResponsableTipo] = useState(() => getSessionValue("comercial_filter_responsableTipo", "COMERCIAL"));
-  const [comercialSearch, setComercialSearch] = useState(() => getSessionValue("comercial_filter_comercialSearch", "%"));
-  const [tecnicoSearch, setTecnicoSearch] = useState(() => getSessionValue("comercial_filter_tecnicoSearch", "%"));
-  const [inputBusqueda, setInputBusqueda] = useState(() => getSessionValue("comercial_filter_inputBusqueda", ""));
-  const [responsableNombre, setResponsableNombre] = useState(() => getSessionValue("comercial_filter_responsableNombre", "%"));
-  const [suministrosValor, setSuministrosValor] = useState(() => getSessionValue("comercial_filter_suministrosValor", ""));
-  const [suministrosUnidad, setSuministrosUnidad] = useState(() => getSessionValue("comercial_filter_suministrosUnidad", "D"));
-  const [serviciosValor, setServiciosValor] = useState(() => getSessionValue("comercial_filter_serviciosValor", ""));
-  const [serviciosUnidad, setServiciosUnidad] = useState(() => getSessionValue("comercial_filter_serviciosUnidad", "D"));
-  const [ofertaValor, setOfertaValor] = useState(() => getSessionValue("comercial_filter_ofertaValor", ""));
-  const [ofertaUnidad, setOfertaUnidad] = useState(() => getSessionValue("comercial_filter_ofertaUnidad", "D"));
-  const [activeFilterTab, setActiveFilterTab] = useState(() => getSessionValue("comercial_filter_activeFilterTab", "RANGO"));
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-
-  // NUEVOS ESTADOS PARA FILTROS POR RANGO DE PERIODOS
-  const [annoDesde, setAnnoDesde] = useState(() => getSessionValue("comercial_filter_annoDesde", ""));
-  const [annoHasta, setAnnoHasta] = useState(() => getSessionValue("comercial_filter_annoHasta", ""));
-  const [mesDesde, setMesDesde] = useState(() => getSessionValue("comercial_filter_mesDesde", ""));
-  const [mesHasta, setMesHasta] = useState(() => getSessionValue("comercial_filter_mesHasta", ""));
 
   // QUERY PARA OBTENER LOS PERIODOS REGISTRADOS DINÁMICAMENTE
   const { data: dataPeriodos } = useQuery({
@@ -251,7 +409,6 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
   });
 
   // 2. NUEVA QUERY DE OPORTUNIDADES
-  const [estadoOportunidad, setEstadoOportunidad] = useState(() => getSessionValue("comercial_filter_estadoOportunidad", "%")); 
 
   const { 
     data: dataOportunidades, 
@@ -263,51 +420,15 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
 
   // 3. APERTURAS
   const [currentPageApertura, setCurrentPageApertura] = useState(() => getSessionValue("comercial_filter_currentPageApertura", 1));
-  const [estadoOrdenFilter, setEstadoOrdenFilter] = useState(() => getSessionValue("comercial_filter_estadoOrdenFilter", "%"));
-  const [prioFilter, setPrioFilter] = useState(() => getSessionValue("comercial_filter_prioFilter", "%"));
-  const [plazoValor, setPlazoValor] = useState(() => getSessionValue("comercial_filter_plazoValor", ""));
-  const [plazoUnidad, setPlazoUnidad] = useState(() => getSessionValue("comercial_filter_plazoUnidad", "D"));
 
   // Sincronización automática de filtros y paginación con sessionStorage
   useEffect(() => {
     sessionStorage.setItem("comercial_filter_currentTab", JSON.stringify(currentTab));
-    sessionStorage.setItem("comercial_filter_globalSearch", JSON.stringify(globalSearch));
-    sessionStorage.setItem("comercial_filter_statusFilter", JSON.stringify(statusFilter));
-    sessionStorage.setItem("comercial_filter_selectedAnno", JSON.stringify(selectedAnno));
-    sessionStorage.setItem("comercial_filter_selectedMes", JSON.stringify(selectedMes));
-    sessionStorage.setItem("comercial_filter_envioFilter", JSON.stringify(envioFilter));
-    sessionStorage.setItem("comercial_filter_probabilidadFilter", JSON.stringify(probabilidadFilter));
-    sessionStorage.setItem("comercial_filter_responsableTipo", JSON.stringify(responsableTipo));
-    sessionStorage.setItem("comercial_filter_comercialSearch", JSON.stringify(comercialSearch));
-    sessionStorage.setItem("comercial_filter_tecnicoSearch", JSON.stringify(tecnicoSearch));
-    sessionStorage.setItem("comercial_filter_inputBusqueda", JSON.stringify(inputBusqueda));
-    sessionStorage.setItem("comercial_filter_responsableNombre", JSON.stringify(responsableNombre));
-    sessionStorage.setItem("comercial_filter_suministrosValor", JSON.stringify(suministrosValor));
-    sessionStorage.setItem("comercial_filter_suministrosUnidad", JSON.stringify(suministrosUnidad));
-    sessionStorage.setItem("comercial_filter_serviciosValor", JSON.stringify(serviciosValor));
-    sessionStorage.setItem("comercial_filter_serviciosUnidad", JSON.stringify(serviciosUnidad));
-    sessionStorage.setItem("comercial_filter_ofertaValor", JSON.stringify(ofertaValor));
-    sessionStorage.setItem("comercial_filter_ofertaUnidad", JSON.stringify(ofertaUnidad));
-    sessionStorage.setItem("comercial_filter_activeFilterTab", JSON.stringify(activeFilterTab));
-    sessionStorage.setItem("comercial_filter_annoDesde", JSON.stringify(annoDesde));
-    sessionStorage.setItem("comercial_filter_annoHasta", JSON.stringify(annoHasta));
-    sessionStorage.setItem("comercial_filter_mesDesde", JSON.stringify(mesDesde));
-    sessionStorage.setItem("comercial_filter_mesHasta", JSON.stringify(mesHasta));
     sessionStorage.setItem("comercial_filter_currentPage", JSON.stringify(currentPage));
     sessionStorage.setItem("comercial_filter_currentPageOportunidades", JSON.stringify(currentPageOportunidades));
-    sessionStorage.setItem("comercial_filter_estadoOportunidad", JSON.stringify(estadoOportunidad));
     sessionStorage.setItem("comercial_filter_currentPageApertura", JSON.stringify(currentPageApertura));
-    sessionStorage.setItem("comercial_filter_estadoOrdenFilter", JSON.stringify(estadoOrdenFilter));
-    sessionStorage.setItem("comercial_filter_prioFilter", JSON.stringify(prioFilter));
-    sessionStorage.setItem("comercial_filter_plazoValor", JSON.stringify(plazoValor));
-    sessionStorage.setItem("comercial_filter_plazoUnidad", JSON.stringify(plazoUnidad));
   }, [
-    currentTab, globalSearch, statusFilter, selectedAnno, selectedMes,
-    envioFilter, probabilidadFilter, responsableTipo, comercialSearch, tecnicoSearch,
-    inputBusqueda, responsableNombre, suministrosValor, suministrosUnidad, serviciosValor, serviciosUnidad,
-    ofertaValor, ofertaUnidad, activeFilterTab, annoDesde, annoHasta,
-    mesDesde, mesHasta, currentPage, currentPageOportunidades, estadoOportunidad,
-    currentPageApertura, estadoOrdenFilter, prioFilter, plazoValor, plazoUnidad
+    currentTab, currentPage, currentPageOportunidades, currentPageApertura
   ]);
 
   const hasAnyActiveFilterOrSearch = useMemo(() => {
@@ -568,6 +689,20 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
     };
   }, [filteredData]);
 
+  const recordCount = useMemo(() => {
+    if (currentTab === "cotizaciones") return filteredData.length;
+    if (currentTab === "oportunidades") return filteredOportunidades.length;
+    if (currentTab === "aperturas") return filteredAperturas.length;
+    return 0;
+  }, [currentTab, filteredData.length, filteredOportunidades.length, filteredAperturas.length]);
+
+  const recordTypeLabel = useMemo(() => {
+    if (currentTab === "cotizaciones") return "Cotizaciones";
+    if (currentTab === "oportunidades") return "Oportunidades";
+    if (currentTab === "aperturas") return "Aperturas";
+    return "Registros";
+  }, [currentTab]);
+
   // Paginated Data
   const paginatedData = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
@@ -777,15 +912,11 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
 
   const handleOpenReport = () => {
     const params = new URLSearchParams();
+    params.append("tipo_reporte", currentTab);
     
     // Add all active dashboard filters
     if (selectedAnno !== "%") params.append("anno", selectedAnno);
     if (selectedMes !== "%") params.append("mes", selectedMes);
-    if (envioFilter !== "%") params.append("envio", envioFilter);
-    if (probabilidadFilter !== "%") params.append("probabilidad", probabilidadFilter);
-    if (comercialSearch !== "%") params.append("comercial_search", comercialSearch);
-    if (tecnicoSearch !== "%") params.append("tecnico_search", tecnicoSearch);
-    if (statusFilter !== "TODAS") params.append("estado", statusFilter);
     
     // Range filters
     if (annoDesde) params.append("anno_desde", annoDesde);
@@ -797,6 +928,25 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
     if (globalSearch) {
       params.append("campo", "all");
       params.append("valor", globalSearch);
+    }
+    
+    if (currentTab === "cotizaciones") {
+      if (envioFilter !== "%") params.append("envio", envioFilter);
+      if (probabilidadFilter !== "%") params.append("probabilidad", probabilidadFilter);
+      if (comercialSearch !== "%") params.append("comercial_search", comercialSearch);
+      if (tecnicoSearch !== "%") params.append("tecnico_search", tecnicoSearch);
+      if (statusFilter !== "TODAS") params.append("estado", statusFilter);
+    } else if (currentTab === "oportunidades") {
+      if (comercialSearch !== "%") params.append("comercial_search", comercialSearch);
+      if (estadoOportunidad !== "%") params.append("estado_oportunidad", estadoOportunidad);
+    } else if (currentTab === "aperturas") {
+      if (envioFilter !== "%") params.append("envio", envioFilter);
+      if (estadoOrdenFilter !== "%") params.append("estado_orden", estadoOrdenFilter);
+      if (prioFilter !== "%") params.append("prio", prioFilter);
+      if (plazoValor) {
+        params.append("plazo_val", plazoValor);
+        params.append("plazo_uni", plazoUnidad);
+      }
     }
     
     const API_URL = import.meta.env.VITE_API_URL || "";
@@ -814,8 +964,8 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
         <div>
           <h1 className="text-lg md:text-2xl font-black text-gray-900 tracking-tight">Módulo Comercial</h1>
           <p className="text-[10px] md:text-sm text-gray-500 font-medium">
-            <span className="hidden sm:inline">{stats.total} Cotizaciones encontradas</span>
-            <span className="inline sm:hidden">{stats.total} registros</span>
+            <span className="hidden sm:inline">{recordCount} {recordTypeLabel} encontradas</span>
+            <span className="inline sm:hidden">{recordCount} registros</span>
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -1093,24 +1243,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
                 <div className="bg-gray-50/50 px-4 py-3 border-b border-gray-100 flex justify-between items-center shrink-0">
                   <h4 className="text-[10px] font-black text-gray-600 uppercase tracking-widest">Filtros Avanzados</h4>
                   <button
-                    onClick={() => {
-                      setSelectedAnno(new Date().getFullYear());
-                      setSelectedMes("%");
-                      setEnvioFilter("%");
-                      setProbabilidadFilter("%");
-                      setResponsableTipo("COMERCIAL");
-                      setResponsableNombre("%");
-                      setSuministrosValor("");
-                      setSuministrosUnidad("D");
-                      setServiciosValor("");
-                      setServiciosUnidad("D");
-                      setOfertaValor("");
-                      setOfertaUnidad("D");
-                      setAnnoDesde("");
-                      setAnnoHasta("");
-                      setMesDesde("");
-                      setMesHasta("");
-                    }}
+                    onClick={resetFilters}
                     className="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 uppercase"
                   >
                     Limpiar

@@ -6,6 +6,7 @@ from decimal import Decimal
 from simple_history.models import HistoricalRecords
 from django.contrib.auth.hashers import check_password, make_password
 import datetime
+from users.models import Usuario, Area
 
 class Cliente(models.Model):
     id_cliente = models.AutoField(primary_key=True)
@@ -274,4 +275,69 @@ class Nota(models.Model):
 
     def __str__(self):
         return f"{self.codigo} - {self.descripcion[:50]}..."
+
+class ObjetivoAnual(models.Model):
+    id_objetivo = models.AutoField(primary_key=True)
+    anno = models.PositiveIntegerField(unique=True, db_column='anno')
+    monto = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    id_usuario = models.ForeignKey(
+        Usuario, 
+        on_delete=models.PROTECT, 
+        db_column='id_usuario' 
+    )
+    id_usuario = models.ForeignKey(
+        Usuario, 
+        on_delete=models.PROTECT,  
+        db_column='id_usuario'
+    )
+    activo = models.BooleanField(default=True, null=True, blank=True)
+    fecha_creacion = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+
+    class Meta:
+        managed = False
+        db_table = "objetivo_anual"
+
+    def __str__(self):
+        return f"Objetivo {self.anno} - {self.id_usuario.nombre_completo} (${self.monto})"
+
+class ObjetivoAnualArea(models.Model):
+    id_objetivo_anno = models.AutoField(primary_key=True)
+    
+    id_objetivo = models.ForeignKey(
+        ObjetivoAnual,
+        related_name="areas",
+        on_delete=models.CASCADE,
+        db_column='id_objetivo'
+    )
+    
+    id_area = models.ForeignKey(
+        Area,
+        on_delete=models.PROTECT,
+        db_column='id_area'
+    )
+    
+    minimo = models.DecimalField(
+        max_digits=12, 
+        decimal_places=2, 
+        default=0.00, 
+        null=True, 
+        blank=True
+    )
+    
+    maximo = models.DecimalField(
+        max_digits=12, 
+        decimal_places=2, 
+        default=0.00, 
+        null=True, 
+        blank=True
+    )
+
+    class Meta:
+        managed = False
+        db_table = "objetivo_anual_area"
+        unique_together = ("id_objetivo", "id_area")
+
+    def __str__(self):
+        return f"{self.id_area.nombre_area} - Objetivo Anual {self.id_objetivo.anno}"
+
 

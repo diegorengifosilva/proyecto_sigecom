@@ -1,12 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { 
-  FileText, Target, TrendingUp, Zap, ArrowUpRight, ArrowDownRight 
+  Clock, CheckCircle, ShoppingBag, Database, ArrowUpRight, ArrowDownRight 
 } from "lucide-react";
-import api from "@/services/api";
 
 /* =========================
-   UTILIDADES DE FORMATEO (UX Improvement)
+   UTILIDADES DE FORMATEO
 ========================= */
 const formatValue = (value, isCurrency = false) => {
   const num = Number(value) || 0;
@@ -21,9 +20,6 @@ const formatValue = (value, isCurrency = false) => {
   return `${prefix}${num.toLocaleString()}`;
 };
 
-/* =========================
-   SUB-COMPONENTE KPI CARD
-========================= */
 const KPICard = ({ label, current, accumulated, icon: Icon, color, category, unit, trend, delay, showProgress = false, rawProgress = 0 }) => {
   const colorMap = {
     cian: { bg: "bg-[#CCFBF1]/30", border: "border-[#06A99C]/20", text: "text-[#134E4A]", iconBg: "bg-[#06A99C]/10", icon: "text-[#06A99C]", bar: "bg-[#06A99C]" },
@@ -48,7 +44,7 @@ const KPICard = ({ label, current, accumulated, icon: Icon, color, category, uni
           <Icon className={`w-4 h-4 ${style.icon}`} />
         </div>
         <div className="flex flex-col items-end">
-           <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md ${style.bg} ${style.text}`}>
+          <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md ${style.bg} ${style.text}`}>
             {category}
           </span>
           {trend !== null && (
@@ -76,7 +72,7 @@ const KPICard = ({ label, current, accumulated, icon: Icon, color, category, uni
         </div>
       </div>
 
-      {/* PROGRESS BAR (Para Efectividad) */}
+      {/* PROGRESS BAR */}
       {showProgress && (
         <div className="w-full bg-slate-100 h-1 rounded-full mt-2 overflow-hidden">
           <motion.div 
@@ -90,7 +86,7 @@ const KPICard = ({ label, current, accumulated, icon: Icon, color, category, uni
 
       {/* FOOTER */}
       <div className="mt-3 pt-2 border-t border-slate-50 flex justify-between items-center relative z-10">
-        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Acumulado Anual</span>
+        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Meta del Año</span>
         <span className={`text-[11px] font-[900] ${style.text}`}>
           {accumulated} <small className="text-[8px] font-normal opacity-60">{unit}</small>
         </span>
@@ -99,26 +95,47 @@ const KPICard = ({ label, current, accumulated, icon: Icon, color, category, uni
   );
 };
 
-/* =========================
-   COMPONENTE PRINCIPAL
-========================= */
-export default function KpisResumen({ anno = new Date().getFullYear(), mes = "%" }) {
+export default function KpisLogistica({ anno = new Date().getFullYear(), mes = "%" }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const cargar = async () => {
-      try {
-        setLoading(true);
-        const res = await api.get(`dashboard/kpis/?anno=${anno}&mes=${mes}`);
-        setData(res.data);
-      } catch (err) {
-        console.error("Error cargando KPIs", err);
-      } finally {
-        setLoading(false);
-      }
+    // Generar datos de simulación basados en semilla determinista del año y mes
+    const seed = Number(anno) + (mes === "%" ? 6 : Number(mes));
+    const randomVal = (min, max, offset = 0) => {
+      const x = Math.sin(seed + offset) * 10000;
+      return min + Math.floor((x - Math.floor(x)) * (max - min));
     };
-    cargar();
+
+    setLoading(true);
+    const timer = setTimeout(() => {
+      const leadTimeMes = (randomVal(30, 60, 1) / 10).toFixed(1);
+      const leadTimeAnual = (randomVal(35, 55, 2) / 10).toFixed(1);
+      const fillRateMes = randomVal(92, 99, 3);
+      const fillRateAnual = randomVal(94, 98, 4);
+      const comprasMes = randomVal(80000, 180000, 5);
+      const comprasAnual = randomVal(900000, 1900000, 6);
+      const invMes = randomVal(1100, 1400, 7);
+      const invAnual = 1500;
+
+      setData({
+        leadTimeMes,
+        leadTimeAnual,
+        leadTimeTrend: -(randomVal(5, 15, 8) / 10).toFixed(1), // negativo es mejor en lead time
+        fillRateMes,
+        fillRateAnual,
+        fillRateTrend: (randomVal(1, 3, 9) / 10).toFixed(1),
+        comprasMes,
+        comprasAnual,
+        comprasTrend: (randomVal(2, 12, 10)).toFixed(1),
+        invMes,
+        invAnual,
+        invTrend: (randomVal(1, 5, 11) / 10).toFixed(1),
+      });
+      setLoading(false);
+    }, 200);
+
+    return () => clearTimeout(timer);
   }, [anno, mes]);
 
   if (loading) return (
@@ -133,58 +150,58 @@ export default function KpisResumen({ anno = new Date().getFullYear(), mes = "%"
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 w-full">
-      {/* KPI 1: CANTIDAD */}
+      {/* KPI 1: LEAD TIME */}
       <KPICard
-        label="Cotizaciones"
-        current={data.cotizaciones_mes || 0}
-        accumulated={data.total_cotizaciones?.anual || 0}
-        icon={FileText}
+        label="Lead Time Promedio"
+        current={`${data.leadTimeMes} d`}
+        accumulated={`${data.leadTimeAnual} d`}
+        icon={Clock}
         color="cian"
-        category="Flujo"
-        unit="Docs"
-        trend={data.total_cotizaciones?.variacion}
+        category="Abastecimiento"
+        unit="Días"
+        trend={data.leadTimeTrend}
         delay={0}
       />
 
-      {/* KPI 2: MONTO COTIZADO (Human-Readable) */}
+      {/* KPI 2: FILL RATE */}
       <KPICard
-        label="Monto Cotizado"
-        current={formatValue(data.monto_mes, true)}
-        accumulated={formatValue(data.monto_total?.anual, true)}
-        icon={TrendingUp}
+        label="Fill Rate Recepciones"
+        current={`${data.fillRateMes}%`}
+        accumulated={`${data.fillRateAnual}%`}
+        icon={CheckCircle}
         color="indigo"
-        category="Potencial"
-        unit="USD"
-        trend={data.monto_total?.variacion} 
+        category="Eficiencia"
+        unit="Ratio"
+        trend={data.fillRateTrend}
         delay={1}
+        showProgress={true}
+        rawProgress={data.fillRateMes}
       />
 
-      {/* KPI 3: VENTAS REALES (Human-Readable) */}
+      {/* KPI 3: COMPRAS TOTALES */}
       <KPICard
-        label="Ventas Cerradas"
-        current={formatValue(data.ventas_reales_mes, true)}
-        accumulated={formatValue(data.ventas_reales_anual, true)}
-        icon={Zap}
+        label="Monto de Compras"
+        current={formatValue(data.comprasMes, true)}
+        accumulated={formatValue(data.comprasAnual, true)}
+        icon={ShoppingBag}
         color="emerald"
-        category="Cierre"
+        category="Adquisición"
         unit="USD"
-        trend={data.ventas_variacion}
+        trend={data.comprasTrend}
         delay={2}
       />
 
-      {/* KPI 4: EFECTIVIDAD (Con Barra de Progreso) */}
+      {/* KPI 4: STOCK / REFERENCIAS */}
       <KPICard
-        label="Efectividad"
-        current={`${data.porcentaje_aprobacion_mes || 0}%`}
-        accumulated={`${data.porcentaje_aprobacion || 0}%`}
-        icon={Target}
+        label="Referencias Activas"
+        current={data.invMes}
+        accumulated={data.invAnual}
+        icon={Database}
         color="amber"
-        category="Eficiencia"
-        unit="Ratio"
-        trend={null}
+        category="Kardex"
+        unit="Items"
+        trend={data.invTrend}
         delay={3}
-        showProgress={true}
-        rawProgress={data.porcentaje_aprobacion_mes}
       />
     </div>
   );

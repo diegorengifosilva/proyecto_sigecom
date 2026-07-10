@@ -9,7 +9,15 @@ import { arrayMove } from '@dnd-kit/sortable';
 export const recalculateGroupSuministrosValues = (grupo, tipoVenta) => {
   const items = grupo.items || [];
   const cantidadGrupo = Number(grupo.cantidad || 1);
-  const groupCostoEnvio = Number(grupo.costo_envio || grupo.costo_envio_total || grupo.cost_env || 0);
+  
+  let groupCostoEnvio = 0;
+  if (tipoVenta === "P") {
+    groupCostoEnvio = Number(grupo.costo_envio_unidad !== undefined && grupo.costo_envio_unidad !== null ? grupo.costo_envio_unidad : (grupo.costo_envio || 0));
+  } else if (tipoVenta === "T") {
+    groupCostoEnvio = Number(grupo.costo_envio_total !== undefined && grupo.costo_envio_total !== null ? grupo.costo_envio_total : (grupo.costo_envio || 0));
+  } else {
+    groupCostoEnvio = Number(grupo.costo_envio || 0);
+  }
 
   // 1. Calcular totalCostoItems
   const totalCostoItems = items.reduce((acc, it) => acc + (Number(it.costo_precio || 0) * Number(it.cantidad || 0)), 0);
@@ -57,6 +65,9 @@ export const recalculateGroupSuministrosValues = (grupo, tipoVenta) => {
 
   return {
     ...grupo,
+    costo_envio: groupCostoEnvio,
+    costo_envio_total: tipoVenta === "T" ? groupCostoEnvio : (grupo.costo_envio_total || 0),
+    costo_envio_unidad: tipoVenta === "P" ? groupCostoEnvio : (grupo.costo_envio_unidad || 0),
     venta_total,
     items: recalculatedItems
   };
@@ -180,8 +191,8 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
           nombre_grupo: form.nombre.toUpperCase(),
           cantidad: Number(form.cantidad),
           costo_envio: Number(form.costoEnvio || 0),
-          costo_envio_total: tipoVenta === "T" ? Number(form.costoEnvio || 0) : 0,
-          costo_envio_unidad: tipoVenta === "P" ? Number(form.costoEnvio || 0) : 0,
+          costo_envio_total: tipoVenta === "T" ? Number(form.costoEnvio || 0) : (grupo.costo_envio_total || 0),
+          costo_envio_unidad: tipoVenta === "P" ? Number(form.costoEnvio || 0) : (grupo.costo_envio_unidad || 0),
           items: grupo.items || []
         };
         next[form._key] = recalculateGroupSuministrosValues(nextGroup, tipoVenta);

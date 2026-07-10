@@ -1,31 +1,19 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useCallback, useEffect } from 'react';
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { toast } from "../utils/toast";
 import api from "@/services/api";
 
 export const useCotizacionAcciones = (numReg, onActionSuccess) => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const location = useLocation();
-
-  // Obtiene el prefijo de ruta plural correspondiente según el path actual
-  const getPluralPrefix = () => {
-    if (location.pathname.includes("/oportunidades")) {
-      return "/sigecom/comercial/oportunidades";
-    }
-    if (location.pathname.includes("/aperturas")) {
-      return "/sigecom/comercial/aperturas";
-    }
-    return "/sigecom/comercial/cotizaciones";
-  };
 
   // 1. Nueva Versión (Navega al nuevo registro creado)
   const crearNuevaVersion = useMutation({
     mutationFn: () => api.post(`cotizaciones/nueva-version/${numReg}/`),
     onSuccess: (res) => {
       const { id_registro_nuevo, codigo_nuevo } = res.data.data;
-      toast.success(`Versión ${codigo_nuevo} creada`);
+      toast.success(`Versión ${codigo_nuevo} creada exitosamente`, "Nueva Versión");
 
       // Refresca las listas de cotizaciones, oportunidades y aperturas
       queryClient.invalidateQueries({ queryKey: ["cotizaciones"], refetchType: "none" });
@@ -35,10 +23,10 @@ export const useCotizacionAcciones = (numReg, onActionSuccess) => {
 
       if (onActionSuccess) onActionSuccess("nueva-version", id_registro_nuevo);
 
-      // Navega al detalle del nuevo registro generado con la ruta plural correcta
-      navigate(`${getPluralPrefix()}/${id_registro_nuevo}`);
+      // Navega al detalle del nuevo registro generado directamente en cotizaciones
+      navigate(`/sigecom/comercial/cotizaciones/${id_registro_nuevo}`);
     },
-    onError: () => toast.error("Error al crear nueva versión"),
+    onError: () => toast.error("No se pudo crear la nueva versión de la cotización", "Error de Nueva Versión"),
   });
 
   // 2. Copiar Cotización
@@ -46,7 +34,7 @@ export const useCotizacionAcciones = (numReg, onActionSuccess) => {
     mutationFn: (payload) => api.post(`cotizaciones/${numReg}/generar-copia/`, payload),
     onSuccess: (res) => {
       const { id_registro_nuevo } = res.data.data;
-      toast.success("Copia creada correctamente");
+      toast.success("Copia de cotización generada exitosamente", "Copia de Registro");
 
       // Refresca las listas de cotizaciones, oportunidades y aperturas
       queryClient.invalidateQueries({ queryKey: ["cotizaciones"], refetchType: "none" });
@@ -56,17 +44,17 @@ export const useCotizacionAcciones = (numReg, onActionSuccess) => {
 
       if (onActionSuccess) onActionSuccess("copiar", id_registro_nuevo);
 
-      // Navega a la copia recién creada con la ruta plural correcta
-      navigate(`${getPluralPrefix()}/${id_registro_nuevo}`);
+      // Navega a la copia recién creada directamente en cotizaciones
+      navigate(`/sigecom/comercial/cotizaciones/${id_registro_nuevo}`);
     },
-    onError: () => toast.error("Error al crear la copia"),
+    onError: () => toast.error("No se pudo generar la copia de la cotización", "Error de Copia"),
   });
 
   // 3. Eliminar Cotización
   const eliminarCotizacion = useMutation({
     mutationFn: () => api.delete(`cotizaciones/eliminar/${numReg}/`),
     onSuccess: () => {
-      toast.success("Cotización eliminada correctamente");
+      toast.delete("La cotización ha sido eliminada del sistema", "Registro Eliminado");
       // Refresca las listas de cotizaciones, oportunidades y aperturas
       queryClient.invalidateQueries({ queryKey: ["cotizaciones"], refetchType: "none" });
       queryClient.invalidateQueries({ queryKey: ["oportunidades"], refetchType: "none" });
@@ -75,10 +63,16 @@ export const useCotizacionAcciones = (numReg, onActionSuccess) => {
 
       if (onActionSuccess) onActionSuccess("eliminar");
 
-      // Regresa a la tabla principal
-      navigate("/sigecom/comercial");
+      const path = window.location.pathname;
+      if (path.includes("/oportunidades")) {
+        navigate("/sigecom/comercial/oportunidades");
+      } else if (path.includes("/aperturas")) {
+        navigate("/sigecom/comercial/aperturas");
+      } else {
+        navigate("/sigecom/comercial/cotizaciones");
+      }
     },
-    onError: () => toast.error("Error eliminando la cotización"),
+    onError: () => toast.error("No se pudo eliminar la cotización seleccionada", "Error al Eliminar"),
   });
 
   // 4. Lógica de Guardado

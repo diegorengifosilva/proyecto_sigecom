@@ -37,7 +37,7 @@ import RegistroItemModal from '../Suministros/RegistroItemModal';
 import RegistroItemBuscadorModal from '../Suministros/RegistroItemBuscadorModal';
 import ServicioModal from '../Servicios/ServicioModal';
 import { useCotizacionAcciones } from '@/hook/useCotizacionAcciones';
-import { useCotizacionSuministros } from '@/hook/useCotizacionSuministros';
+import { useCotizacionSuministros, recalculateGroupSuministrosValues } from '@/hook/useCotizacionSuministros';
 import { useCotizacionServicios } from '@/hook/useCotizacionServicios';
 import { ClienteAutocomplete, RepresentanteAutocomplete, ProductoAutocomplete, TipoPersonalAutocomplete, TipoGastoDetalleAutocomplete, UnidadMedidaAutocomplete, MarcaAutocomplete } from '@/components/comercial/CotizacionAutocompletes';
 import { calcularItemSegunProveedor, resolverEndpointPorProveedor } from '@/dashboard/Suministros/tables/tablaUtils';
@@ -670,7 +670,9 @@ const EditableGroupRow = ({
   handleTriggerCreateProduct,
   renderInlineProductCreateForm,
   handleTriggerCreatePersonal,
-  renderInlinePersonalCreateForm
+  renderInlinePersonalCreateForm,
+  ocultarTotalesMap = {},
+  idRegistro = null
 }) => {
   const isSavingRef = useRef(false);
   const [tempData, setTempData] = useState({ titulo: '', cantidad: 1, costoEnvio: 0, detalle: '' });
@@ -2262,7 +2264,7 @@ const EditableGroupRow = ({
                             <div className="flex flex-col gap-1 items-center justify-center text-center relative">
                               <MarcaAutocomplete
                                 idMarca={newItem.id_marca}
-                                idRegistro={numReg}
+                                idRegistro={idRegistro}
                                 proveedores={proveedores}
                                 onSelect={(brand) => {
                                   const code = String(brand.id_marca).padStart(2, '0');
@@ -2614,7 +2616,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       return res.data;
     },
     onSuccess: (res) => {
-      toast.success("Transición a cotización exitosa");
+      toast.success("La oportunidad ha pasado a estado Cotización", "Transición Exitosa");
       queryClient.invalidateQueries({ queryKey: ["cotizaciones"] });
       queryClient.invalidateQueries({ queryKey: ["oportunidades"] });
       queryClient.invalidateQueries({ queryKey: ["cotizacion", numReg] });
@@ -2622,7 +2624,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     },
     onError: (err) => {
       const errMsg = err.response?.data?.error || "Error al realizar la transición";
-      toast.error(errMsg);
+      toast.error(errMsg, "Error de Transición");
     }
   });
   const pasarAApertura = useMutation({
@@ -2636,7 +2638,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       return res.data;
     },
     onSuccess: (res) => {
-      toast.success("Transición a apertura exitosa");
+      toast.success("La cotización ha pasado a estado Apertura", "Transición Exitosa");
       queryClient.invalidateQueries({ queryKey: ["cotizaciones"] });
       queryClient.invalidateQueries({ queryKey: ["aperturas"] });
       queryClient.invalidateQueries({ queryKey: ["cotizacion", numReg] });
@@ -2644,7 +2646,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     },
     onError: (err) => {
       const errMsg = err.response?.data?.error || "Error al realizar la transición";
-      toast.error(errMsg);
+      toast.error(errMsg, "Error de Transición");
     }
   });
   const [data, setData] = useState(null);
@@ -5200,6 +5202,12 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
         newState.costo_envio = "";
       }
 
+      if (field === "id_tipo" && value === "V") {
+        if (!newState.tipo_venta) {
+          newState.tipo_venta = "T";
+        }
+      }
+
       // 2. Lógica de limpieza al cambiar entre Total y Parcial
       if (field === "tipo_venta" && value === "P") {
         newState.costo_envio = 0;
@@ -5208,6 +5216,54 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       updatedState = newState;
       return newState;
     });
+
+    if (field === "tipo_venta" || (field === "id_tipo" && value === "V")) {
+      const activeTipoVenta = field === "tipo_venta" ? value : (data?.tipo_venta || "T");
+      setGruposSuministros(prev => {
+        const next = {};
+        Object.entries(prev).forEach(([cog, grupo]) => {
+          next[cog] = recalculateGroupSuministrosValues(grupo, activeTipoVenta);
+        });
+        return next;
+      });
+    }
+
+    if (field === "id_tipo" && value !== "V") {
+      setGruposSuministros(prev => {
+        const next = {};
+        Object.entries(prev).forEach(([cog, grupo]) => {
+          const resetGroup = {
+            ...grupo,
+            costo_envio: 0,
+            costo_envio_total: 0,
+            costo_envio_unidad: 0
+          };
+          next[cog] = recalculateGroupSuministrosValues(resetGroup, "");
+        });
+        return next;
+      });
+    }
+
+    if (
+      (field === "id_tipo" && value === "V" && (updatedState?.tipo_venta === "T" || updatedState?.tipo_venta === "P")) || 
+      (field === "tipo_venta" && (value === "T" || value === "P"))
+    ) {
+      const activeTipoVenta = field === "tipo_venta" ? value : (updatedState?.tipo_venta);
+      const firstGroup = Object.values(gruposSuministros || {})[0];
+      if (firstGroup) {
+        setTimeout(() => {
+          setEditingGroupHeader({ codigo_grupo: firstGroup.codigo_grupo, campo: 'costo_envio' });
+          const costVal = activeTipoVenta === "P" ? (firstGroup.costo_envio_unidad || 0) : (firstGroup.costo_envio_total || 0);
+          setEditingHeaderValue(String(costVal));
+          
+          // Desplazar al elemento span/input
+          const el = document.getElementById(`span-envio-${firstGroup.codigo_grupo}`) || document.getElementById(`input-envio-${firstGroup.codigo_grupo}`);
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        }, 150);
+      }
+    }
 
     if (updatedState) {
       saveHeaderInstantly(updatedState);
@@ -5888,6 +5944,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 </span>
                 {editingGroupHeader?.codigo_grupo === grupo.codigo_grupo && editingGroupHeader?.campo === 'costo_envio' ? (
                   <input
+                    id={`input-envio-${grupo.codigo_grupo}`}
                     type="number"
                     min="0"
                     step="0.01"
@@ -5905,6 +5962,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                   />
                 ) : (
                   <span 
+                    id={`span-envio-${grupo.codigo_grupo}`}
                     className="text-[11.5px] font-black text-blue-700 cursor-pointer select-none"
                     onDoubleClick={(e) => {
                       e.stopPropagation();
@@ -5999,6 +6057,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                           handleTriggerCreateProduct={handleTriggerCreateProduct}
                           renderInlineProductCreateForm={renderInlineProductCreateForm}
                           ocultarTotales={ocultarTotalesGrupo}
+                          numReg={numReg}
                         />
                       ))}
                     </SortableContext>
@@ -7568,6 +7627,18 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
 
   const getHistoryType = (detalle) => {
     const text = (detalle || "").toUpperCase();
+    if (
+      (text.includes("NUEVA VERSIÓN") || text.includes("NUEVA VERSION")) &&
+      (text.includes("GENERADA A PARTIR") || text.includes("SE ELIMINÓ"))
+    ) {
+      return "NUEVA_VERSION";
+    }
+    if (
+      text.includes("COPIA") &&
+      (text.includes("GENERADA A PARTIR") || text.includes("SE ELIMINÓ"))
+    ) {
+      return "COPIA_REGISTRO";
+    }
     if (text.includes("CREACIÓN") || text.includes("APERTURA") || text.includes("REGISTRO BASE")) return "CREACION";
     if (text.includes("ADJUNTÓ ARCHIVO") || text.includes("DOCUMENTO")) return "ADJUNTOS";
     if (text.includes("ESTADO") || text.includes("CAMBIO")) return "ESTADO";
@@ -8727,6 +8798,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                     setUnidadesMedida={setUnidadesMedida}
                     handleTriggerCreateProduct={handleTriggerCreateProduct}
                     renderInlineProductCreateForm={renderInlineProductCreateForm}
+                    ocultarTotalesMap={ocultarTotalesMap}
+                    idRegistro={numReg}
                   />
 
                   {/* Renderizado de Grupos de Suministros */}
@@ -8843,6 +8916,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                       setUnidadesMedida={setUnidadesMedida}
                       handleTriggerCreatePersonal={handleTriggerCreatePersonal}
                       renderInlinePersonalCreateForm={renderInlinePersonalCreateForm}
+                      ocultarTotalesMap={ocultarTotalesMap}
+                      idRegistro={numReg}
                     />
                   )}
 
@@ -10287,6 +10362,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                   const type = getHistoryType(n.detalle);
                   const typeConfig = {
                     CREACION: { color: 'indigo', icon: 'star', label: 'Apertura de Registro' },
+                    NUEVA_VERSION: { color: 'indigo', icon: 'star', label: 'NUEVA VERSION REGISTRO' },
+                    COPIA_REGISTRO: { color: 'indigo', icon: 'star', label: 'COPIA REGISTRO' },
                     SEGUIMIENTO: { color: 'amber', icon: 'message-square', label: 'Seguimiento Comercial' },
                     ADJUNTOS: { color: 'emerald', icon: 'paperclip', label: 'Gestión de Archivos' },
                     SISTEMA: { color: 'slate', icon: 'settings', label: 'Actividad del Sistema' },
@@ -11225,7 +11302,8 @@ const SortableItemRow = ({
   activeEditField,
   handleTriggerCreateProduct,
   renderInlineProductCreateForm,
-  ocultarTotales
+  ocultarTotales,
+  numReg
 }) => {
   const {
     attributes,

@@ -15,7 +15,6 @@ from .models import (
     alm_articulos,
     ObjetivoAnual,
     ObjetivoAnualArea, 
-    Notificacion,
     vc_tab_notas,
     vc_mov_orden,
 )
@@ -718,10 +717,7 @@ class CotizacionAutocompleteSerializer(serializers.ModelSerializer):
             return obj.id_tecnico.dni
         return ""
 
-class NotificacionSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Notificacion
-        fields = "__all__"
+# (NotificacionSerializer se movió a su propio módulo de notificaciones)
 
 #========================================================================================
 

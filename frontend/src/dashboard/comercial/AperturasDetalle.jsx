@@ -3,13 +3,14 @@ import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
 import * as LucideIcons from 'lucide-react';
 import api from '@/services/api';
-import { toast } from 'react-toastify';
+import { toast } from '@/utils/toast';
 import DatePicker, { registerLocale } from "react-datepicker";
 import es from 'date-fns/locale/es';
 import "react-datepicker/dist/react-datepicker.css";
 import { cn } from "@/lib/utils";
 import { useCotizacionSuministros } from '@/hook/useCotizacionSuministros';
 import { useCotizacionServicios } from '@/hook/useCotizacionServicios';
+import { useCotizacionAcciones } from '@/hook/useCotizacionAcciones';
 
 registerLocale('es', es);
 
@@ -317,6 +318,37 @@ export default function AperturasDetalle({ idRegistro }) {
   
   const quoteId = quote.id_registro;
   const currencySymbol = quote.tipo_moneda === 'D' ? '$' : 'S/.';
+
+  // Lógica de acciones globales (Nueva versión, Generar copia, Eliminar)
+  const { eliminarCotizacion } = useCotizacionAcciones(activeIdRegistro);
+
+  const handleConfirmarEliminacionRegistro = () => {
+    toast.error(({ closeToast }) => (
+      <div className="flex flex-col min-w-[340px] overflow-hidden rounded-lg">
+        <div className="flex items-center gap-3 px-4 py-2 bg-rose-50/50 border-b border-rose-100">
+          <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-white shadow-sm border border-rose-100">
+            <Icon name="trash" className="h-3.5 w-3.5 text-rose-600" />
+          </div>
+          <span className="text-[10px] font-black text-gray-800 uppercase tracking-tight">Eliminar Registro Completo</span>
+        </div>
+        <div className="px-4 py-3">
+          <p className="text-[11px] text-gray-600 leading-tight">
+            ¿Estás seguro de que deseas <span className="font-bold text-red-600 underline decoration-red-200 underline-offset-2">eliminar permanentemente</span> este registro completo? Esta acción no se puede deshacer.
+          </p>
+        </div>
+        <div className="flex items-center justify-end gap-3 px-4 pb-3">
+          <button onClick={closeToast} className="whitespace-nowrap text-[9px] font-black text-gray-400 hover:text-gray-600 uppercase tracking-widest transition-colors">Cancelar</button>
+          <button
+            onClick={() => { eliminarCotizacion.mutate(); closeToast(); }}
+            className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white text-[9px] font-black rounded-xl uppercase shadow-md shadow-red-200 hover:bg-red-700 transition-all active:scale-95 whitespace-nowrap"
+          >
+            <span>Confirmar Eliminación</span>
+            <Icon name="trash" className="h-3 w-3 opacity-70" />
+          </button>
+        </div>
+      </div>
+    ), { position: "top-right", autoClose: false, closeOnClick: false, draggable: false, icon: false, className: "p-0 rounded-2xl border border-gray-100 shadow-2xl overflow-hidden !w-max !max-w-[400px]" });
+  };
 
   // Cargar suministros y servicios de la cotización
   const { gruposSuministros, handleEliminarItem: handleEliminarItemSuministro } = useCotizacionSuministros(
@@ -2123,10 +2155,15 @@ export default function AperturasDetalle({ idRegistro }) {
           </button>
 
           <button
-            onClick={() => handleConfirmarEliminacion(visibleAperturas[0]?.id_apertura || aperturas[0]?.id_apertura)}
-            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-red-50/50 border border-red-200 rounded-xl text-[10px] font-black text-red-700 hover:bg-red-100/50 hover:border-red-300 hover:shadow-md transition-all h-[42px] uppercase group"
+            onClick={handleConfirmarEliminacionRegistro}
+            disabled={eliminarCotizacion.isPending}
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-red-50/50 border border-red-200 rounded-xl text-[10px] font-black text-red-700 hover:bg-red-100/50 hover:border-red-300 hover:shadow-md transition-all h-[42px] uppercase group disabled:opacity-50"
           >
-            <Icon name="trash-2" className="h-3.5 w-3.5 text-red-600 group-hover:scale-110 transition-transform" />
+            {eliminarCotizacion.isPending ? (
+              <div className="h-3.5 w-3.5 mr-2 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <Icon name="trash-2" className="h-3.5 w-3.5 text-red-600 group-hover:scale-110 transition-transform" />
+            )}
             Eliminar
           </button>
         </div>

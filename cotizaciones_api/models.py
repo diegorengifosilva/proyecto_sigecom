@@ -466,39 +466,7 @@ class CotizacionApertura(models.Model):
 
 #========================================================================================
 
-##================##
-## NOTIFICACIONES ##
-##================##
-class Notificacion(models.Model):
-
-    TIPO_CHOICES = (
-        ("urgente", "Urgente"),
-        ("atencion", "Atención"),
-        ("informativo", "Informativo"),
-    )
-
-    usuario = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="notificaciones"
-    )
-
-    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES)
-
-    titulo = models.CharField(max_length=255)
-    descripcion = models.TextField()
-
-    cantidad = models.IntegerField(default=0)
-
-    leido = models.BooleanField(default=False)
-
-    fecha = models.DateTimeField(auto_now_add=True)
-
-    # Para futuro ML
-    metadata = models.JSONField(blank=True, null=True)
-
-    class Meta:
-        ordering = ["-fecha"]
+# (El modelo Notificacion se trasladó a su propia app de notificaciones_api)
 
 #========================================================================================
 

@@ -36,6 +36,8 @@ INSTALLED_APPS = [
     'core',
     'cotizaciones_api',
     'logistica_api',
+    'dashboard_api',
+    'notificaciones_api',
     'rest_framework',
     'rest_framework_simplejwt',
     'corsheaders',

@@ -5,7 +5,7 @@ export default function useTendencias(anno) {
   const [data, setData] = useState(null);
 
   useEffect(() => {
-    api.get(`/dashboard/tendencias/?anno=${anno}`)
+    api.get(`dashboard/tendencias/?anno=${anno}`)
       .then(res => setData(res.data))
       .catch(console.error);
   }, [anno]);

@@ -71,20 +71,9 @@ urlpatterns = [
     path("<str:num_reg>/descuento/", views.descuento_cotizacion, name="obtener_descuento_cotizacion"),
 
     # OBJETIVOS
-    path("dashboard/objetivos/", views.objetivos_anuales, name="objetivos_anuales"),
-    path("dashboard/logrado/", views.logrado_dashboard, name="logrado_dashboard"),
-    path("dashboard/kpis/", views.kpis_dashboard, name="kpis_dashboard"),
-    path("dashboard/tendencias/", views.tendencias_dashboard, name="tendencias_dashboard"),
-    path("dashboard/analisis/", views.cotizaciones_analisis_view, name="cotizaciones-analisis"),
 
-    # NOTIFICACIONES
-    path("notificaciones/", views.notificaciones_usuario, name="notificaciones_usuario"),
-    path("notificaciones/<int:pk>/marcar/", views.marcar_notificacion, name="marcar_notificacion"),
-    path("notificaciones/marcar-todas/", views.marcar_todas_notificaciones, name="marcar_todas_notificaciones"),
-    path("notificaciones/no-leidas/", views.notificaciones_no_leidas, name="notificaciones_no_leidas"),
 
-    # ALERTAS
-    path("alertas/generar/", views.generar_alertas, name="generar_alertas"),
+    # (Las rutas de notificaciones se trasladaron a su propio módulo api/notificaciones/)
 
     # DB_VC
     path("alm-articulos/", views.lista_alm_articulos, name="lista_alm_articulos"),
