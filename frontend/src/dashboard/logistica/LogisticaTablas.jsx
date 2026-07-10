@@ -49,7 +49,7 @@ export default function LogisticaTablas() {
 
   // Paginación server-side exclusiva para Productos
   const [prodPage, setProdPage]             = useState(1);
-  const [prodPageSize]                       = useState(50);
+  const [prodPageSize]                       = useState(10);
   const [prodTotalPages, setProdTotalPages] = useState(1);
   const [prodTotal, setProdTotal]           = useState(0);
   const [prodSearch, setProdSearch]         = useState("");
