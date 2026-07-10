@@ -27,6 +27,9 @@ export default function LogisticaTablas() {
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Control de qué tabs ya han sido cargadas (lazy loading)
+  const [tabsLoaded, setTabsLoaded] = useState({ proveedores: false, almacenes: false, grupo_analitico: false, centros_costo: false, documentos: false });
+
   // Estados de datos
   const [proveedores, setProveedores] = useState([]);
   const [almacenes, setAlmacenes] = useState([]);
@@ -40,9 +43,17 @@ export default function LogisticaTablas() {
   const [marcas, setMarcas] = useState([]);
   const [unidadesMedida, setUnidadesMedida] = useState([]);
 
-  // Paginación
+  // Paginación general (otras tabs)
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
+
+  // Paginación server-side exclusiva para Productos
+  const [prodPage, setProdPage]             = useState(1);
+  const [prodPageSize]                       = useState(50);
+  const [prodTotalPages, setProdTotalPages] = useState(1);
+  const [prodTotal, setProdTotal]           = useState(0);
+  const [prodSearch, setProdSearch]         = useState("");
+  const [prodLoading, setProdLoading]       = useState(false);
 
   // Estados de Modales
   const [showModal, setShowModal] = useState(false);
@@ -56,132 +67,144 @@ export default function LogisticaTablas() {
   // Formulario Dinámico
   const [formData, setFormData] = useState({});
 
-  // Cargar datos por defecto y de APIs
+  // Al montar: solo carga datos de soporte livianos (marcas, medidas, usuarios)
   useEffect(() => {
-    fetchData();
+    fetchSupportData();
   }, []);
 
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      // Cargar TODO en paralelo simultáneamente para máxima velocidad
-      const [
-        resUsers, resBrands, resMeasures,
-        resProv, resAlm, resProd,
-        resGrupo, resCC, resDoc
-      ] = await Promise.all([
-        api.get("logistica/usuarios/?limit=500").catch(e => { console.warn("[usuarios] err:", e?.response?.status); return null; }),
-        api.get("core/tipo_marca/").catch(e => { console.warn("[tipo_marca] err:", e?.response?.status); return null; }),
-        api.get("core/unidades_medida/").catch(e => { console.warn("[unidades_medida] err:", e?.response?.status); return null; }),
-        api.get("core/clientes/").catch(e => { console.warn("[clientes] err:", e?.response?.status); return null; }),
-        api.get("logistica/dashboard/almacenes/").catch(e => { console.warn("[almacenes] err:", e?.response?.status); return null; }),
-        api.get("core/productos/").catch(e => { console.warn("[productos] err:", e?.response?.status); return null; }),
-        api.get("logistica/grupos-analiticos/").catch(e => { console.warn("[grupos] err:", e?.response?.status); return null; }),
-        api.get("logistica/centros-costo/").catch(e => { console.warn("[centros-costo] err:", e?.response?.status); return null; }),
-        api.get("logistica/documentos/").catch(e => { console.warn("[documentos] err:", e?.response?.status); return null; }),
-      ]);
+  // Lazy: cargar datos de la pestaña activa la primera vez que se abre
+  useEffect(() => {
+    if (activeTab === "productos") {
+      // Productos siempre recarga al cambiar página/búsqueda
+      fetchProductos(prodPage, prodSearch);
+    } else if (!tabsLoaded[activeTab]) {
+      fetchTabData(activeTab);
+    }
+  }, [activeTab, prodPage, prodSearch]);
 
-      // Listas de apoyo relacionales
-      const usersData = (resUsers && Array.isArray(resUsers.data)) ? resUsers.data : [];
-      if (usersData.length) setUsuarios(usersData);
+  const fetchProductos = async (page = 1, search = "") => {
+    setProdLoading(true);
+    try {
+      const params = new URLSearchParams({ page, page_size: prodPageSize });
+      if (search.trim()) params.append("search", search.trim());
+      const res = await api.get(`core/productos/?${params.toString()}`);
+      const resData = res?.data || {};
+      const list = Array.isArray(resData.data) ? resData.data : [];
+      setProductos(list.map(p => ({
+        id_producto:    p.id_producto,
+        codigo:         p.codigo || "",
+        codigo2:        p.codigo2 || "",
+        nombre:         p.nombre || "Sin Nombre",
+        id_marca:       p.id_marca,
+        marca_nombre:   p.marca_nombre || "Genérico",
+        id_medida:      p.id_medida,
+        medida_nombre:  p.medida_nombre || "UND",
+        contenido_valor: p.contenido_valor || 1.0,
+        descripcion:    p.descripcion || "",
+        precio_soles:   p.precio_soles || 0,
+        precio_dolares: p.precio_dolares || 0,
+        cantidad:       p.cantidad || 0,
+        stock_min:      p.stock_min || 0,
+        stock_max:      p.stock_max || 0,
+        descuento:      p.descuento || 0,
+        proveedor:      p.proveedor || "",
+        estado:         p.activo !== 0 ? "ACTIVO" : "INACTIVO",
+      })));
+      setProdTotal(resData.total || 0);
+      setProdTotalPages(resData.total_pages || 1);
+    } catch (e) {
+      console.warn("[productos server-side] err:", e?.response?.status);
+      setProductos([]);
+    } finally {
+      setProdLoading(false);
+    }
+  };
+
+  // Carga SOLO datos de soporte livianos al montar (NO hace queries pesadas)
+  const fetchSupportData = async () => {
+    try {
+      const [resUsers, resBrands, resMeasures] = await Promise.all([
+        api.get("logistica/usuarios/?limit=500").catch(() => null),
+        api.get("core/tipo_marca/").catch(() => null),
+        api.get("core/unidades_medida/").catch(() => null),
+      ]);
+      if (resUsers && Array.isArray(resUsers.data)) setUsuarios(resUsers.data);
       if (resBrands && Array.isArray(resBrands.data)) setMarcas(resBrands.data);
       if (resMeasures && Array.isArray(resMeasures.data)) setUnidadesMedida(resMeasures.data);
-
-      // 1. Proveedores
-      if (resProv && Array.isArray(resProv.data) && resProv.data.length > 0) {
-        setProveedores(resProv.data.map(p => ({
-          id_cliente: p.id_cliente,
-          codigo: p.id_cliente_formateado || String(p.id_cliente).padStart(5, "0"),
-          nombre: p.nombre || "Sin Nombre",
-          ruc: p.ruc || "",
-          direccion: p.direccion || "",
-          representante_legal: p.representante_legal || "",
-          pagina_web: p.pagina_web || "",
-          estado: p.activo ? "ACTIVO" : "INACTIVO"
-        })));
-      } else {
-        setProveedores([]);
-      }
-
-      // 2. Almacenes
-      if (resAlm && Array.isArray(resAlm.data)) {
-        setAlmacenes(resAlm.data.map(a => ({
-          idalmacen: a.idalmacen,
-          nombre: a.nombre || "Sin Nombre",
-          direccion: a.direccion || "",
-          usuario_id_usuario: Number(a.usuario_id_usuario),
-          responsable: usersData.find(u => Number(u.id_usuario) === Number(a.usuario_id_usuario))?.nombre || `Responsable #${a.usuario_id_usuario}`,
-          activo: a.activo,
-          estado: (a.activo === "1" || a.activo === 1) ? "ACTIVO" : "INACTIVO"
-        })));
-      } else {
-        setAlmacenes([]);
-      }
-
-      // 3. Productos
-      const prodList = resProd && Array.isArray(resProd.data) ? resProd.data : (resProd?.data?.data || []);
-      if (Array.isArray(prodList) && prodList.length > 0) {
-        setProductos(prodList.map(p => ({
-          id_producto: p.id_producto,
-          codigo: p.codigo || "",
-          codigo2: p.codigo2 || "",
-          nombre: p.nombre || "Sin Nombre",
-          id_marca: p.id_marca,
-          marca_nombre: p.marca_nombre || "Genérico",
-          id_medida: p.id_medida,
-          medida_nombre: p.medida_nombre || "UND",
-          contenido_valor: p.contenido_valor || 1.0,
-          descripcion: p.descripcion || "",
-          precio_soles: p.precio_soles || 0.00,
-          precio_dolares: p.precio_dolares || 0.00,
-          cantidad: p.cantidad || 0,
-          stock_min: p.stock_min || 0,
-          stock_max: p.stock_max || 0,
-          descuento: p.descuento || 0.00,
-          proveedor: p.proveedor || "",
-          estado: p.activo !== 0 ? "ACTIVO" : "INACTIVO"
-        })));
-      } else {
-        setProductos([]);
-      }
-
-      // 4. Grupo Analítico
-      if (resGrupo && Array.isArray(resGrupo.data)) {
-        setGrupoAnalitico(resGrupo.data.map(g => ({
-          idgrupo: g.idgrupo,
-          descripcion: g.descripcion || "",
-          estado: g.activo === "1" ? "ACTIVO" : "INACTIVO"
-        })));
-      } else {
-        setGrupoAnalitico([]);
-      }
-
-      // 5. Centros de Costo
-      if (resCC && Array.isArray(resCC.data)) {
-        setCentrosCosto(resCC.data.map(c => ({
-          idcosto_almacen: c.idcosto_almacen,
-          codigo: c.codigo || "",
-          descripcion: c.descripcion || "",
-          estado: c.activo === "1" ? "ACTIVO" : "INACTIVO"
-        })));
-      } else {
-        setCentrosCosto([]);
-      }
-
-      // 6. Documentos Almacén
-      if (resDoc && Array.isArray(resDoc.data)) {
-        setDocumentos(resDoc.data.map(d => ({
-          iddocumento_almacen: d.iddocumento_almacen,
-          descripcion: d.descripcion || "",
-          estado: d.activo === "1" ? "ACTIVO" : "INACTIVO"
-        })));
-      } else {
-        setDocumentos([]);
-      }
-
     } catch (e) {
-      console.error("Error al cargar maestros", e);
-      toast.error("Error cargando algunos datos maestros");
+      console.warn("[support data] err:", e);
+    }
+  };
+
+  // Carga los datos de una pestaña específica (lazy, solo la primera vez)
+  const fetchTabData = async (tab) => {
+    setLoading(true);
+    try {
+      if (tab === "proveedores") {
+        const res = await api.get("core/clientes/").catch(() => null);
+        if (res && Array.isArray(res.data)) {
+          setProveedores(res.data.map(p => ({
+            id_cliente: p.id_cliente,
+            codigo: p.id_cliente_formateado || String(p.id_cliente).padStart(5, "0"),
+            nombre: p.nombre || "Sin Nombre",
+            ruc: p.ruc || "",
+            direccion: p.direccion || "",
+            representante_legal: p.representante_legal || "",
+            pagina_web: p.pagina_web || "",
+            estado: p.activo ? "ACTIVO" : "INACTIVO"
+          })));
+        }
+      } else if (tab === "almacenes") {
+        const [resAlm, resUsers] = await Promise.all([
+          api.get("logistica/dashboard/almacenes/").catch(() => null),
+          api.get("logistica/usuarios/?limit=500").catch(() => null),
+        ]);
+        const usersData = (resUsers && Array.isArray(resUsers.data)) ? resUsers.data : usuarios;
+        if (resAlm && Array.isArray(resAlm.data)) {
+          setAlmacenes(resAlm.data.map(a => ({
+            idalmacen: a.idalmacen,
+            nombre: a.nombre || "Sin Nombre",
+            direccion: a.direccion || "",
+            usuario_id_usuario: Number(a.usuario_id_usuario),
+            responsable: usersData.find(u => Number(u.id_usuario) === Number(a.usuario_id_usuario))?.nombre || `Responsable #${a.usuario_id_usuario}`,
+            activo: a.activo,
+            estado: (a.activo === "1" || a.activo === 1) ? "ACTIVO" : "INACTIVO"
+          })));
+        }
+      } else if (tab === "grupo_analitico") {
+        const res = await api.get("logistica/grupos-analiticos/").catch(() => null);
+        if (res && Array.isArray(res.data)) {
+          setGrupoAnalitico(res.data.map(g => ({
+            idgrupo: g.idgrupo,
+            descripcion: g.descripcion || "",
+            estado: g.activo === "1" ? "ACTIVO" : "INACTIVO"
+          })));
+        }
+      } else if (tab === "centros_costo") {
+        const res = await api.get("logistica/centros-costo/").catch(() => null);
+        if (res && Array.isArray(res.data)) {
+          setCentrosCosto(res.data.map(c => ({
+            idcosto_almacen: c.idcosto_almacen,
+            codigo: c.codigo || "",
+            descripcion: c.descripcion || "",
+            estado: c.activo === "1" ? "ACTIVO" : "INACTIVO"
+          })));
+        }
+      } else if (tab === "documentos") {
+        const res = await api.get("logistica/documentos/").catch(() => null);
+        if (res && Array.isArray(res.data)) {
+          setDocumentos(res.data.map(d => ({
+            iddocumento_almacen: d.iddocumento_almacen,
+            descripcion: d.descripcion || "",
+            estado: d.activo === "1" ? "ACTIVO" : "INACTIVO"
+          })));
+        }
+      }
+      // Marcar pestaña como cargada
+      setTabsLoaded(prev => ({ ...prev, [tab]: true }));
+    } catch (e) {
+      console.error(`[tab ${tab}] err:`, e);
+      toast.error("Error cargando datos");
     } finally {
       setLoading(false);
     }
@@ -792,6 +815,10 @@ export default function LogisticaTablas() {
                 setActiveTab(tab.id);
                 setSearchQuery("");
                 setCurrentPage(1);
+                if (tab.id === "productos") {
+                  setProdPage(1);
+                  setProdSearch("");
+                }
               }}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${
                 activeTab === tab.id
@@ -819,18 +846,28 @@ export default function LogisticaTablas() {
               <input
                 type="text"
                 placeholder={`Buscar en ${TABS.find(t => t.id === activeTab)?.label}...`}
-                value={searchQuery}
+                value={activeTab === "productos" ? prodSearch : searchQuery}
                 onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setCurrentPage(1);
+                  if (activeTab === "productos") {
+                    setProdSearch(e.target.value);
+                    setProdPage(1);
+                  } else {
+                    setSearchQuery(e.target.value);
+                    setCurrentPage(1);
+                  }
                 }}
                 className="w-full pl-9 pr-8 py-2 text-xs font-semibold border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all bg-gray-50/50"
               />
-              {searchQuery && (
+              {(activeTab === "productos" ? prodSearch : searchQuery) && (
                 <button
                   onClick={() => {
-                    setSearchQuery("");
-                    setCurrentPage(1);
+                    if (activeTab === "productos") {
+                      setProdSearch("");
+                      setProdPage(1);
+                    } else {
+                      setSearchQuery("");
+                      setCurrentPage(1);
+                    }
                   }}
                   className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 transition-colors"
                   title="Limpiar búsqueda"
@@ -839,11 +876,11 @@ export default function LogisticaTablas() {
                 </button>
               )}
             </div>
-            {searchQuery && (
+            {(activeTab === "productos" ? prodSearch : searchQuery) && (
               <button
                 onClick={() => {
-                  setSearchQuery("");
-                  setCurrentPage(1);
+                  if (activeTab === "productos") { setProdSearch(""); setProdPage(1); }
+                  else { setSearchQuery(""); setCurrentPage(1); }
                 }}
                 className="px-3 py-1.5 text-xs font-bold text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 border border-gray-200 rounded-xl transition-all whitespace-nowrap"
               >
@@ -882,12 +919,12 @@ export default function LogisticaTablas() {
 
         {/* Tabla */}
         <div className="overflow-x-auto min-h-[300px]">
-          {loading ? (
+          {(activeTab === "productos" ? prodLoading : loading) ? (
             <div className="flex flex-col items-center justify-center py-20 text-gray-400 space-y-2">
               <Loader className="animate-spin text-indigo-600" size={24} />
               <span className="text-xs font-bold uppercase tracking-widest">Cargando datos...</span>
             </div>
-          ) : getFilteredData().length === 0 ? (
+          ) : (activeTab === "productos" ? productos : getFilteredData()).length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-gray-400 space-y-2">
               <ShieldAlert size={32} className="text-amber-500" />
               <span className="text-xs font-bold uppercase tracking-widest">No se encontraron registros</span>
@@ -952,12 +989,13 @@ export default function LogisticaTablas() {
                 </thead>
                 <tbody className="divide-y divide-gray-100 text-xs font-semibold text-gray-700">
                   {(() => {
-                    const filteredData = getFilteredData();
-                    const totalItems = filteredData.length;
-                    const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
-                    const indexOfLastItem = currentPage * itemsPerPage;
-                    const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-                    const currentItems = filteredData.slice(indexOfFirstItem, indexOfLastItem);
+                    const isProductos = activeTab === "productos";
+                    const filteredData = isProductos ? productos : getFilteredData();
+                    const totalItems = isProductos ? prodTotal : filteredData.length;
+                    const totalPages = isProductos ? prodTotalPages : (Math.ceil(totalItems / itemsPerPage) || 1);
+                    const indexOfLastItem = isProductos ? prodPage * prodPageSize : currentPage * itemsPerPage;
+                    const indexOfFirstItem = isProductos ? (prodPage - 1) * prodPageSize : (currentPage - 1) * itemsPerPage;
+                    const currentItems = isProductos ? filteredData : filteredData.slice(indexOfFirstItem, indexOfLastItem);
 
                     return currentItems.map((item, idx) => {
                       const isItemActive = item.estado === "ACTIVO";
@@ -1058,54 +1096,58 @@ export default function LogisticaTablas() {
 
               {/* Controles de Paginación */}
               {(() => {
-                const filteredData = getFilteredData();
-                const totalItems = filteredData.length;
-                const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
-                const indexOfLastItem = currentPage * itemsPerPage;
-                const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+                const isProductos = activeTab === "productos";
+                const filteredData = isProductos ? productos : getFilteredData();
+                const totalItems = isProductos ? prodTotal : filteredData.length;
+                const totalPages = isProductos ? prodTotalPages : (Math.ceil(totalItems / itemsPerPage) || 1);
+                const activePage = isProductos ? prodPage : currentPage;
+                const pageSize   = isProductos ? prodPageSize : itemsPerPage;
+                const indexOfFirstItem = (activePage - 1) * pageSize;
+                const indexOfLastItem  = Math.min(activePage * pageSize, totalItems);
+                const setPage = isProductos
+                  ? (p) => setProdPage(p)
+                  : (p) => setCurrentPage(p);
 
                 return (
                   <div className="px-6 py-4 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-3 bg-gray-50/50 rounded-b-xl">
                     <span className="text-xs font-semibold text-gray-500">
                       Mostrando <span className="font-bold text-gray-700">{indexOfFirstItem + 1}</span> a{" "}
-                      <span className="font-bold text-gray-700">
-                        {Math.min(indexOfLastItem, totalItems)}
-                      </span>{" "}
-                      de <span className="font-bold text-gray-700">{totalItems}</span> registros
+                      <span className="font-bold text-gray-700">{indexOfLastItem}</span>{" "}
+                      de <span className="font-bold text-gray-700">{totalItems.toLocaleString()}</span> registros
                     </span>
 
                     <div className="flex items-center gap-1.5">
                       <button
-                        onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                        disabled={currentPage === 1}
+                        onClick={() => setPage(Math.max(activePage - 1, 1))}
+                        disabled={activePage === 1}
                         className="px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:pointer-events-none transition-all"
                       >
                         Anterior
                       </button>
 
                       {Array.from({ length: totalPages }, (_, i) => i + 1)
-                        .filter(page => page === 1 || page === totalPages || Math.abs(page - currentPage) <= 1)
-                        .map((page, index, array) => (
-                          <React.Fragment key={page}>
-                            {index > 0 && array[index - 1] !== page - 1 && (
+                        .filter(p => p === 1 || p === totalPages || Math.abs(p - activePage) <= 1)
+                        .map((p, index, array) => (
+                          <React.Fragment key={p}>
+                            {index > 0 && array[index - 1] !== p - 1 && (
                               <span className="text-gray-400 text-xs">...</span>
                             )}
                             <button
-                              onClick={() => setCurrentPage(page)}
+                              onClick={() => setPage(p)}
                               className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                                currentPage === page
+                                activePage === p
                                   ? "bg-indigo-600 text-white shadow-sm"
                                   : "border border-gray-200 bg-white hover:bg-gray-50 text-gray-700"
                               }`}
                             >
-                              {page}
+                              {p}
                             </button>
                           </React.Fragment>
                         ))}
 
                       <button
-                        onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                        disabled={currentPage === totalPages}
+                        onClick={() => setPage(Math.min(activePage + 1, totalPages))}
+                        disabled={activePage === totalPages}
                         className="px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:pointer-events-none transition-all"
                       >
                         Siguiente

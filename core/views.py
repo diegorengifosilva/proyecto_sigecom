@@ -509,33 +509,48 @@ def lista_tgasto_detalle(request):
 def lista_productos(request):
     """
     Lista todos los productos activos o crea uno nuevo.
-    Soporta búsqueda opcional mediante el parámetro 'search' e 'id_marca'.
+    GET params:
+      - search    : busca en nombre, codigo, codigo2
+      - id_marca  : filtra por marca
+      - page      : número de página (default 1)
+      - page_size : tamaño de página (default 50, max 200)
     """
     if request.method == "GET":
         try:
-            search = request.query_params.get('search', None)
-            id_marca = request.query_params.get('id_marca', None)
-            
+            search    = request.query_params.get('search', None)
+            id_marca  = request.query_params.get('id_marca', None)
+            page      = int(request.query_params.get('page', 1))
+            page_size = min(int(request.query_params.get('page_size', 50)), 200)
+
+            if page < 1:
+                page = 1
+
             # Optimizamos con select_related para traer marca y unidad de medida
             productos = Producto.objects.select_related('id_marca', 'id_medida').filter(activo=1)
-            
+
             if id_marca:
                 productos = productos.filter(id_marca=id_marca)
-                
+
             if search:
                 productos = productos.filter(
-                    Q(nombre__icontains=search) | 
-                    Q(codigo__icontains=search)
+                    Q(nombre__icontains=search) |
+                    Q(codigo__icontains=search)  |
+                    Q(codigo2__icontains=search)
                 )
-            
-            # Limitamos a los primeros 100 para no saturar si no hay búsqueda
-            if not search:
-                productos = productos[:100]
+
+            total       = productos.count()
+            total_pages = max(1, (total + page_size - 1) // page_size)
+            offset      = (page - 1) * page_size
+            productos   = productos.order_by('nombre')[offset: offset + page_size]
 
             serializer = ProductoSerializer(productos, many=True)
             return Response({
-                "ok": True,
-                "data": serializer.data
+                "ok":          True,
+                "data":        serializer.data,
+                "total":       total,
+                "page":        page,
+                "page_size":   page_size,
+                "total_pages": total_pages,
             })
             
         except Exception as e:
