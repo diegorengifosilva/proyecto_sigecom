@@ -671,6 +671,8 @@ const EditableGroupRow = ({
   renderInlineProductCreateForm,
   handleTriggerCreatePersonal,
   renderInlinePersonalCreateForm,
+  handleTriggerCreateGasto,
+  renderInlineGastoCreateForm,
   ocultarTotalesMap = {},
   idRegistro = null
 }) => {
@@ -1556,7 +1558,7 @@ const EditableGroupRow = ({
                               <TipoPersonalAutocomplete
                                 value={newManoObraItem.codigo_item || ""}
                                 idArea={idArea}
-                                idRegistro={numReg}
+                                idRegistro={idRegistro}
                                 catalogoVersion={catalogoVersion}
                                 onTriggerCreatePersonal={(name) => handleTriggerCreatePersonal(name, 'new', handlePersonalCreatedLocal, handlePersonalCancelLocal)}
                                 onKeyDown={(e) => {
@@ -1830,7 +1832,7 @@ const EditableGroupRow = ({
                               <TipoGastoDetalleAutocomplete
                                 value={newGastosServicioItem.codigo_item || ""}
                                 codePrefix="05"
-                                idRegistro={numReg}
+                                idRegistro={idRegistro}
                                 onTriggerCreateGasto={(name) => handleTriggerCreateGasto(name, 'new', '05', handleGastoCreatedLocal, handleGastoCancelLocal)}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') {
@@ -2042,7 +2044,7 @@ const EditableGroupRow = ({
                               <TipoGastoDetalleAutocomplete
                                 value={newOtrosItem.codigo_item || ""}
                                 codePrefix="06"
-                                idRegistro={numReg}
+                                idRegistro={idRegistro}
                                 onTriggerCreateGasto={(name) => handleTriggerCreateGasto(name, 'new', '06', handleGastoCreatedLocal, handleGastoCancelLocal)}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') {
@@ -8916,6 +8918,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                       setUnidadesMedida={setUnidadesMedida}
                       handleTriggerCreatePersonal={handleTriggerCreatePersonal}
                       renderInlinePersonalCreateForm={renderInlinePersonalCreateForm}
+                      handleTriggerCreateGasto={handleTriggerCreateGasto}
+                      renderInlineGastoCreateForm={renderInlineGastoCreateForm}
                       ocultarTotalesMap={ocultarTotalesMap}
                       idRegistro={numReg}
                     />

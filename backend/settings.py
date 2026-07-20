@@ -135,6 +135,19 @@ DATABASES = {
             "conv": dict_conv,
             "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
         },
+    },
+    "legacy": {
+        "ENGINE": "django.db.backends.mysql",
+        "NAME": "backup_actual",
+        "USER": "admin",
+        "PASSWORD": "270509",
+        "HOST": "127.0.0.1",
+        "PORT": "3306",
+        "OPTIONS": {
+            "charset": "utf8mb4",
+            "conv": dict_conv,
+            "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
+        },
     }
 }
 

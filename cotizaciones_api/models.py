@@ -91,6 +91,7 @@ class Cotizacion(models.Model):
     )
     id_area = models.IntegerField(null=True, blank=True) # Relación con tabla área
     estado_envio = models.IntegerField(null=True, blank=True) # 0 o 1
+    sincronizado_old_db = models.IntegerField(default=0, db_column='sincronizado_old_db')
 
     # ── DESCUENTOS ─────────────────────────────
     descuento_aplica = models.IntegerField(default=0) # 0=No, 1=Si
