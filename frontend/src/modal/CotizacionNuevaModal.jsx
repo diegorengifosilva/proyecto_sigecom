@@ -137,7 +137,8 @@ export default function CotizacionNuevaModal({ open, onClose, cotizacion, modo, 
     tot_d: "D",
     tot_s: "D",
     tmone: "D",
-    tcamb: "3.362",
+    tcamb: "3.398",
+    tipo_cambio: "3.398",
     acu_s: "D",
     nombc: "",
     telec: "",
@@ -515,14 +516,22 @@ export default function CotizacionNuevaModal({ open, onClose, cotizacion, modo, 
         });
 
         try {
-          // Cargamos en paralelo los defaults del backend
-          const [usuarioRes, numRegRes] = await Promise.allSettled([
+          // Cargamos en paralelo los defaults del backend y el tipo de cambio actual de la SUNAT
+          const [usuarioRes, numRegRes, sunatRes] = await Promise.allSettled([
             api.get("users/usuario-actual/"),
-            api.get("cotizaciones/siguiente_num_reg_oportunidad/")
+            api.get("cotizaciones/siguiente_num_reg_oportunidad/"),
+            api.get("cotizaciones/tipo-cambio-sunat/")
           ]);
 
           const usuario = usuarioRes.status === "fulfilled" ? usuarioRes.value.data : null;
           const numRegData = numRegRes.status === "fulfilled" ? numRegRes.value.data : null;
+
+          let rateValue = "3.362";
+          if (sunatRes.status === "fulfilled" && sunatRes.value?.data) {
+            const compraRate = sunatRes.value.data.compra;
+            rateValue = Number(compraRate).toFixed(3);
+            console.log("💵 Tipo de cambio SUNAT PEN obtenido del backend:", rateValue);
+          }
 
           if (usuario) {
             defaultComercialRef.current = {
@@ -558,6 +567,8 @@ export default function CotizacionNuevaModal({ open, onClose, cotizacion, modo, 
             codic: isAllowedComercial ? (usuario?.dni ?? prev.codic ?? "") : "",
             codco: isAllowedComercial ? (usuario?.dni ?? prev.codco ?? "") : "",
             id_comercial: isAllowedComercial ? (usuario?.id_usuario ?? prev.id_comercial ?? null) : null,
+            tipo_cambio: rateValue,
+            tcamb: rateValue,
           }));
 
           if (isAllowedComercial && usuario?.nombre_completo) {
@@ -1016,7 +1027,9 @@ export default function CotizacionNuevaModal({ open, onClose, cotizacion, modo, 
           cotit: detalles.id_tipo || null,
           area_codigo: detalles.id_area || null,
           tipo_moneda: detalles.tipo_moneda || "D",
-          tipo_cambio: detalles.tipo_cambio || "3.362",
+          tmone: detalles.tipo_moneda || "D",
+          tipo_cambio: prev.tipo_cambio,
+          tcamb: prev.tcamb,
           igv: detalles.igv || "N",
           prob: detalles.probabilidad !== undefined && detalles.probabilidad !== null ? String(detalles.probabilidad) : "0",
           tven: detalles.tipo_venta || "1",
@@ -1060,7 +1073,9 @@ export default function CotizacionNuevaModal({ open, onClose, cotizacion, modo, 
         resetCamposAutocompletar();
       }
     } catch (err) {
-      console.error("Error al obtener detalles de la última cotización para autocompletar:", err);
+      if (err.response?.status !== 404) {
+        console.error("Error al obtener detalles de la última cotización para autocompletar:", err);
+      }
       resetCamposAutocompletar();
     }
   };
@@ -1097,7 +1112,9 @@ export default function CotizacionNuevaModal({ open, onClose, cotizacion, modo, 
       cotit: null,
       area_codigo: null,
       tipo_moneda: "D",
-      tipo_cambio: "3.362",
+      tmone: "D",
+      tipo_cambio: prev.tipo_cambio,
+      tcamb: prev.tcamb,
       igv: "N",
       prob: "0",
       tven: "1",
@@ -1638,8 +1655,8 @@ export default function CotizacionNuevaModal({ open, onClose, cotizacion, modo, 
       tot_c: Number(data.tot_c || 0),
       forma_pago: data.forma_pago || "",
       lugar: data.lugar || "",
-      tmone: data.tmone || "D", // Dólares por defecto
-      tcamb: Number(data.tcamb || 0),
+      tmone: data.tmone || data.tipo_moneda || "D", // Dólares por defecto
+      tcamb: Number(data.tcamb || data.tipo_cambio || 3.362),
       igv: data.igv || "S",
 
       // Tiempos y Validez
@@ -1673,6 +1690,10 @@ export default function CotizacionNuevaModal({ open, onClose, cotizacion, modo, 
 
     const payload = {
       ...data,
+      tipo_moneda: data.tipo_moneda || data.tmone || "D",
+      tipo_cambio: data.tipo_cambio || data.tcamb || "3.362",
+      tmone: data.tipo_moneda || data.tmone || "D",
+      tcamb: data.tipo_cambio || data.tcamb || "3.362",
       //num_reg: nuevoNumOportunidad, // Envio de num_reg para oportunidades
       detalle: {
         ...data.detalle,
@@ -2983,7 +3004,7 @@ export default function CotizacionNuevaModal({ open, onClose, cotizacion, modo, 
                 inline
                 size="sm"
                 label="T.C.:"
-                value={data.tipo_cambio || (esNueva ? "3.425" : "")}
+                value={data.tipo_cambio || (esNueva ? "3.398" : "")}
                 onChange={(e) => handleFieldChange("tipo_cambio", e.target.value)}
                 readOnly={isReadOnly}
                 tabIndex={16}

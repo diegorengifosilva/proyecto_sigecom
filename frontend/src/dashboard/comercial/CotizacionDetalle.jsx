@@ -792,7 +792,7 @@ const EditableGroupRow = ({
   const handlePersonalCreatedLocal = (registro) => {
     const cMin = parseFloat(registro.costo_min || 0);
     const cMax = parseFloat(registro.costo_max || 0);
-    const cAvg = cMin && cMax ? (cMin + cMax) / 2 : (cMax || cMin || 0);
+    const cAvg = Math.round((cMin && cMax ? (cMin + cMax) / 2 : (cMax || cMin || 0)) * 100) / 100;
     setNewManoObraItem(prev => {
       const next = {
         ...prev,
@@ -1586,7 +1586,7 @@ const EditableGroupRow = ({
                                   setNewManoObraItem(prev => {
                                     const cMin = parseFloat(item.costo_min || 0);
                                     const cMax = parseFloat(item.costo_max || 0);
-                                    const cAvg = cMin && cMax ? (cMin + cMax) / 2 : (cMax || cMin || 0);
+                                    const cAvg = Math.round((cMin && cMax ? (cMin + cMax) / 2 : (cMax || cMin || 0)) * 100) / 100;
                                     const next = {
                                       ...prev,
                                       codigo_item: `${item.codigo}-${item.nombre}`,
@@ -2183,9 +2183,9 @@ const EditableGroupRow = ({
                   <table className="min-w-full table-fixed divide-y divide-gray-100">
                     <thead className="bg-slate-100 border-b border-slate-200">
                       <tr>
-                        <th className="w-[3%] py-2"></th>
+                        <th className="w-[1.5%] py-2"></th>
                         <th className={isVenta ? "w-[14%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[15%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Código/Marca</th>
-                        <th className={isVenta ? "w-[25%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[28%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Descripción *</th>
+                        <th className={isVenta ? "w-[26.5%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[29.5%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Descripción *</th>
                         <th className={isVenta ? "w-[6%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[7%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Cantidad</th>
                         <th className={isVenta ? "w-[11%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[12%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Costo Unit.</th>
                         {isVenta && (
@@ -2204,7 +2204,7 @@ const EditableGroupRow = ({
                     <tbody className="divide-y divide-gray-50">
                       {tempItems.map((item) => (
                         <tr key={item.id_temp} className="hover:bg-gray-50/50 transition-colors">
-                          <td className="w-[3%] py-1.5"></td>
+                          <td className="w-[1.5%] py-1.5"></td>
                           <td className="px-4 py-1.5 text-[11px] font-bold text-gray-900 uppercase">
                             <div className="flex flex-col">
                               <span>{item.codigo_item}</span>
@@ -2259,7 +2259,7 @@ const EditableGroupRow = ({
                       ))}
 
                       <tr className="bg-indigo-50/10" onKeyDown={e => handleRowKeyDown(e, handleAddItem)}>
-                        <td className="w-[3%] py-1.5"></td>
+                        <td className="w-[1.5%] py-1.5"></td>
                         {/* P/N o Código / Marca */}
                         <td className="px-4 py-1.5">
                           {canExpand ? (
@@ -5191,6 +5191,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
   // Estado para la edición de Responsables (Comercial y Técnico)
   const [comercialDropdownOpen, setComercialDropdownOpen] = useState(false);
   const [tecnicoDropdownOpen, setTecnicoDropdownOpen] = useState(false);
+  const [comercialSearchQuery, setComercialSearchQuery] = useState("");
+  const [tecnicoSearchQuery, setTecnicoSearchQuery] = useState("");
   const [activeUsersList, setActiveUsersList] = useState([]);
   const [loadingUsersList, setLoadingUsersList] = useState(false);
 
@@ -5208,6 +5210,28 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     }
   };
 
+  const filteredComerciales = activeUsersList
+    .filter(u => ["eduardo.bonilla", "claudia.carbonel", "luisa.oncebay", "diego.rengifo"].includes(u.usuario))
+    .filter(u => {
+      if (!comercialSearchQuery.trim()) return true;
+      const q = comercialSearchQuery.toLowerCase();
+      return (
+        (u.nombre_completo && u.nombre_completo.toLowerCase().includes(q)) ||
+        (u.usuario && u.usuario.toLowerCase().includes(q)) ||
+        (u.dni && u.dni.toLowerCase().includes(q))
+      );
+    });
+
+  const filteredTecnicos = activeUsersList.filter(u => {
+    if (!tecnicoSearchQuery.trim()) return true;
+    const q = tecnicoSearchQuery.toLowerCase();
+    return (
+      (u.nombre_completo && u.nombre_completo.toLowerCase().includes(q)) ||
+      (u.usuario && u.usuario.toLowerCase().includes(q)) ||
+      (u.dni && u.dni.toLowerCase().includes(q))
+    );
+  });
+
   const handleSelectComercial = (user) => {
     const userId = user.id_usuario || user.id || user.dni;
     const updated = {
@@ -5222,6 +5246,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     };
     setData(updated);
     setComercialDropdownOpen(false);
+    setComercialSearchQuery("");
     saveHeaderInstantly(updated);
   };
 
@@ -5239,6 +5264,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     };
     setData(updated);
     setTecnicoDropdownOpen(false);
+    setTecnicoSearchQuery("");
     saveHeaderInstantly(updated);
   };
 
@@ -5905,13 +5931,13 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 {...dndAttributes}
                 data-drag-handle
                 onClick={(e) => e.stopPropagation()}
-                className="cursor-grab active:cursor-grabbing p-1 text-gray-300 hover:text-gray-500 rounded transition-colors"
+                className="cursor-grab active:cursor-grabbing p-0.5 text-gray-300 hover:text-gray-500 rounded transition-colors"
               >
-                <Icon name="grip-vertical" className="h-3.5 w-3.5" />
+                <Icon name="grip-vertical" className="h-3 w-3" />
               </div>
             ) : (
-              <div className="p-1 text-gray-200">
-                <Icon name="grip-vertical" className="h-3.5 w-3.5" />
+              <div className="p-0.5 text-gray-200">
+                <Icon name="grip-vertical" className="h-3 w-3" />
               </div>
             )}
 
@@ -6061,9 +6087,9 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 <table className="min-w-[850px] md:min-w-full table-fixed">
                   <thead className="bg-slate-100 border-b border-slate-200">
                     <tr>
-                      <th className="w-[3%] py-1.5"></th>
+                      <th className="w-[1.5%] py-1.5"></th>
                       <th className={isVenta ? "w-[14%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[15%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Código / Marca</th>
-                      <th className={isVenta ? "w-[25%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[28%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Descripción</th>
+                      <th className={isVenta ? "w-[26.5%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[29.5%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Descripción</th>
                       <th className={isVenta ? "w-[6%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[7%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Cantidad</th>
                       <th className={isVenta ? "w-[11%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[12%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Costo Unit.</th>
                       {isVenta && (
@@ -6604,7 +6630,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     const handlePersonalCreatedQuickLocal = (registro) => {
       const cMin = parseFloat(registro.costo_min || 0);
       const cMax = parseFloat(registro.costo_max || 0);
-      const cAvg = cMin && cMax ? (cMin + cMax) / 2 : (cMax || cMin || 0);
+      const cAvg = Math.round((cMin && cMax ? (cMin + cMax) / 2 : (cMax || cMin || 0)) * 100) / 100;
       setForm({
         codigo_item: `${registro.codigo}-${registro.nombre}`,
         descripcion_item: '',
@@ -6640,8 +6666,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     const handleGastoCancelQuickLocal = () => {};
 
     const gripPlaceholder = (
-      <td className="px-2 text-center align-middle">
-        <Icon name="grip-vertical" className="h-3.5 w-3.5 text-gray-200 mx-auto" />
+      <td className="px-0.5 text-center align-middle">
+        <Icon name="grip-vertical" className="h-3 w-3 text-gray-200 mx-auto" />
       </td>
     );
 
@@ -6683,7 +6709,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 }
                 const cMin = parseFloat(personal.costo_min || 0);
                 const cMax = parseFloat(personal.costo_max || 0);
-                const cAvg = cMin && cMax ? (cMin + cMax) / 2 : (cMax || cMin || 0);
+                const cAvg = Math.round((cMin && cMax ? (cMin + cMax) / 2 : (cMax || cMin || 0)) * 100) / 100;
                 setForm({
                   codigo_item: `${personal.codigo}-${personal.nombre}`,
                   descripcion_item: '',
@@ -7078,13 +7104,13 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 {...dndAttributes}
                 data-drag-handle
                 onClick={(e) => e.stopPropagation()}
-                className="cursor-grab active:cursor-grabbing p-1 text-gray-300 hover:text-gray-500 rounded transition-colors"
+                className="cursor-grab active:cursor-grabbing p-0.5 text-gray-300 hover:text-gray-500 rounded transition-colors"
               >
-                <Icon name="grip-vertical" className="h-3.5 w-3.5" />
+                <Icon name="grip-vertical" className="h-3 w-3" />
               </div>
             ) : (
-              <div className="p-1 text-gray-200">
-                <Icon name="grip-vertical" className="h-3.5 w-3.5" />
+              <div className="p-0.5 text-gray-200">
+                <Icon name="grip-vertical" className="h-3 w-3" />
               </div>
             )}
 
@@ -7295,9 +7321,9 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                                 {sg.tipoCodigo?.endsWith("04") && (
                                   <thead className="bg-slate-100 border-b border-slate-200">
                                     <tr>
-                                      <th className="w-[3%] py-1.5"></th>
+                                      <th className="w-[1.5%] py-1.5"></th>
                                       <th className="w-[14%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Código Personal</th>
-                                      <th className="w-[25%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Descripción</th>
+                                      <th className="w-[26.5%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Descripción</th>
                                       <th className="w-[5%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Cantidad</th>
                                       <th className="w-[5%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Días</th>
                                       <th className="w-[5%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Horas</th>
@@ -7313,9 +7339,9 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                                 {sg.tipoCodigo?.endsWith("05") && (
                                   <thead className="bg-slate-100 border-b border-slate-200">
                                     <tr>
-                                      <th className="w-[3%] py-1.5"></th>
+                                      <th className="w-[1.5%] py-1.5"></th>
                                       <th className="w-[15%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Código Gasto</th>
-                                      <th className="w-[41%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Descripción</th>
+                                      <th className="w-[42.5%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Descripción</th>
                                       <th className="w-[6%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Cantidad</th>
                                       <th className="w-[6%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Días</th>
                                       <th className="w-[9%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Precio</th>
@@ -7328,9 +7354,9 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                                 {sg.tipoCodigo?.endsWith("06") && (
                                   <thead className="bg-slate-100 border-b border-slate-200">
                                     <tr>
-                                      <th className="w-[3%] py-1.5"></th>
+                                      <th className="w-[1.5%] py-1.5"></th>
                                       <th className="w-[15%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Código Gasto</th>
-                                      <th className="w-[32%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Descripción</th>
+                                      <th className="w-[33.5%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Descripción</th>
                                       <th className="w-[6%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Cantidad</th>
                                       <th className="w-[8%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Precio</th>
                                       <th className="w-[10%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Utilidad</th>
@@ -9836,12 +9862,22 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 )}
 
                 {/* Comercial */}
-                <div className={cn(
-                  "group flex flex-col border rounded-xl p-2.5 shadow-sm transition-all duration-300 relative",
-                  data.comercial_nombre
-                    ? "bg-white border-indigo-100 hover:border-indigo-300 hover:shadow-md"
-                    : "bg-gray-50/50 border-gray-200 opacity-80"
-                )}>
+                <div
+                  onDoubleClick={() => {
+                    if (isReadOnly) return;
+                    fetchUsuariosActivos();
+                    setComercialDropdownOpen(prev => !prev);
+                    setTecnicoDropdownOpen(false);
+                  }}
+                  title={!isReadOnly ? "Doble clic para cambiar Responsable Comercial" : undefined}
+                  className={cn(
+                    "group flex flex-col border rounded-xl p-2.5 shadow-sm transition-all duration-300 relative select-none",
+                    !isReadOnly && "cursor-pointer hover:border-indigo-300 hover:shadow-md",
+                    data.comercial_nombre
+                      ? "bg-white border-indigo-100"
+                      : "bg-gray-50/50 border-gray-200 opacity-80"
+                  )}
+                >
                   <div className="flex items-center justify-between mb-1.5">
                     <div className="flex items-center space-x-2">
                       <div className={cn(
@@ -9853,27 +9889,10 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                         data.comercial_nombre ? "text-indigo-500" : "text-gray-500"
                       )}>Comercial</span>
                     </div>
-                    <div className="flex items-center gap-1">
-                      {!isReadOnly && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            fetchUsuariosActivos();
-                            setComercialDropdownOpen(!comercialDropdownOpen);
-                            setTecnicoDropdownOpen(false);
-                          }}
-                          className="p-1 rounded hover:bg-indigo-50 text-indigo-400 hover:text-indigo-600 transition-colors cursor-pointer"
-                          title="Cambiar Responsable Comercial"
-                        >
-                          <Icon name="pencil" className="h-3 w-3" />
-                        </button>
-                      )}
-                      <Icon
-                        name={data.comercial_nombre ? "user-check" : "user-plus"}
-                        className={cn("h-3 w-3 transition-colors", data.comercial_nombre ? "text-indigo-300 group-hover:text-indigo-500" : "text-gray-400")}
-                      />
-                    </div>
+                    <Icon
+                      name={data.comercial_nombre ? "user-check" : "user-plus"}
+                      className={cn("h-3 w-3 transition-colors", data.comercial_nombre ? "text-indigo-300 group-hover:text-indigo-500" : "text-gray-400")}
+                    />
                   </div>
 
                   <div className="flex flex-col space-y-0.5">
@@ -9906,33 +9925,58 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
 
                   {/* Dropdown Selector Comercial */}
                   {comercialDropdownOpen && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-indigo-200 rounded-xl shadow-2xl z-50 p-2 animate-in fade-in slide-in-from-top-1 duration-150 max-w-full">
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="absolute top-full left-0 right-0 mt-1 bg-white border border-indigo-200 rounded-xl shadow-2xl z-50 p-2 animate-in fade-in slide-in-from-top-1 duration-150 max-w-full"
+                    >
                       <div className="text-[9px] font-black text-indigo-600 uppercase tracking-widest px-2 py-1 border-b border-indigo-50 mb-1 flex justify-between items-center">
                         <span>Seleccionar Comercial</span>
-                        <button onClick={() => setComercialDropdownOpen(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+                        <button onClick={() => setComercialDropdownOpen(false)} className="text-gray-400 hover:text-gray-600 font-bold">✕</button>
                       </div>
+
+                      {/* BÚSQUEDA INTERACTIVA */}
+                      <div className="relative mb-2">
+                        <Icon name="search" className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-indigo-400" />
+                        <input
+                          type="text"
+                          autoFocus
+                          placeholder="Buscar comercial (ej. Eduardo)..."
+                          value={comercialSearchQuery}
+                          onChange={(e) => setComercialSearchQuery(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Escape") {
+                              setComercialDropdownOpen(false);
+                            } else if (e.key === "Enter" && filteredComerciales.length > 0) {
+                              e.preventDefault();
+                              handleSelectComercial(filteredComerciales[0]);
+                            }
+                          }}
+                          className="w-full pl-7 pr-2 py-1 bg-indigo-50/50 border border-indigo-100 rounded-lg text-[10px] font-bold text-gray-800 placeholder-gray-400 focus:outline-none focus:border-indigo-300 focus:bg-white"
+                        />
+                      </div>
+
                       <div className="max-h-48 overflow-y-auto space-y-1">
                         {loadingUsersList ? (
                           <div className="p-2 text-center text-xs text-gray-400 animate-pulse">Cargando usuarios...</div>
+                        ) : filteredComerciales.length === 0 ? (
+                          <div className="p-2 text-center text-[10px] text-gray-400 italic">No se encontraron resultados</div>
                         ) : (
-                          activeUsersList
-                            .filter(u => ["eduardo.bonilla", "claudia.carbonel", "luisa.oncebay", "diego.rengifo"].includes(u.usuario) || true)
-                            .map(user => (
-                              <button
-                                key={user.id_usuario || user.dni}
-                                type="button"
-                                onClick={() => handleSelectComercial(user)}
-                                className={cn(
-                                  "w-full text-left px-2 py-1.5 rounded-lg text-[10.5px] font-bold transition-all flex flex-col cursor-pointer",
-                                  (data.id_comercial === user.id_usuario || data.comercial_nombre === user.nombre_completo)
-                                    ? "bg-indigo-50 text-indigo-800 border border-indigo-100"
-                                    : "hover:bg-gray-50 text-gray-700"
-                                )}
-                              >
-                                <span className="font-black uppercase">{user.nombre_completo}</span>
-                                <span className="text-[9px] text-gray-400 font-normal truncate">{user.email_usu || user.correo || 'Sin correo'}</span>
-                              </button>
-                            ))
+                          filteredComerciales.map(user => (
+                            <button
+                              key={user.id_usuario || user.dni}
+                              type="button"
+                              onClick={() => handleSelectComercial(user)}
+                              className={cn(
+                                "w-full text-left px-2 py-1.5 rounded-lg text-[10.5px] font-bold transition-all flex flex-col cursor-pointer",
+                                (data.id_comercial === user.id_usuario || data.comercial_nombre === user.nombre_completo)
+                                  ? "bg-indigo-50 text-indigo-800 border border-indigo-100"
+                                  : "hover:bg-gray-50 text-gray-700"
+                              )}
+                            >
+                              <span className="font-black uppercase">{user.nombre_completo}</span>
+                              <span className="text-[9px] text-gray-400 font-normal truncate">{user.email_usu || user.correo || 'Sin correo'}</span>
+                            </button>
+                          ))
                         )}
                       </div>
                     </div>
@@ -9940,12 +9984,22 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 </div>
 
                 {/* Técnico */}
-                <div className={cn(
-                  "group flex flex-col border rounded-xl p-2.5 shadow-sm transition-all duration-300 relative",
-                  data.tecnico_nombre
-                    ? "bg-white border-emerald-100 hover:border-emerald-300 hover:shadow-md"
-                    : "bg-gray-50/50 border-gray-200 opacity-80"
-                )}>
+                <div
+                  onDoubleClick={() => {
+                    if (isReadOnly) return;
+                    fetchUsuariosActivos();
+                    setTecnicoDropdownOpen(prev => !prev);
+                    setComercialDropdownOpen(false);
+                  }}
+                  title={!isReadOnly ? "Doble clic para cambiar Responsable Técnico" : undefined}
+                  className={cn(
+                    "group flex flex-col border rounded-xl p-2.5 shadow-sm transition-all duration-300 relative select-none",
+                    !isReadOnly && "cursor-pointer hover:border-emerald-300 hover:shadow-md",
+                    data.tecnico_nombre
+                      ? "bg-white border-emerald-100"
+                      : "bg-gray-50/50 border-gray-200 opacity-80"
+                  )}
+                >
                   <div className="flex items-center justify-between mb-1.5">
                     <div className="flex items-center space-x-2">
                       <div className={cn(
@@ -9957,27 +10011,10 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                         data.tecnico_nombre ? "text-emerald-500" : "text-gray-500"
                       )}>Técnico</span>
                     </div>
-                    <div className="flex items-center gap-1">
-                      {!isReadOnly && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            fetchUsuariosActivos();
-                            setTecnicoDropdownOpen(!tecnicoDropdownOpen);
-                            setComercialDropdownOpen(false);
-                          }}
-                          className="p-1 rounded hover:bg-emerald-50 text-emerald-400 hover:text-emerald-600 transition-colors cursor-pointer"
-                          title="Cambiar Responsable Técnico"
-                        >
-                          <Icon name="pencil" className="h-3 w-3" />
-                        </button>
-                      )}
-                      <Icon
-                        name={data.tecnico_nombre ? "settings" : "user-plus"}
-                        className={cn("h-3 w-3 transition-colors", data.tecnico_nombre ? "text-emerald-300 group-hover:text-emerald-500" : "text-gray-400")}
-                      />
-                    </div>
+                    <Icon
+                      name={data.tecnico_nombre ? "settings" : "user-plus"}
+                      className={cn("h-3 w-3 transition-colors", data.tecnico_nombre ? "text-emerald-300 group-hover:text-emerald-500" : "text-gray-400")}
+                    />
                   </div>
 
                   <div className="flex flex-col space-y-0.5">
@@ -10010,16 +10047,43 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
 
                   {/* Dropdown Selector Técnico */}
                   {tecnicoDropdownOpen && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-emerald-200 rounded-xl shadow-2xl z-50 p-2 animate-in fade-in slide-in-from-top-1 duration-150 max-w-full">
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="absolute top-full left-0 right-0 mt-1 bg-white border border-emerald-200 rounded-xl shadow-2xl z-50 p-2 animate-in fade-in slide-in-from-top-1 duration-150 max-w-full"
+                    >
                       <div className="text-[9px] font-black text-emerald-600 uppercase tracking-widest px-2 py-1 border-b border-emerald-50 mb-1 flex justify-between items-center">
                         <span>Seleccionar Técnico</span>
-                        <button onClick={() => setTecnicoDropdownOpen(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+                        <button onClick={() => setTecnicoDropdownOpen(false)} className="text-gray-400 hover:text-gray-600 font-bold">✕</button>
                       </div>
+
+                      {/* BÚSQUEDA INTERACTIVA */}
+                      <div className="relative mb-2">
+                        <Icon name="search" className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-emerald-400" />
+                        <input
+                          type="text"
+                          autoFocus
+                          placeholder="Buscar técnico (ej. Juan)..."
+                          value={tecnicoSearchQuery}
+                          onChange={(e) => setTecnicoSearchQuery(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Escape") {
+                              setTecnicoDropdownOpen(false);
+                            } else if (e.key === "Enter" && filteredTecnicos.length > 0) {
+                              e.preventDefault();
+                              handleSelectTecnico(filteredTecnicos[0]);
+                            }
+                          }}
+                          className="w-full pl-7 pr-2 py-1 bg-emerald-50/50 border border-emerald-100 rounded-lg text-[10px] font-bold text-gray-800 placeholder-gray-400 focus:outline-none focus:border-emerald-300 focus:bg-white"
+                        />
+                      </div>
+
                       <div className="max-h-48 overflow-y-auto space-y-1">
                         {loadingUsersList ? (
                           <div className="p-2 text-center text-xs text-gray-400 animate-pulse">Cargando usuarios...</div>
+                        ) : filteredTecnicos.length === 0 ? (
+                          <div className="p-2 text-center text-[10px] text-gray-400 italic">No se encontraron resultados</div>
                         ) : (
-                          activeUsersList.map(user => (
+                          filteredTecnicos.map(user => (
                             <button
                               key={user.id_usuario || user.dni}
                               type="button"
@@ -11774,8 +11838,8 @@ const SortableItemRow = ({
     return (
       <>
         <tr ref={setMergedRef} style={style} className="bg-indigo-50/50">
-        <td className="px-2 text-center align-middle">
-          <Icon name="grip-vertical" className="h-3.5 w-3.5 text-gray-200 mx-auto" />
+        <td className="px-0.5 text-center align-middle">
+          <Icon name="grip-vertical" className="h-3 w-3 text-gray-200 mx-auto" />
         </td>
         {/* Código / Marca */}
         <td className="px-3 py-1">
@@ -12104,17 +12168,17 @@ const SortableItemRow = ({
         <td
           {...listeners}
           data-drag-handle
-          className="px-2 text-center align-middle cursor-grab active:cursor-grabbing hover:bg-gray-100/50"
+          className="px-0.5 text-center align-middle cursor-grab active:cursor-grabbing hover:bg-gray-100/50"
           onDoubleClick={(e) => e.stopPropagation()}
         >
-          <Icon name="grip-vertical" className="h-3.5 w-3.5 text-gray-300 group-hover:text-gray-500 mx-auto transition-colors" />
+          <Icon name="grip-vertical" className="h-3 w-3 text-gray-300 group-hover:text-gray-500 mx-auto transition-colors" />
         </td>
       ) : (
         <td 
-          className="px-2 text-center align-middle cursor-default"
+          className="px-0.5 text-center align-middle cursor-default"
           onDoubleClick={(e) => e.stopPropagation()}
         >
-          <Icon name="grip-vertical" className="h-3.5 w-3.5 text-gray-100 mx-auto" />
+          <Icon name="grip-vertical" className="h-3 w-3 text-gray-100 mx-auto" />
         </td>
       )}
       {/* P/N / Marca */}
@@ -12641,7 +12705,7 @@ const SortableItemServicioRow = ({
       const handlePersonalCreatedEditLocal = (registro) => {
         const cMin = parseFloat(registro.costo_min || 0);
         const cMax = parseFloat(registro.costo_max || 0);
-        const cAvg = cMin && cMax ? (cMin + cMax) / 2 : (cMax || cMin || 0);
+        const cAvg = Math.round((cMin && cMax ? (cMin + cMax) / 2 : (cMax || cMin || 0)) * 100) / 100;
         setEditingServicioForm(prev => ({
           ...prev,
           codigo_item: `${registro.codigo}-${registro.nombre}`,
@@ -12664,8 +12728,8 @@ const SortableItemServicioRow = ({
       return (
         <>
           <tr ref={setMergedRef} style={style} className="bg-indigo-50/30">
-            <td className="px-2 text-center align-middle">
-              <Icon name="grip-vertical" className="h-3.5 w-3.5 text-gray-200 mx-auto" />
+            <td className="px-0.5 text-center align-middle">
+              <Icon name="grip-vertical" className="h-3 w-3 text-gray-200 mx-auto" />
             </td>
             <td className="px-2 py-1">
               <div data-field="codigo_item" className="w-full">
@@ -12690,7 +12754,7 @@ const SortableItemServicioRow = ({
                     }
                     const cMin = parseFloat(personal.costo_min || 0);
                     const cMax = parseFloat(personal.costo_max || 0);
-                    const cAvg = cMin && cMax ? (cMin + cMax) / 2 : (cMax || cMin || 0);
+                    const cAvg = Math.round((cMin && cMax ? (cMin + cMax) / 2 : (cMax || cMin || 0)) * 100) / 100;
                     setEditingServicioForm(prev => ({
                       ...prev,
                       codigo_item: `${personal.codigo}-${personal.nombre}`,
@@ -12817,8 +12881,8 @@ const SortableItemServicioRow = ({
       return (
         <>
           <tr ref={setMergedRef} style={style} className="bg-indigo-50/30">
-            <td className="px-2 text-center align-middle">
-              <Icon name="grip-vertical" className="h-3.5 w-3.5 text-gray-200 mx-auto" />
+            <td className="px-0.5 text-center align-middle">
+              <Icon name="grip-vertical" className="h-3 w-3 text-gray-200 mx-auto" />
             </td>
             <td className="px-2 py-1">
               <div data-field="codigo_item" className="w-full">
@@ -12931,8 +12995,8 @@ const SortableItemServicioRow = ({
       return (
         <>
           <tr ref={setMergedRef} style={style} className="bg-indigo-50/30">
-            <td className="px-2 text-center align-middle">
-              <Icon name="grip-vertical" className="h-3.5 w-3.5 text-gray-200 mx-auto" />
+            <td className="px-0.5 text-center align-middle">
+              <Icon name="grip-vertical" className="h-3 w-3 text-gray-200 mx-auto" />
             </td>
             <td className="px-2 py-1">
               <div data-field="codigo_item" className="w-full">
@@ -13035,7 +13099,7 @@ const SortableItemServicioRow = ({
       className="hover:bg-gray-50/70 group transition-colors cursor-pointer animate-in fade-in duration-150 border-b border-gray-100"
     >
       <td 
-        className="px-2 text-center align-middle"
+        className="px-0.5 text-center align-middle"
         onDoubleClick={(e) => e.stopPropagation()}
       >
         {!isReadOnly ? (
@@ -13044,12 +13108,14 @@ const SortableItemServicioRow = ({
             {...attributes}
             data-drag-handle
             onClick={(e) => e.stopPropagation()}
-            className="cursor-grab active:cursor-grabbing p-1 text-gray-300 hover:text-gray-500 rounded transition-colors"
+            className="cursor-grab active:cursor-grabbing p-0.5 text-gray-300 hover:text-gray-500 rounded transition-colors flex justify-center items-center"
           >
-            <Icon name="grip-vertical" className="h-3.5 w-3.5" />
+            <Icon name="grip-vertical" className="h-3 w-3" />
           </div>
         ) : (
-          <Icon name="grip-vertical" className="h-3.5 w-3.5 text-gray-200" />
+          <div className="p-0.5 text-gray-200 flex justify-center items-center">
+            <Icon name="grip-vertical" className="h-3 w-3" />
+          </div>
         )}
       </td>
 

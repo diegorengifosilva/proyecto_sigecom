@@ -1,7 +1,7 @@
 # cotizaciones_api/signals.py
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
-from cotizaciones_api.models import Cotizacion, CotizacionSuministro, CotizacionServicio, CotizacionMensaje, CotizacionSeguimiento
+from cotizaciones_api.models import Cotizacion, CotizacionSuministro, CotizacionServicio, CotizacionMensaje, CotizacionSeguimiento, CotizacionCondicionGeneral
 from core.models import Cliente, Representante, TipoMarca, TipoPersonal, TipoGastoDetalle, Producto
 from users.models import Usuario
 from cotizaciones_api.services.legacy_sync import (
@@ -21,6 +21,8 @@ from cotizaciones_api.services.legacy_sync import (
     disparar_eliminacion_usuario_legado,
     disparar_sincronizacion_producto_legado,
     disparar_eliminacion_producto_legado,
+    disparar_sincronizacion_condicion_legada,
+    disparar_eliminacion_condicion_legada,
 )
 
 
@@ -210,3 +212,24 @@ def on_seguimiento_post_save(sender, instance, created, **kwargs):
     """
     if instance.id_registro_id:
         disparar_sincronizacion_legada(instance.id_registro_id)
+
+
+@receiver(post_save, sender=CotizacionCondicionGeneral)
+def on_condicion_post_save(sender, instance, created, **kwargs):
+    """
+    Escucha cambios en las condiciones generales de la cotización y dispara
+    la sincronización de la columna acu_e en segundo plano.
+    """
+    if instance.id_registro_id:
+        disparar_sincronizacion_condicion_legada(instance.id_registro_id)
+
+
+@receiver(post_delete, sender=CotizacionCondicionGeneral)
+def on_condicion_post_delete(sender, instance, **kwargs):
+    """
+    Escucha la eliminación de las condiciones generales de la cotización y dispara
+    la actualización de la columna acu_e en segundo plano.
+    """
+    if instance.id_registro_id:
+        disparar_eliminacion_condicion_legada(instance.id_registro_id)
+

@@ -80,6 +80,7 @@ urlpatterns = [
     
     # GUARDAR COTIZACIÓN
     path("guardar/", views.guardar_cotizacion, name="guardar_cotizacion"),
+    path("tipo-cambio-sunat/", views.get_tipo_cambio_sunat, name="tipo_cambio_sunat"),
 
     # REPORTES
     path("reportes/reporte_cotizaciones_dashboard_html/", views.reporte_cotizaciones_dashboard_html, name="reporte_cotizaciones_dashboard_html"),

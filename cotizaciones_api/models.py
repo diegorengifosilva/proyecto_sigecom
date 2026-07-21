@@ -61,7 +61,7 @@ class Cotizacion(models.Model):
     lugar = models.CharField(max_length=50, null=True, blank=True)
     tipo_moneda = models.CharField(max_length=45, default='S') # S=Soles, D=Dólares
     igv = models.CharField(max_length=1, null=True, blank=True) # S/N
-    tipo_cambio = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    tipo_cambio = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
 
     # ── TIEMPOS (USANDO LA NUEVA TABLA UNIDADTIEMPO) ─────────────
     entrega_suministros = models.IntegerField(null=True, blank=True)

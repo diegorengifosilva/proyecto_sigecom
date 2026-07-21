@@ -5,7 +5,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from django.db import connections, transaction
 from django.utils import timezone
-from cotizaciones_api.models import Cotizacion, CotizacionSuministro, CotizacionServicio, CotizacionMensaje, CotizacionSeguimiento
+from cotizaciones_api.models import Cotizacion, CotizacionSuministro, CotizacionServicio, CotizacionMensaje, CotizacionSeguimiento, CotizacionCondicionGeneral
 from core.models import Cliente, Representante, TipoMarca, TipoPersonal, TipoGastoDetalle, Producto
 from users.models import Usuario
 
@@ -367,6 +367,13 @@ def _ejecutar_sincronizacion_legada(cotizacion_id: int):
         cotif = cot.fecha.date() if cot.fecha else timezone.now().date()
         fecus = timezone.now().date()
 
+        # Obtener condiciones generales asociadas para la columna acu_e
+        condiciones = CotizacionCondicionGeneral.objects.filter(id_registro=cot.id_registro).order_by('fecha')
+        if condiciones.exists():
+            descripcion_total = "\n".join([c.descripcion for c in condiciones if c.descripcion])
+        else:
+            descripcion_total = None
+
         # 6. Preparar sentencia SQL con ON DUPLICATE KEY UPDATE
         # Nota: Usamos INSERT INTO backup_actual.vc_mov_cotizaciones.
         sql = """
@@ -376,14 +383,14 @@ def _ejecutar_sincronizacion_legada(cotizacion_id: int):
                 codit, nombt, telet, mov1t, mov2t, mailt,
                 fpago, lugar, plazo, tmone, igv, valid, por_c,
                 tot_c, tot_d, tot_s, estad, area, regus, fecus, tcamb, sald,
-                des_a, des_t, des_m, des_p, anno_a, msj, seg, prob, envio
+                des_a, des_t, des_m, des_p, anno_a, msj, seg, prob, envio, acu_e
             ) VALUES (
                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                 %s, %s, %s, %s, %s, %s,
                 %s, %s, %s, %s, %s, %s,
                 %s, %s, %s, %s, %s, %s, %s,
                 %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
             )
             ON DUPLICATE KEY UPDATE
                 anno = VALUES(anno),
@@ -435,7 +442,8 @@ def _ejecutar_sincronizacion_legada(cotizacion_id: int):
                 msj = VALUES(msj),
                 seg = VALUES(seg),
                 prob = VALUES(prob),
-                envio = VALUES(envio);
+                envio = VALUES(envio),
+                acu_e = VALUES(acu_e);
         """
 
         params = (
@@ -480,6 +488,7 @@ def _ejecutar_sincronizacion_legada(cotizacion_id: int):
             cot.seguimiento,
             str(cot.probabilidad or "0")[:1],
             envio_legacy,
+            descripcion_total,
         )
 
         db_alias = "legacy" if "legacy" in connections else "default"
@@ -1445,6 +1454,59 @@ def disparar_eliminacion_producto_legado(codigo: str, marca_nombre: str = ""):
         logger.debug(f"[SyncLegado] Tarea de eliminación registrada en on_commit para Producto Código '{codigo}' ({marca_nombre})")
     except Exception as e:
         logger.error(f"[SyncLegado] No se pudo encolar la eliminación legada para Producto Código '{codigo}': {str(e)}", exc_info=True)
+
+
+def _ejecutar_sincronizacion_condicion_legada(cotizacion_id: int):
+    """
+    Función de fondo que obtiene las condiciones generales de la cotización
+    desde la BD nueva (concatenando historial si aplica) y actualiza
+    la columna acu_e en backup_actual.vc_mov_cotizaciones.
+    """
+    lock = get_lock_for_cotizacion(cotizacion_id)
+    lock.acquire()
+    try:
+        logger.info(f"[SyncLegado] Sincronizando condiciones para cotización ID: {cotizacion_id}")
+
+        condiciones = CotizacionCondicionGeneral.objects.filter(id_registro=cotizacion_id).order_by('fecha')
+        if condiciones.exists():
+            descripcion_total = "\n".join([c.descripcion for c in condiciones if c.descripcion])
+        else:
+            descripcion_total = None
+
+        db_alias = "legacy" if "legacy" in connections else "default"
+        with connections[db_alias].cursor() as cursor:
+            cursor.execute(
+                "UPDATE backup_actual.vc_mov_cotizaciones SET acu_e = %s WHERE num_reg = %s",
+                [descripcion_total, cotizacion_id]
+            )
+
+        logger.info(f"[SyncLegado] Sincronización de condiciones exitosa para cotización ID {cotizacion_id}.")
+    except Exception as e:
+        logger.error(f"[SyncLegado] Error sincronizando condiciones para cotización ID {cotizacion_id}: {str(e)}", exc_info=True)
+    finally:
+        connections.close_all()
+        lock.release()
+
+
+def disparar_sincronizacion_condicion_legada(cotizacion_id: int):
+    """
+    Registra la tarea de sincronización de condiciones para ejecutarse en segundo plano
+    luego de confirmarse el COMMIT.
+    """
+    try:
+        transaction.on_commit(lambda: SYNC_EXECUTOR.submit(_ejecutar_sincronizacion_condicion_legada, cotizacion_id))
+        logger.debug(f"[SyncLegado] Tarea de sincronización de condiciones registrada en on_commit para cotización ID: {cotizacion_id}")
+    except Exception as e:
+        logger.error(f"[SyncLegado] No se pudo encolar la sincronización de condiciones para cotización ID {cotizacion_id}: {str(e)}", exc_info=True)
+
+
+def disparar_eliminacion_condicion_legada(cotizacion_id: int):
+    """
+    Registra la tarea de eliminación de condiciones para ejecutarse en segundo plano
+    luego de confirmarse el COMMIT (reaplica el UPDATE con el texto restante o NULL).
+    """
+    disparar_sincronizacion_condicion_legada(cotizacion_id)
+
 
 
 

@@ -3068,25 +3068,126 @@ def guardar_cotizacion(request):
             data["fecha"] = None
         
         # Mapeo de campos del frontend al modelo nuevo
+        # 1. Resolve id_cliente (FK)
+        id_cli_val = data.get("id_cliente")
+        cliente_obj = None
+        if id_cli_val and str(id_cli_val).strip() not in ["", "null", "undefined"]:
+            try:
+                cliente_obj = Cliente.objects.filter(pk=int(id_cli_val)).first()
+            except (ValueError, TypeError):
+                pass
+        if not cliente_obj:
+            cod_cli = data.get("cliente_codigo") or data.get("empre")
+            if cod_cli:
+                cliente_obj = Cliente.objects.filter(Q(ruc=cod_cli) | Q(codigo=cod_cli)).first()
+        data["id_cliente"] = cliente_obj.pk if cliente_obj else None
+
+        # 2. Resolve id_representante (FK)
+        id_rep_val = data.get("id_representante") or data.get("codir")
+        rep_obj = None
+        if id_rep_val and str(id_rep_val).strip() not in ["", "null", "undefined"]:
+            try:
+                rep_obj = Representante.objects.filter(pk=int(id_rep_val)).first()
+            except (ValueError, TypeError):
+                pass
+        data["id_representante"] = rep_obj.pk if rep_obj else None
+
+        # 3. Resolve id_tipo (FK)
+        tipo_val = data.get("id_tipo") or data.get("cotit")
+        tipo_obj = None
+        if tipo_val and str(tipo_val).strip() not in ["", "null", "undefined"]:
+            try:
+                tipo_obj = TipoCotizacion.objects.filter(Q(id_tipo=tipo_val) | Q(nombre__iexact=tipo_val)).first()
+            except (ValueError, TypeError):
+                pass
+        data["id_tipo"] = tipo_obj.pk if tipo_obj else None
+        
+        # 4. Resolve id_estado (FK)
+        est_val = data.get("id_estado") or data.get("estado_codigo") or "11"
+        est_obj = None
+        if est_val and str(est_val).strip() not in ["", "null", "undefined"]:
+            try:
+                if str(est_val).isdigit():
+                    est_obj = Estado.objects.filter(pk=int(est_val)).first()
+                else:
+                    est_obj = Estado.objects.filter(nombre__iexact=est_val).first()
+            except (ValueError, TypeError):
+                pass
+        data["id_estado"] = est_obj.pk if est_obj else None
+
         cotit = data.get("cotit")
-        data["id_tipo"] = cotit
         if cotit == "V":
             data["tipo_venta"] = data.get("tven")
         else:
             data["tipo_venta"] = None
-        data["id_estado"] = data.get("estado_codigo")
-        data["id_area"] = data.get("area_codigo")
-        data["probabilidad"] = data.get("prob")
+
+        id_area_val = data.get("area_codigo")
+        if id_area_val and str(id_area_val).strip() not in ["", "null", "undefined"]:
+            try:
+                data["id_area"] = int(id_area_val)
+            except (ValueError, TypeError):
+                data["id_area"] = None
+        else:
+            data["id_area"] = None
+
+        prob_val = data.get("prob")
+        if prob_val and str(prob_val).strip() not in ["", "null", "undefined"]:
+            try:
+                data["probabilidad"] = int(prob_val)
+            except (ValueError, TypeError):
+                data["probabilidad"] = 0
+        else:
+            data["probabilidad"] = 0
         
-        data["entrega_suministros"] = data.get("plazo")
+        # Moneda y Tipo Cambio
+        if data.get("tmone"):
+            data["tipo_moneda"] = data.get("tmone")
+        elif not data.get("tipo_moneda"):
+            data["tipo_moneda"] = "D"
+
+        tcamb_val = data.get("tipo_cambio") or data.get("tcamb")
+        if tcamb_val is not None and str(tcamb_val).strip() not in ["", "null", "undefined", "0"]:
+            try:
+                data["tipo_cambio"] = Decimal(str(tcamb_val))
+            except (InvalidOperation, TypeError, ValueError):
+                data["tipo_cambio"] = Decimal("3.362")
+        else:
+            data["tipo_cambio"] = Decimal("3.362")
+        
+        # Plazo
+        plazo_val = data.get("plazo")
+        if plazo_val and str(plazo_val).strip() not in ["", "null", "undefined"]:
+            try:
+                data["entrega_suministros"] = int(plazo_val)
+            except (ValueError, TypeError):
+                data["entrega_suministros"] = 0
+        else:
+            data["entrega_suministros"] = 0
+
         ut_sum = UnidadTiempo.objects.filter(codigo=data.get("tot_d")).first()
         data["id_unidad_tiempo_entrega_suministros"] = ut_sum.id_tiempo if ut_sum else None
         
-        data["entrega_servicios"] = data.get("por_c")
+        por_c_val = data.get("por_c")
+        if por_c_val and str(por_c_val).strip() not in ["", "null", "undefined"]:
+            try:
+                data["entrega_servicios"] = int(por_c_val)
+            except (ValueError, TypeError):
+                data["entrega_servicios"] = 0
+        else:
+            data["entrega_servicios"] = 0
+
         ut_ser = UnidadTiempo.objects.filter(codigo=data.get("tot_s")).first()
         data["id_unidad_tiempo_entrega_servicios"] = ut_ser.id_tiempo if ut_ser else None
         
-        data["validez_oferta"] = data.get("valid")
+        valid_val = data.get("valid")
+        if valid_val and str(valid_val).strip() not in ["", "null", "undefined"]:
+            try:
+                data["validez_oferta"] = int(valid_val)
+            except (ValueError, TypeError):
+                data["validez_oferta"] = 0
+        else:
+            data["validez_oferta"] = 0
+
         ut_val = UnidadTiempo.objects.filter(codigo=data.get("acu_s")).first()
         data["id_unidad_tiempo_validez"] = ut_val.id_tiempo if ut_val else None
 
@@ -3095,7 +3196,6 @@ def guardar_cotizacion(request):
         data["representante_telefono"] = data.get("teler")
         data["representante_movil"] = data.get("movir")
         data["representante_correo"] = data.get("mailr")
-        data["id_representante"] = data.get("codir")
 
         # Mapeo de campos de Oportunidad
         if data.get("f_recp"):
@@ -3125,7 +3225,7 @@ def guardar_cotizacion(request):
             
         if comercial_user:
             data["id_comercial"] = comercial_user.pk
-        elif "id_comercial" in data and data.get("id_comercial") not in [None, ""]:
+        elif "id_comercial" in data and data.get("id_comercial") not in [None, "", "null", "undefined"]:
             try:
                 data["id_comercial"] = int(data.get("id_comercial"))
             except ValueError:
@@ -3142,7 +3242,7 @@ def guardar_cotizacion(request):
             
         if tecnico_user:
             data["id_tecnico"] = tecnico_user.pk
-        elif "id_tecnico" in data and data.get("id_tecnico") not in [None, ""]:
+        elif "id_tecnico" in data and data.get("id_tecnico") not in [None, "", "null", "undefined"]:
             try:
                 data["id_tecnico"] = int(data.get("id_tecnico"))
             except ValueError:
@@ -3163,7 +3263,10 @@ def guardar_cotizacion(request):
             data=data,
             partial=True
         )
-        serializer.is_valid(raise_exception=True)
+        if not serializer.is_valid():
+            print("❌ ERROR DE VALIDACIÓN EN COTIZACION:", serializer.errors)
+            logger.error("❌ ERROR DE VALIDACIÓN EN COTIZACION: %s", serializer.errors)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         serializer.save()
 
         # Asegurar valores por defecto y snapshot
@@ -6630,3 +6733,33 @@ def periodos_registrados(request):
         })
     except Exception as e:
         return Response({"error": str(e)}, status=500)
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_tipo_cambio_sunat(request):
+    import requests
+    from django.core.cache import cache
+    
+    cache_key = "tipo_cambio_sunat_data"
+    cached_data = cache.get(cache_key)
+    if cached_data:
+        return Response(cached_data)
+
+    fallback_data = {"compra": 3.398, "venta": 3.408, "fecha": timezone.now().strftime("%Y-%m-%d")}
+    try:
+        res = requests.get("https://api.apis.net.pe/v1/tipo-cambio-sunat", timeout=3.0)
+        if res.status_code == 200:
+            val = res.json()
+            data = {
+                "compra": val.get("compra", 3.398),
+                "venta": val.get("venta", 3.408),
+                "fecha": val.get("fecha", fallback_data["fecha"])
+            }
+            # Cache it for 2 hours (7200 seconds)
+            cache.set(cache_key, data, 7200)
+            return Response(data)
+    except Exception as e:
+        logger.error("Error fetching SUNAT exchange rate: %s", str(e))
+        print("Error fetching SUNAT exchange rate:", str(e))
+
+    return Response(fallback_data)

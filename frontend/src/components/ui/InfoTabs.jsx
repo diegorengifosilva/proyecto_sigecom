@@ -2698,7 +2698,7 @@ export default function InfoTabs({
                         inline
                         size="sm"
                         label="T.C."
-                        value={data.tcamb || (esNueva ? "3.425" : "")}
+                        value={data.tcamb || (esNueva ? "3.398" : "")}
                         onChange={(e) => handleFieldChange("tcamb", e.target.value)}
                         readOnly={isReadOnly}
                       />
