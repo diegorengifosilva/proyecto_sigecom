@@ -2765,6 +2765,7 @@ export default function CotizacionNuevaModal({ open, onClose, cotizacion, modo, 
                   value={clienteQuery}
                   initialId={data.id_cliente}
                   isReadOnly={isReadOnly}
+                  numReg={cotizacion?.id_registro || nuevoNumOportunidad || data?.num_reg}
                   tabIndex={1}
                   onSelect={(cliente) => {
                     setData(prev => ({
@@ -2796,6 +2797,7 @@ export default function CotizacionNuevaModal({ open, onClose, cotizacion, modo, 
                   clienteId={data.id_cliente}
                   initialId={data.codir}
                   isReadOnly={isReadOnly || !data.id_cliente}
+                  numReg={cotizacion?.id_registro || nuevoNumOportunidad || data?.num_reg}
                   tabIndex={2}
                   onSelect={(enc) => {
                     setData(prev => ({
@@ -3336,6 +3338,7 @@ export default function CotizacionNuevaModal({ open, onClose, cotizacion, modo, 
           <QuickCreateClienteModal
             open={openQuickCreate}
             onClose={() => setOpenQuickCreate(false)}
+            numReg={cotizacion?.id_registro || nuevoNumOportunidad || data?.num_reg}
             onSave={async (nuevoCliente) => {
               try {
                 const { data: res } = await api.post("core/clientes/", nuevoCliente);

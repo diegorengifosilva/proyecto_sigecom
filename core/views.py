@@ -1,4 +1,72 @@
 from django.shortcuts import render
+import re
+
+def generar_iniciales(nombre):
+    if not nombre or not isinstance(nombre, str):
+        return ""
+    
+    raw = nombre.strip()
+    if not raw:
+        return ""
+        
+    raw_upper = re.sub(r'\s+', ' ', raw.upper())
+    if "CEYESA INGENIERIA" in raw_upper or raw_upper == "CEYESA":
+        return "CEYESA"
+    if "PROSELET" in raw_upper:
+        return "PSLT"
+
+    words = [w for w in re.split(r'[,\(\)\.\/\s]+', raw_upper) if w]
+    if not words:
+        return ""
+
+    legal_suffixes = {
+        "SA", "SAC", "SRL", "EIRL", "SAB", "INC", "LLC", "CORP", "CORPORATION",
+        "SOCIEDAD", "ANONIMA", "CERRADA", "LIMITADA", "LTDA"
+    }
+
+    stop_words = {"DE", "DEL", "LA", "LAS", "LOS", "E", "Y", "EN", "POR", "PARA"}
+
+    generic_business_words = {
+        "INGENIERIA", "INGENIERÍA", "ELECTRICA", "ELÉCTRICA", "INDUSTRIAL", "INDUSTRIALES",
+        "SERVICIOS", "GENERALES", "SOLUCIONES", "INTEGRALES", "CONSTRUCTORA", "CONSTRUCCION",
+        "IMPORTACIONES", "EXPORTACIONES", "PERU", "PERÚ", "EMPRESA", "GRUPO",
+        "CORPORACION", "TECNOLOGIA", "TECNOLOGIAS", "SISTEMAS", "COMERCIAL",
+        "INVERSIONES", "NEGOCIOS", "CONTRATISTAS"
+    }
+
+    clean_words = [w for w in words if w not in stop_words and w not in legal_suffixes]
+    main_words = clean_words if clean_words else words
+
+    brand_words = [w for w in main_words if w not in generic_business_words]
+    effective_words = brand_words if brand_words else main_words
+
+    if len(effective_words) == 1:
+        word = effective_words[0]
+        if len(word) <= 6:
+            return word
+        first_char = word[0]
+        rest = word[1:]
+        if first_char in ["P", "T", "C", "B", "D", "F", "G"] and rest.startswith("R"):
+            rest = rest[1:]
+        consonants = re.sub(r'[AEIOUÁÉÍÓÚ]', '', rest)
+        abbr = (first_char + consonants)[:5]
+        return abbr if len(abbr) >= 3 else word[:6]
+
+    if len(effective_words) == 2:
+        w1, w2 = effective_words[0], effective_words[1]
+        if len(w1) <= 6 and (w2 in generic_business_words or (words.index(w2) < len(words) and words[words.index(w2)] in generic_business_words)):
+            return w1
+        initials = "".join([w[0] for w in effective_words])
+        if len(initials) >= 3:
+            return initials
+        return (w1[:3] + w2[0])[:6]
+
+    initials = "".join([w[0] for w in effective_words])[:6]
+    if len(initials) >= 3:
+        return initials
+
+    return effective_words[0][:6]
+
 
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
@@ -52,9 +120,52 @@ def lista_clientes(request):
 
     # 2. POST:
     elif request.method == "POST":
-        serializer = ClienteSerializer(data=request.data)
+        data = request.data.copy()
+        nombre = (data.get("nombre") or "").strip()
+        if nombre and not data.get("iniciales"):
+            data["iniciales"] = generar_iniciales(nombre)
+
+        if not data.get("fecha_ingreso"):
+            from django.utils import timezone
+            data["fecha_ingreso"] = timezone.now()
+
+        serializer = ClienteSerializer(data=data)
         if serializer.is_valid():
-            serializer.save()
+            cliente = serializer.save()
+
+            # Trazabilidad / Auditoría
+            num_reg = data.get("num_reg") or data.get("id_registro") or request.query_params.get("num_reg")
+            user_inst = request.user if hasattr(request, "user") and request.user and request.user.is_authenticated else None
+            nom_upper = (cliente.nombre or "").upper()
+            det_str = f"CLIENTES: Se creó el cliente '{nom_upper}'"
+            if cliente.ruc:
+                det_str += f" (RUC: {cliente.ruc})"
+
+            if num_reg:
+                try:
+                    from cotizaciones_api.models import Cotizacion, CotizacionSeguimiento
+                    cot_inst = None
+                    if str(num_reg).isdigit():
+                        cot_inst = Cotizacion.objects.filter(pk=int(num_reg)).first()
+                    if not cot_inst:
+                        cot_inst = Cotizacion.objects.filter(codigo=str(num_reg)).first()
+
+                    if cot_inst:
+                        CotizacionSeguimiento.objects.create(
+                            id_registro=cot_inst,
+                            detalle=det_str,
+                            id_usuario=user_inst,
+                            activo='1'
+                        )
+                except Exception as log_err:
+                    print("Error registrando trazabilidad de cliente:", log_err)
+
+            try:
+                from cotizaciones_api.services.legacy_sync import disparar_sincronizacion_cliente_legado
+                disparar_sincronizacion_cliente_legado(cliente.id_cliente)
+            except Exception as sync_err:
+                print("Error disparando sincronización de cliente:", sync_err)
+
             return Response({
                 "message": "Empresa registrada correctamente",
                 "data": serializer.data
@@ -68,7 +179,13 @@ def lista_clientes(request):
             cliente = Cliente.objects.get(pk=codigo)
             serializer = ClienteSerializer(cliente, data=request.data, partial=True)
             if serializer.is_valid():
-                serializer.save()
+                cliente_updated = serializer.save()
+                try:
+                    from cotizaciones_api.services.legacy_sync import disparar_sincronizacion_cliente_legado
+                    disparar_sincronizacion_cliente_legado(cliente_updated.id_cliente)
+                except Exception as sync_err:
+                    print("Error disparando sincronización de cliente:", sync_err)
+
                 return Response({
                     "message": "Empresa actualizada correctamente",
                     "data": serializer.data
@@ -86,7 +203,14 @@ def lista_clientes(request):
 
         try:
             cliente = Cliente.objects.get(pk=codigo)
+            cliente_id = cliente.id_cliente
             cliente.delete()
+            try:
+                from cotizaciones_api.services.legacy_sync import disparar_eliminacion_cliente_legado
+                disparar_eliminacion_cliente_legado(cliente_id)
+            except Exception as sync_err:
+                print("Error disparando eliminación de cliente:", sync_err)
+
             return Response({"message": "Empresa eliminada correctamente"}, status=status.HTTP_200_OK)
         except Cliente.DoesNotExist:
             return Response({"error": "Empresa no encontrada"}, status=status.HTTP_404_NOT_FOUND)
@@ -101,7 +225,6 @@ def buscar_clientes_inline(request):
         query = request.query_params.get('q', '').strip()
         
         # 2. Filtrar solo activos
-        # OJO: Usamos 'activo="1"' porque en tu modelo es CharField
         clientes_qs = Cliente.objects.filter(activo="1")
         
         # 3. Búsqueda multi-campo
@@ -109,17 +232,15 @@ def buscar_clientes_inline(request):
             clientes_qs = clientes_qs.filter(
                 Q(nombre__icontains=query) | 
                 Q(ruc__icontains=query) |
-                Q(id_cliente__icontains=query) # AutoField permite icontains en Django
+                Q(id_cliente__icontains=query)
             )
         
         # 4. Selección de campos y límite
-        # Traemos solo lo necesario para el buscador de cotizaciones
         resultados = clientes_qs.order_by('nombre').values('id_cliente', 'nombre', 'ruc', 'iniciales', 'tipo')[:20]
         
         return Response(list(resultados), status=status.HTTP_200_OK)
 
     except Exception as e:
-        # Esto imprimirá el error real en tu consola de Django para que lo veas
         print(f"❌ Error en buscar_clientes_inline: {str(e)}")
         return Response(
             {"error": "Error interno al buscar clientes", "detail": str(e)}, 
@@ -133,6 +254,7 @@ def lista_representantes(request):
     # 1. GET: Listar todos o filtrar por ID
     if request.method == "GET":
         id_representante = request.query_params.get("id_representante")
+        id_cliente = request.query_params.get("id_cliente")
         if id_representante:
             try:
                 rep = Representante.objects.get(pk=id_representante)
@@ -141,7 +263,10 @@ def lista_representantes(request):
             except Representante.DoesNotExist:
                 return Response({"error": "Representante no encontrado"}, status=status.HTTP_404_NOT_FOUND)
 
-        representantes = Representante.objects.all()
+        if id_cliente:
+            representantes = Representante.objects.filter(id_cliente=id_cliente)
+        else:
+            representantes = Representante.objects.all()
         serializer = RepresentanteSerializer(representantes, many=True)
         return Response(serializer.data)
     
@@ -149,7 +274,42 @@ def lista_representantes(request):
     elif request.method == "POST":
         serializer = RepresentanteSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save()
+            rep = serializer.save()
+
+            # Trazabilidad / Auditoría
+            num_reg = request.data.get("num_reg") or request.data.get("id_registro") or request.query_params.get("num_reg")
+            user_inst = request.user if hasattr(request, "user") and request.user and request.user.is_authenticated else None
+            rep_nom_upper = (rep.nombre_representante or "").upper()
+            cliente_nom_upper = (rep.id_cliente.nombre or "").upper() if rep.id_cliente else ""
+            det_str = f"REPRESENTANTES: Se creó el representante '{rep_nom_upper}'"
+            if cliente_nom_upper:
+                det_str += f" para la empresa '{cliente_nom_upper}'"
+
+            if num_reg:
+                try:
+                    from cotizaciones_api.models import Cotizacion, CotizacionSeguimiento
+                    cot_inst = None
+                    if str(num_reg).isdigit():
+                        cot_inst = Cotizacion.objects.filter(pk=int(num_reg)).first()
+                    if not cot_inst:
+                        cot_inst = Cotizacion.objects.filter(codigo=str(num_reg)).first()
+
+                    if cot_inst:
+                        CotizacionSeguimiento.objects.create(
+                            id_registro=cot_inst,
+                            detalle=det_str,
+                            id_usuario=user_inst,
+                            activo='1'
+                        )
+                except Exception as log_err:
+                    print("Error registrando trazabilidad de representante:", log_err)
+
+            try:
+                from cotizaciones_api.services.legacy_sync import disparar_sincronizacion_representante_legado
+                disparar_sincronizacion_representante_legado(rep.id_representante)
+            except Exception as sync_err:
+                print("Error disparando sincronización de representante:", sync_err)
+
             return Response({
                 "message": "Representante registrado correctamente",
                 "data": serializer.data
@@ -158,13 +318,18 @@ def lista_representantes(request):
 
     # 3. PUT: Actualizar
     elif request.method == "PUT":
-        # Usamos el nuevo nombre de la PK
         pk_id = request.data.get("id_representante")
         try:
             representante = Representante.objects.get(pk=pk_id)
             serializer = RepresentanteSerializer(representante, data=request.data, partial=True)
             if serializer.is_valid():
-                serializer.save()
+                rep_updated = serializer.save()
+                try:
+                    from cotizaciones_api.services.legacy_sync import disparar_sincronizacion_representante_legado
+                    disparar_sincronizacion_representante_legado(rep_updated.id_representante)
+                except Exception as sync_err:
+                    print("Error disparando sincronización de representante:", sync_err)
+
                 return Response({
                     "message": "Representante actualizado correctamente",
                     "data": serializer.data
@@ -172,6 +337,7 @@ def lista_representantes(request):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         except Representante.DoesNotExist:
             return Response({"error": "Representante no encontrado"}, status=status.HTTP_404_NOT_FOUND)
+
 
     # 4. DELETE: Eliminar
     elif request.method == "DELETE":
@@ -182,12 +348,21 @@ def lista_representantes(request):
 
         try:
             representante = Representante.objects.get(pk=pk_id)
+            rep_id = representante.id_representante
+            empresa_codigo = str(representante.id_cliente_id)[:5] if representante.id_cliente_id else ""
             representante.delete()
+            try:
+                from cotizaciones_api.services.legacy_sync import disparar_eliminacion_representante_legado
+                disparar_eliminacion_representante_legado(rep_id, empresa_codigo)
+            except Exception as sync_err:
+                print("Error disparando eliminación de representante:", sync_err)
+
             return Response({"message": "Representante eliminado correctamente"}, status=status.HTTP_200_OK)
         except Representante.DoesNotExist:
             return Response({"error": "Representante no encontrado"}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response({"error": f"Error al eliminar: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -376,6 +551,13 @@ def lista_tipo_personal(request):
                 activo=1
             )
             
+            # Disparar sincronización asíncrona hacia la BD legado
+            try:
+                from cotizaciones_api.services.legacy_sync import disparar_sincronizacion_tipo_personal_legado
+                disparar_sincronizacion_tipo_personal_legado(nuevo_personal.id_personal)
+            except Exception as sync_err:
+                print("Error disparando sincronización de TipoPersonal:", sync_err)
+
             id_registro = request.data.get("id_registro")
             if id_registro:
                 try:
@@ -393,6 +575,7 @@ def lista_tipo_personal(request):
 
             serializer = TipoPersonalSerializer(nuevo_personal)
             return Response({"ok": True, "registro": serializer.data}, status=status.HTTP_201_CREATED)
+
         except Exception as e:
             return Response({"ok": False, "error": str(e)}, status=500)
 
@@ -468,6 +651,13 @@ def lista_tgasto_detalle(request):
                 activo=1
             )
             
+            # Disparar sincronización asíncrona hacia la BD legado
+            try:
+                from cotizaciones_api.services.legacy_sync import disparar_sincronizacion_gasto_detalle_legado
+                disparar_sincronizacion_gasto_detalle_legado(nuevo_gasto.id_gasto_detalle)
+            except Exception as sync_err:
+                print("Error disparando sincronización de TipoGastoDetalle:", sync_err)
+
             id_registro = request.data.get("id_registro")
             if id_registro:
                 try:
@@ -485,6 +675,7 @@ def lista_tgasto_detalle(request):
 
             serializer = TipoGastoDetalleSerializer(nuevo_gasto)
             return Response({"ok": True, "registro": serializer.data}, status=status.HTTP_201_CREATED)
+
         except Exception as e:
             return Response({"ok": False, "error": str(e)}, status=500)
 

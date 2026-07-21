@@ -5045,7 +5045,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
         "representante_nombre", "representante_cargo", "representante_telefono",
         "representante_movil", "representante_correo", "estado_oportunidad",
         "recepcion_solicitud", "fecha_limite", "visita_tecnica",
-        "emision_cotizacion", "comentario"
+        "emision_cotizacion", "comentario", "id_comercial", "id_tecnico"
       ];
 
       const fieldLabels = {
@@ -5078,7 +5078,9 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
         fecha_limite: "Fecha límite",
         visita_tecnica: "Visita técnica",
         emision_cotizacion: "Emisión de cotización",
-        comentario: "Comentarios"
+        comentario: "Comentarios",
+        id_comercial: "Responsable Comercial",
+        id_tecnico: "Responsable Técnico"
       };
 
       const changedKeys = keysToCompare.filter(key => customData && originalData && customData[key] !== originalData[key]);
@@ -5136,6 +5138,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
         visita_tecnica: customData.visita_tecnica,
         emision_cotizacion: customData.emision_cotizacion,
         comentario: customData.comentario,
+        id_comercial: customData.id_comercial,
+        id_tecnico: customData.id_tecnico,
       };
       const res = await api.put(endpoint, payload);
       setData(res.data);
@@ -5184,7 +5188,59 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     return () => clearTimeout(timer);
   }, [isDescuentoDirty, descuentoAplicar, descuentoAfecto, descuentoPorcentaje, descuentoImporte, descuentoError, numReg, isReadOnly]);
 
+  // Estado para la edición de Responsables (Comercial y Técnico)
+  const [comercialDropdownOpen, setComercialDropdownOpen] = useState(false);
+  const [tecnicoDropdownOpen, setTecnicoDropdownOpen] = useState(false);
+  const [activeUsersList, setActiveUsersList] = useState([]);
+  const [loadingUsersList, setLoadingUsersList] = useState(false);
 
+  const fetchUsuariosActivos = async () => {
+    if (activeUsersList.length > 0) return;
+    setLoadingUsersList(true);
+    try {
+      const { data: usersData } = await api.get("/users/usuarios-activos/");
+      setActiveUsersList(Array.isArray(usersData) ? usersData : []);
+    } catch (err) {
+      console.error("Error cargando usuarios activos:", err);
+      setActiveUsersList([]);
+    } finally {
+      setLoadingUsersList(false);
+    }
+  };
+
+  const handleSelectComercial = (user) => {
+    const userId = user.id_usuario || user.id || user.dni;
+    const updated = {
+      ...data,
+      id_comercial: userId,
+      comercial_dni: String(user.dni || ""),
+      comercial_nombre: user.nombre_completo || "",
+      comercial_telefono: user.telefono || "",
+      comercial_movil_corporativo: user.movil1 || user.movil_coorporativo || "",
+      comercial_movil_personal: user.movil2 || user.movil_personal || "",
+      comercial_correo: user.email_usu || user.correo || ""
+    };
+    setData(updated);
+    setComercialDropdownOpen(false);
+    saveHeaderInstantly(updated);
+  };
+
+  const handleSelectTecnico = (user) => {
+    const userId = user.id_usuario || user.id || user.dni;
+    const updated = {
+      ...data,
+      id_tecnico: userId,
+      tecnico_dni: String(user.dni || ""),
+      tecnico_nombre: user.nombre_completo || "",
+      tecnico_telefono: user.telefono || "",
+      tecnico_movil_corporativo: user.movil1 || user.movil_coorporativo || "",
+      tecnico_movil_personal: user.movil2 || user.movil_personal || "",
+      tecnico_correo: user.email_usu || user.correo || ""
+    };
+    setData(updated);
+    setTecnicoDropdownOpen(false);
+    saveHeaderInstantly(updated);
+  };
 
   // Handler único para edición de campos de cabecera
   const handleFieldChange = (field, value) => {
@@ -7651,6 +7707,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     if (text.includes("DESCUENTO:") || text.includes("DESCUENTOS:")) return "DESCUENTO";
     if (text.includes("DATOS:")) return "DATOS_COTIZACION";
     if (text.includes("CÓDIGO:")) return "CODIGO";
+    if (text.includes("CLIENTES:") || text.includes("CLIENTE:")) return "CLIENTES";
+    if (text.includes("REPRESENTANTES:") || text.includes("REPRESENTANTE:")) return "REPRESENTANTES";
     return "SISTEMA";
   };
 
@@ -7925,6 +7983,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                     value={data.cliente_nombre}
                     initialId={data.id_cliente}
                     isReadOnly={isReadOnly}
+                    numReg={numReg}
                     onSelect={(cliente) => {
                       const updated = {
                         ...data,
@@ -7960,6 +8019,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                     clienteId={data.id_cliente}
                     initialId={data.id_representante}
                     isReadOnly={isReadOnly}
+                    numReg={numReg}
                     onSelect={(enc) => {
                       const updated = {
                         ...data,
@@ -9764,10 +9824,20 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
               </div>
 
               {/* Responsables */}
-              <div className="pt-4 border-t border-gray-100 grid grid-cols-2 gap-3">
+              <div className="pt-4 border-t border-gray-100 grid grid-cols-2 gap-3 relative">
+                {(comercialDropdownOpen || tecnicoDropdownOpen) && (
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => {
+                      setComercialDropdownOpen(false);
+                      setTecnicoDropdownOpen(false);
+                    }}
+                  />
+                )}
+
                 {/* Comercial */}
                 <div className={cn(
-                  "group flex flex-col border rounded-xl p-2.5 shadow-sm transition-all duration-300",
+                  "group flex flex-col border rounded-xl p-2.5 shadow-sm transition-all duration-300 relative",
                   data.comercial_nombre
                     ? "bg-white border-indigo-100 hover:border-indigo-300 hover:shadow-md"
                     : "bg-gray-50/50 border-gray-200 opacity-80"
@@ -9783,10 +9853,27 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                         data.comercial_nombre ? "text-indigo-500" : "text-gray-500"
                       )}>Comercial</span>
                     </div>
-                    <Icon
-                      name={data.comercial_nombre ? "user-check" : "user-plus"}
-                      className={cn("h-3 w-3 transition-colors", data.comercial_nombre ? "text-indigo-300 group-hover:text-indigo-500" : "text-gray-400")}
-                    />
+                    <div className="flex items-center gap-1">
+                      {!isReadOnly && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            fetchUsuariosActivos();
+                            setComercialDropdownOpen(!comercialDropdownOpen);
+                            setTecnicoDropdownOpen(false);
+                          }}
+                          className="p-1 rounded hover:bg-indigo-50 text-indigo-400 hover:text-indigo-600 transition-colors cursor-pointer"
+                          title="Cambiar Responsable Comercial"
+                        >
+                          <Icon name="pencil" className="h-3 w-3" />
+                        </button>
+                      )}
+                      <Icon
+                        name={data.comercial_nombre ? "user-check" : "user-plus"}
+                        className={cn("h-3 w-3 transition-colors", data.comercial_nombre ? "text-indigo-300 group-hover:text-indigo-500" : "text-gray-400")}
+                      />
+                    </div>
                   </div>
 
                   <div className="flex flex-col space-y-0.5">
@@ -9816,11 +9903,45 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                       </div>
                     )}
                   </div>
+
+                  {/* Dropdown Selector Comercial */}
+                  {comercialDropdownOpen && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-indigo-200 rounded-xl shadow-2xl z-50 p-2 animate-in fade-in slide-in-from-top-1 duration-150 max-w-full">
+                      <div className="text-[9px] font-black text-indigo-600 uppercase tracking-widest px-2 py-1 border-b border-indigo-50 mb-1 flex justify-between items-center">
+                        <span>Seleccionar Comercial</span>
+                        <button onClick={() => setComercialDropdownOpen(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+                      </div>
+                      <div className="max-h-48 overflow-y-auto space-y-1">
+                        {loadingUsersList ? (
+                          <div className="p-2 text-center text-xs text-gray-400 animate-pulse">Cargando usuarios...</div>
+                        ) : (
+                          activeUsersList
+                            .filter(u => ["eduardo.bonilla", "claudia.carbonel", "luisa.oncebay", "diego.rengifo"].includes(u.usuario) || true)
+                            .map(user => (
+                              <button
+                                key={user.id_usuario || user.dni}
+                                type="button"
+                                onClick={() => handleSelectComercial(user)}
+                                className={cn(
+                                  "w-full text-left px-2 py-1.5 rounded-lg text-[10.5px] font-bold transition-all flex flex-col cursor-pointer",
+                                  (data.id_comercial === user.id_usuario || data.comercial_nombre === user.nombre_completo)
+                                    ? "bg-indigo-50 text-indigo-800 border border-indigo-100"
+                                    : "hover:bg-gray-50 text-gray-700"
+                                )}
+                              >
+                                <span className="font-black uppercase">{user.nombre_completo}</span>
+                                <span className="text-[9px] text-gray-400 font-normal truncate">{user.email_usu || user.correo || 'Sin correo'}</span>
+                              </button>
+                            ))
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Técnico */}
                 <div className={cn(
-                  "group flex flex-col border rounded-xl p-2.5 shadow-sm transition-all duration-300",
+                  "group flex flex-col border rounded-xl p-2.5 shadow-sm transition-all duration-300 relative",
                   data.tecnico_nombre
                     ? "bg-white border-emerald-100 hover:border-emerald-300 hover:shadow-md"
                     : "bg-gray-50/50 border-gray-200 opacity-80"
@@ -9836,10 +9957,27 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                         data.tecnico_nombre ? "text-emerald-500" : "text-gray-500"
                       )}>Técnico</span>
                     </div>
-                    <Icon
-                      name={data.tecnico_nombre ? "settings" : "user-plus"}
-                      className={cn("h-3 w-3 transition-colors", data.tecnico_nombre ? "text-emerald-300 group-hover:text-emerald-500" : "text-gray-400")}
-                    />
+                    <div className="flex items-center gap-1">
+                      {!isReadOnly && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            fetchUsuariosActivos();
+                            setTecnicoDropdownOpen(!tecnicoDropdownOpen);
+                            setComercialDropdownOpen(false);
+                          }}
+                          className="p-1 rounded hover:bg-emerald-50 text-emerald-400 hover:text-emerald-600 transition-colors cursor-pointer"
+                          title="Cambiar Responsable Técnico"
+                        >
+                          <Icon name="pencil" className="h-3 w-3" />
+                        </button>
+                      )}
+                      <Icon
+                        name={data.tecnico_nombre ? "settings" : "user-plus"}
+                        className={cn("h-3 w-3 transition-colors", data.tecnico_nombre ? "text-emerald-300 group-hover:text-emerald-500" : "text-gray-400")}
+                      />
+                    </div>
                   </div>
 
                   <div className="flex flex-col space-y-0.5">
@@ -9869,6 +10007,38 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                       </div>
                     )}
                   </div>
+
+                  {/* Dropdown Selector Técnico */}
+                  {tecnicoDropdownOpen && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-emerald-200 rounded-xl shadow-2xl z-50 p-2 animate-in fade-in slide-in-from-top-1 duration-150 max-w-full">
+                      <div className="text-[9px] font-black text-emerald-600 uppercase tracking-widest px-2 py-1 border-b border-emerald-50 mb-1 flex justify-between items-center">
+                        <span>Seleccionar Técnico</span>
+                        <button onClick={() => setTecnicoDropdownOpen(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+                      </div>
+                      <div className="max-h-48 overflow-y-auto space-y-1">
+                        {loadingUsersList ? (
+                          <div className="p-2 text-center text-xs text-gray-400 animate-pulse">Cargando usuarios...</div>
+                        ) : (
+                          activeUsersList.map(user => (
+                            <button
+                              key={user.id_usuario || user.dni}
+                              type="button"
+                              onClick={() => handleSelectTecnico(user)}
+                              className={cn(
+                                "w-full text-left px-2 py-1.5 rounded-lg text-[10.5px] font-bold transition-all flex flex-col cursor-pointer",
+                                (data.id_tecnico === user.id_usuario || data.tecnico_nombre === user.nombre_completo)
+                                  ? "bg-emerald-50 text-emerald-800 border border-emerald-100"
+                                  : "hover:bg-gray-50 text-gray-700"
+                              )}
+                            >
+                              <span className="font-black uppercase">{user.nombre_completo}</span>
+                              <span className="text-[9px] text-gray-400 font-normal truncate">{user.email_usu || user.correo || 'Sin correo'}</span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -10377,7 +10547,9 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                     CONDICIONES: { color: 'orange', icon: 'file-text', label: 'Condiciones Generales' },
                     DESCUENTO: { color: 'teal', icon: 'percent', label: 'Descuento' },
                     DATOS_COTIZACION: { color: 'sky', icon: 'file-text', label: 'DATOS COTIZACION' },
-                    CODIGO: { color: 'violet', icon: 'file-text', label: 'CÓDIGO' }
+                    CODIGO: { color: 'violet', icon: 'file-text', label: 'CÓDIGO' },
+                    CLIENTES: { color: 'emerald', icon: 'building-2', label: 'CLIENTES' },
+                    REPRESENTANTES: { color: 'amber', icon: 'user-check', label: 'REPRESENTANTES' }
                   };
 
                   const config = typeConfig[type] || typeConfig.SISTEMA;
@@ -10400,7 +10572,11 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                   const classes = colorMap[colorClass] || colorMap.slate;
 
                   let cleanDetalle = n.detalle || "";
-                  if (type === "SUMINISTROS" && cleanDetalle.toUpperCase().startsWith("SUMINISTROS:")) {
+                  if (type === "CLIENTES" && (cleanDetalle.toUpperCase().startsWith("CLIENTES:") || cleanDetalle.toUpperCase().startsWith("CLIENTE:"))) {
+                    cleanDetalle = cleanDetalle.substring(cleanDetalle.indexOf(":") + 1).trim();
+                  } else if (type === "REPRESENTANTES" && (cleanDetalle.toUpperCase().startsWith("REPRESENTANTES:") || cleanDetalle.toUpperCase().startsWith("REPRESENTANTE:"))) {
+                    cleanDetalle = cleanDetalle.substring(cleanDetalle.indexOf(":") + 1).trim();
+                  } else if (type === "SUMINISTROS" && cleanDetalle.toUpperCase().startsWith("SUMINISTROS:")) {
                     cleanDetalle = cleanDetalle.substring("Suministros:".length).trim();
                   } else if (type === "SERVICIOS") {
                     if (cleanDetalle.toUpperCase().startsWith("SERVICIOS:")) {
@@ -10421,6 +10597,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                   } else if (type === "CODIGO" && cleanDetalle.toUpperCase().startsWith("CÓDIGO:")) {
                     cleanDetalle = cleanDetalle.substring("CÓDIGO:".length).trim();
                   }
+
+                  cleanDetalle = cleanDetalle.replace(/'([^']+)'/g, (_, match) => `'${match.toUpperCase()}'`);
 
                   return (
                     <div key={n.id_seguimiento || idx} className="relative pl-8 pb-6 group min-w-0">
@@ -10548,6 +10726,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                   <ClienteAutocomplete
                     value={copyClienteQuery}
                     initialId={copyIdCliente}
+                    numReg={numReg}
                     onSelect={(cliente) => {
                       setCopyIdCliente(cliente.id_cliente || null);
                       setCopyClienteNombre(cliente.nombre || "");
@@ -10569,6 +10748,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                     clienteId={copyIdCliente}
                     initialId={copyIdRepresentante}
                     isReadOnly={!copyIdCliente}
+                    numReg={numReg}
                     onSelect={(enc) => {
                       setCopyIdRepresentante(enc.id_representante || null);
                       setCopyRepresentanteNombre(enc.nombre_representante || "");

@@ -2436,6 +2436,7 @@ export default function InfoTabs({
                         <QuickCreateClienteModal
                           open={openQuickCreate}
                           onClose={() => setOpenQuickCreate(false)}
+                          numReg={data?.id_registro || data?.num_reg}
                           onSave={async (nuevoCliente) => {
                             // 1. Ejecutas tu mutación de guardado
                             // await saveMutation.mutateAsync(nuevoCliente);

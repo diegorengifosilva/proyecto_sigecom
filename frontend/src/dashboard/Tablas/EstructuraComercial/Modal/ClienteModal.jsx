@@ -5,6 +5,7 @@ import InputField from "@/components/ui/InputField";
 import SelectField from "@/components/ui/SelectField";
 import { Building2, Save, Trash2 } from "lucide-react";
 import api from "../../../../services/api";
+import { generarIniciales } from "@/utils/formatters";
 
 export default function ClienteModal({ open, onClose, onGuardar, onEliminar, clienteData, clientes = [] }) {
     const [formData, setFormData] = useState({});
@@ -19,18 +20,16 @@ export default function ClienteModal({ open, onClose, onGuardar, onEliminar, cli
                 });
             } else {
                 // MODO NUEVO: Cálculo del siguiente código
-                // 1. Extraemos solo los números de los códigos actuales
                 const codigosNumericos = clientes
                     .map(c => parseInt(c.codigo))
                     .filter(n => !isNaN(n));
 
-                // 2. Buscamos el mayor y sumamos 1, o empezamos en 10001 si no hay nada
                 const proximoCodigo = codigosNumericos.length > 0
                     ? Math.max(...codigosNumericos) + 1
                     : 10001;
 
                 setFormData({
-                    codigo: String(proximoCodigo), // Ya no es "Auto", es el número real
+                    codigo: String(proximoCodigo),
                     nombre: "",
                     iniciales: "",
                     ruc: "",
@@ -56,13 +55,18 @@ export default function ClienteModal({ open, onClose, onGuardar, onEliminar, cli
         // Bloqueo de longitud para RUC
         if (name === "ruc" && value.length > 11) return;
 
-        setFormData((prev) => ({
-            ...prev,
-            // Si es el campo 'activo', ignoramos 'value' y usamos 'checked'
-            [name]: name === "activo"
-                ? (checked ? "1" : "0")
-                : (type === "checkbox" ? (checked ? "1" : "0") : value),
-        }));
+        setFormData((prev) => {
+            const nextData = {
+                ...prev,
+                [name]: name === "activo"
+                    ? (checked ? "1" : "0")
+                    : (type === "checkbox" ? (checked ? "1" : "0") : value),
+            };
+            if (name === "nombre" && (!prev.iniciales || prev.iniciales === generarIniciales(prev.nombre || ""))) {
+                nextData.iniciales = generarIniciales(value);
+            }
+            return nextData;
+        });
     };
 
     const handleSubmit = () => {

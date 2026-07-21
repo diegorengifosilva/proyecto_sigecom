@@ -6,6 +6,8 @@ from concurrent.futures import ThreadPoolExecutor
 from django.db import connections, transaction
 from django.utils import timezone
 from cotizaciones_api.models import Cotizacion, CotizacionSuministro, CotizacionServicio, CotizacionMensaje, CotizacionSeguimiento
+from core.models import Cliente, Representante, TipoMarca, TipoPersonal, TipoGastoDetalle, Producto
+from users.models import Usuario
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +21,69 @@ _locks_lock = threading.Lock()
 def get_lock_for_cotizacion(cotizacion_id: int):
     with _locks_lock:
         return _cotizacion_locks[cotizacion_id]
+
+# Cerradura global por ID de cliente
+_cliente_locks = defaultdict(threading.Lock)
+_cliente_locks_lock = threading.Lock()
+
+def get_lock_for_cliente(cliente_id: int):
+    with _cliente_locks_lock:
+        return _cliente_locks[cliente_id]
+
+# Cerradura global por ID de representante
+_representante_locks = defaultdict(threading.Lock)
+_representante_locks_lock = threading.Lock()
+
+def get_lock_for_representante(representante_id: int):
+    with _representante_locks_lock:
+        return _representante_locks[representante_id]
+
+# Cerradura global por ID de marca
+_marca_locks = defaultdict(threading.Lock)
+_marca_locks_lock = threading.Lock()
+
+def get_lock_for_marca(marca_id: int):
+    with _marca_locks_lock:
+        return _marca_locks[marca_id]
+
+# Cerradura global por código de tipo de personal
+_personal_locks = defaultdict(threading.Lock)
+_personal_locks_lock = threading.Lock()
+
+def get_lock_for_personal(codigo: str):
+    with _personal_locks_lock:
+        return _personal_locks[str(codigo)]
+
+# Cerradura global por código de detalle de tipo de gasto
+_gasto_detalle_locks = defaultdict(threading.Lock)
+_gasto_detalle_locks_lock = threading.Lock()
+
+def get_lock_for_gasto_detalle(codigo: str):
+    with _gasto_detalle_locks_lock:
+        return _gasto_detalle_locks[str(codigo)]
+
+# Cerradura global por nombre de usuario
+_usuario_locks = defaultdict(threading.Lock)
+_usuario_locks_lock = threading.Lock()
+
+def get_lock_for_usuario(username: str):
+    with _usuario_locks_lock:
+        return _usuario_locks[str(username)]
+
+# Cerradura global por código de producto
+_producto_locks = defaultdict(threading.Lock)
+_producto_locks_lock = threading.Lock()
+
+def get_lock_for_producto(codigo: str):
+    with _producto_locks_lock:
+        return _producto_locks[str(codigo)]
+
+
+
+
+
+
+
 
 
 def _sincronizar_suministros_legados(cursor, cotizacion_id: int):
@@ -66,8 +131,9 @@ def _sincronizar_suministros_legados(cursor, cotizacion_id: int):
             sumin.precio_venta,                      # val
             sumin.venta_total,                       # tot
             mov,                                     # mov
-            str(sumin.id_marca_id or "")[:2],        # tpr
+            str(sumin.id_marca_id or 0).zfill(2)[:2], # tpr
             (sumin.tipo_unidad or "")[:50],          # tde
+
             tog,                                     # tog
         ))
 
@@ -494,4 +560,896 @@ def disparar_eliminacion_legada(cotizacion_id: int):
         logger.debug(f"[SyncLegado] Tarea de eliminación registrada en on_commit para cotización ID: {cotizacion_id}")
     except Exception as e:
         logger.error(f"[SyncLegado] No se pudo encolar la eliminación legada para cotización ID {cotizacion_id}: {str(e)}", exc_info=True)
+
+
+def _ejecutar_sincronizacion_cliente_legado(cliente_id: int):
+    """
+    Función de fondo que se ejecuta en un hilo secundario.
+    Traduce el cliente local e inserta o actualiza
+    en la tabla legado backup_actual.vc_tab_clientes.
+    """
+    lock = get_lock_for_cliente(cliente_id)
+    lock.acquire()
+    try:
+        logger.info(f"[SyncLegado] Iniciando sincronización de cliente ID: {cliente_id}")
+
+        cliente = Cliente.objects.filter(id_cliente=cliente_id).first()
+        if not cliente:
+            logger.warning(f"[SyncLegado] Cliente ID {cliente_id} no encontrado en base de datos local.")
+            return
+
+        codigo = int(cliente.id_cliente)
+        nombre = (cliente.nombre or "")[:70]
+        iniciales = (cliente.iniciales or "")[:20]
+        ruc = (cliente.ruc or "")[:15]
+        direccion = (cliente.direccion or "")[:200]
+        tipo = str(cliente.tipo if cliente.tipo is not None else "")[:2]
+        forma_pago = (cliente.forma_pago or "")[:100]
+        fecha = cliente.fecha_ingreso.date() if cliente.fecha_ingreso else None
+        pagina_web = (cliente.pagina_web or "")[:100]
+        representante_legal = (cliente.representante_legal or "")[:100]
+        ubicacion = (cliente.ubicacion or "")[:100]
+        logo = (cliente.logo or "")[:100]
+
+        if isinstance(cliente.activo, int):
+            activo_str = "1" if cliente.activo == 1 else "0"
+        else:
+            activo_str = str(cliente.activo if cliente.activo is not None else "1")[:1]
+            if activo_str not in ("0", "1"):
+                activo_str = "1"
+
+        sql = """
+            INSERT INTO backup_actual.vc_tab_clientes (
+                codigo, nombre, iniciales, ruc, dir, tipo, fpago, fecha, web, rleg, ubic, logo, activo
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
+            ON DUPLICATE KEY UPDATE
+                nombre = VALUES(nombre),
+                iniciales = VALUES(iniciales),
+                ruc = VALUES(ruc),
+                dir = VALUES(dir),
+                tipo = VALUES(tipo),
+                fpago = VALUES(fpago),
+                fecha = VALUES(fecha),
+                web = VALUES(web),
+                rleg = VALUES(rleg),
+                ubic = VALUES(ubic),
+                logo = VALUES(logo),
+                activo = VALUES(activo);
+        """
+
+        params = (
+            codigo, nombre, iniciales, ruc, direccion, tipo, forma_pago,
+            fecha, pagina_web, representante_legal, ubicacion, logo, activo_str
+        )
+
+        db_alias = "legacy" if "legacy" in connections else "default"
+        with connections[db_alias].cursor() as cursor:
+            cursor.execute(sql, params)
+
+        logger.info(f"[SyncLegado] Sincronización exitosa para cliente ID {cliente_id}.")
+
+    except Exception as e:
+        logger.error(f"[SyncLegado] Error durante la sincronización del cliente ID {cliente_id}: {str(e)}", exc_info=True)
+    finally:
+        connections.close_all()
+        lock.release()
+
+
+def disparar_sincronizacion_cliente_legado(cliente_id: int):
+    """
+    Registra la tarea de sincronización del cliente para que se ejecute en segundo plano
+    inmediatamente después de confirmarse el COMMIT en la base local.
+    """
+    try:
+        transaction.on_commit(lambda: SYNC_EXECUTOR.submit(_ejecutar_sincronizacion_cliente_legado, cliente_id))
+        logger.debug(f"[SyncLegado] Tarea de sincronización registrada en on_commit para cliente ID: {cliente_id}")
+    except Exception as e:
+        logger.error(f"[SyncLegado] No se pudo encolar la sincronización para cliente ID {cliente_id}: {str(e)}", exc_info=True)
+
+
+def _ejecutar_eliminacion_cliente_legado(cliente_id: int):
+    """
+    Función de fondo que se ejecuta en un hilo secundario.
+    Elimina el registro del cliente en la BD legada backup_actual.vc_tab_clientes.
+    """
+    lock = get_lock_for_cliente(cliente_id)
+    lock.acquire()
+    try:
+        logger.info(f"[SyncLegado] Iniciando eliminación legada para cliente ID: {cliente_id}")
+
+        db_alias = "legacy" if "legacy" in connections else "default"
+        with connections[db_alias].cursor() as cursor:
+            cursor.execute("DELETE FROM backup_actual.vc_tab_clientes WHERE codigo = %s", [cliente_id])
+
+        logger.info(f"[SyncLegado] Eliminación legada exitosa para cliente ID {cliente_id}.")
+
+    except Exception as e:
+        logger.error(f"[SyncLegado] Error durante la eliminación legada del cliente ID {cliente_id}: {str(e)}", exc_info=True)
+    finally:
+        connections.close_all()
+        lock.release()
+
+
+def disparar_eliminacion_cliente_legado(cliente_id: int):
+    """
+    Registra la tarea de eliminación del cliente para que se ejecute en segundo plano
+    inmediatamente después de confirmarse el COMMIT en la base local.
+    """
+    try:
+        transaction.on_commit(lambda: SYNC_EXECUTOR.submit(_ejecutar_eliminacion_cliente_legado, cliente_id))
+        logger.debug(f"[SyncLegado] Tarea de eliminación registrada en on_commit para cliente ID: {cliente_id}")
+    except Exception as e:
+        logger.error(f"[SyncLegado] No se pudo encolar la eliminación legada para cliente ID {cliente_id}: {str(e)}", exc_info=True)
+
+
+def _ejecutar_sincronizacion_representante_legado(representante_id: int):
+    """
+    Función de fondo que se ejecuta en un hilo secundario.
+    Traduce el representante local e inserta o actualiza
+    en la tabla legado backup_actual.vc_tab_clientes_d.
+    """
+    lock = get_lock_for_representante(representante_id)
+    lock.acquire()
+    try:
+        logger.info(f"[SyncLegado] Iniciando sincronización de representante ID: {representante_id}")
+
+        rep = Representante.objects.filter(id_representante=representante_id).first()
+        if not rep:
+            logger.warning(f"[SyncLegado] Representante ID {representante_id} no encontrado en base de datos local.")
+            return
+
+        codigo = int(rep.id_representante)
+        empresa = str(rep.id_cliente_id or "")[:5]
+        representante = (rep.nombre_representante or "")[:70]
+        cargo = (rep.cargo or "")[:70]
+        telefono = (rep.telefono or "")[:30]
+        movil = (rep.movil or "")[:30]
+        email = (rep.email or "")[:50]
+        direccion = (rep.direccion or "")[:50]
+
+        if isinstance(rep.activo, int):
+            activo_str = "1" if rep.activo == 1 else "0"
+        else:
+            activo_str = str(rep.activo if rep.activo is not None else "1")[:1]
+            if activo_str not in ("0", "1"):
+                activo_str = "1"
+
+        sql = """
+            INSERT INTO backup_actual.vc_tab_clientes_d (
+                codigo, empresa, representante, cargo, telefono, movil, email, direccion, activo
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
+            ON DUPLICATE KEY UPDATE
+                empresa = VALUES(empresa),
+                representante = VALUES(representante),
+                cargo = VALUES(cargo),
+                telefono = VALUES(telefono),
+                movil = VALUES(movil),
+                email = VALUES(email),
+                direccion = VALUES(direccion),
+                activo = VALUES(activo);
+        """
+
+        params = (
+            codigo, empresa, representante, cargo, telefono, movil, email, direccion, activo_str
+        )
+
+        db_alias = "legacy" if "legacy" in connections else "default"
+        with connections[db_alias].cursor() as cursor:
+            cursor.execute(sql, params)
+
+        logger.info(f"[SyncLegado] Sincronización exitosa para representante ID {representante_id}.")
+
+    except Exception as e:
+        logger.error(f"[SyncLegado] Error durante la sincronización del representante ID {representante_id}: {str(e)}", exc_info=True)
+    finally:
+        connections.close_all()
+        lock.release()
+
+
+def disparar_sincronizacion_representante_legado(representante_id: int):
+    """
+    Registra la tarea de sincronización del representante para que se ejecute en segundo plano
+    inmediatamente después de confirmarse el COMMIT en la base local.
+    """
+    try:
+        transaction.on_commit(lambda: SYNC_EXECUTOR.submit(_ejecutar_sincronizacion_representante_legado, representante_id))
+        logger.debug(f"[SyncLegado] Tarea de sincronización registrada en on_commit para representante ID: {representante_id}")
+    except Exception as e:
+        logger.error(f"[SyncLegado] No se pudo encolar la sincronización para representante ID {representante_id}: {str(e)}", exc_info=True)
+
+
+def _ejecutar_eliminacion_representante_legado(representante_id: int, cliente_id: int = None):
+    """
+    Función de fondo que se ejecuta en un hilo secundario.
+    Elimina el registro del representante en la BD legada backup_actual.vc_tab_clientes_d.
+    """
+    lock = get_lock_for_representante(representante_id)
+    lock.acquire()
+    try:
+        logger.info(f"[SyncLegado] Iniciando eliminación legada para representante ID: {representante_id}")
+
+        db_alias = "legacy" if "legacy" in connections else "default"
+        with connections[db_alias].cursor() as cursor:
+            if cliente_id is not None:
+                cursor.execute(
+                    "DELETE FROM backup_actual.vc_tab_clientes_d WHERE codigo = %s AND empresa = %s",
+                    [representante_id, str(cliente_id)[:5]]
+                )
+            else:
+                cursor.execute(
+                    "DELETE FROM backup_actual.vc_tab_clientes_d WHERE codigo = %s",
+                    [representante_id]
+                )
+
+        logger.info(f"[SyncLegado] Eliminación legada exitosa para representante ID {representante_id}.")
+
+    except Exception as e:
+        logger.error(f"[SyncLegado] Error durante la eliminación legada del representante ID {representante_id}: {str(e)}", exc_info=True)
+    finally:
+        connections.close_all()
+        lock.release()
+
+
+def disparar_eliminacion_representante_legado(representante_id: int, cliente_id: int = None):
+    """
+    Registra la tarea de eliminación del representante para que se ejecute en segundo plano
+    inmediatamente después de confirmarse el COMMIT en la base local.
+    """
+    try:
+        transaction.on_commit(lambda: SYNC_EXECUTOR.submit(_ejecutar_eliminacion_representante_legado, representante_id, cliente_id))
+        logger.debug(f"[SyncLegado] Tarea de eliminación registrada en on_commit para representante ID: {representante_id}")
+    except Exception as e:
+        logger.error(f"[SyncLegado] No se pudo encolar la eliminación legada para representante ID {representante_id}: {str(e)}", exc_info=True)
+
+
+def _ejecutar_sincronizacion_marca_legado(marca_id: int):
+    """
+    Función de fondo que se ejecuta en un hilo secundario.
+    Traduce la marca local (TipoMarca) e inserta o actualiza
+    en la tabla legado backup_actual.vc_tab_tproveedor.
+    """
+    lock = get_lock_for_marca(marca_id)
+    lock.acquire()
+    try:
+        logger.info(f"[SyncLegado] Iniciando sincronización de marca ID: {marca_id}")
+
+        marca = TipoMarca.objects.filter(id_marca=marca_id).first()
+        if not marca:
+            logger.warning(f"[SyncLegado] Marca ID {marca_id} no encontrada en base de datos local.")
+            return
+
+        codigo = str(marca.id_marca or 0).zfill(2)[:2]
+        nombre = (marca.nombre or "")[:50]
+
+        if isinstance(marca.activo, int):
+            activo_str = "1" if marca.activo == 1 else "0"
+        else:
+            activo_str = str(marca.activo if marca.activo is not None else "1").strip()[:1]
+            if activo_str not in ("0", "1"):
+                activo_str = "1"
+
+        sql = """
+            INSERT INTO backup_actual.vc_tab_tproveedor (
+                codigo, nombre, activo
+            ) VALUES (
+                %s, %s, %s
+            )
+            ON DUPLICATE KEY UPDATE
+                nombre = VALUES(nombre),
+                activo = VALUES(activo);
+        """
+
+        params = (codigo, nombre, activo_str)
+
+        db_alias = "legacy" if "legacy" in connections else "default"
+        with connections[db_alias].cursor() as cursor:
+            cursor.execute(sql, params)
+
+        logger.info(f"[SyncLegado] Sincronización exitosa para marca ID {marca_id}.")
+
+    except Exception as e:
+        logger.error(f"[SyncLegado] Error durante la sincronización de la marca ID {marca_id}: {str(e)}", exc_info=True)
+    finally:
+        connections.close_all()
+        lock.release()
+
+
+def disparar_sincronizacion_marca_legado(marca_id: int):
+    """
+    Registra la tarea de sincronización de la marca para que se ejecute en segundo plano
+    inmediatamente después de confirmarse el COMMIT en la base local.
+    """
+    try:
+        transaction.on_commit(lambda: SYNC_EXECUTOR.submit(_ejecutar_sincronizacion_marca_legado, marca_id))
+        logger.debug(f"[SyncLegado] Tarea de sincronización registrada en on_commit para marca ID: {marca_id}")
+    except Exception as e:
+        logger.error(f"[SyncLegado] No se pudo encolar la sincronización para marca ID {marca_id}: {str(e)}", exc_info=True)
+
+
+def _ejecutar_eliminacion_marca_legado(marca_id: int):
+    """
+    Función de fondo que se ejecuta en un hilo secundario.
+    Elimina el registro de la marca en la BD legada backup_actual.vc_tab_tproveedor.
+    """
+    lock = get_lock_for_marca(marca_id)
+    lock.acquire()
+    try:
+        logger.info(f"[SyncLegado] Iniciando eliminación legada para marca ID: {marca_id}")
+
+        db_alias = "legacy" if "legacy" in connections else "default"
+        with connections[db_alias].cursor() as cursor:
+            codigo = str(marca_id or 0).zfill(2)[:2]
+            cursor.execute("DELETE FROM backup_actual.vc_tab_tproveedor WHERE codigo = %s", [codigo])
+
+
+        logger.info(f"[SyncLegado] Eliminación legada exitosa para marca ID {marca_id}.")
+
+    except Exception as e:
+        logger.error(f"[SyncLegado] Error durante la eliminación legada de la marca ID {marca_id}: {str(e)}", exc_info=True)
+    finally:
+        connections.close_all()
+        lock.release()
+
+
+def disparar_eliminacion_marca_legado(marca_id: int):
+    """
+    Registra la tarea de eliminación de la marca para que se ejecute en segundo plano
+    inmediatamente después de confirmarse el COMMIT en la base local.
+    """
+    try:
+        transaction.on_commit(lambda: SYNC_EXECUTOR.submit(_ejecutar_eliminacion_marca_legado, marca_id))
+        logger.debug(f"[SyncLegado] Tarea de eliminación registrada en on_commit para marca ID: {marca_id}")
+    except Exception as e:
+        logger.error(f"[SyncLegado] No se pudo encolar la eliminación legada para marca ID {marca_id}: {str(e)}", exc_info=True)
+
+
+def _ejecutar_sincronizacion_tipo_personal_legado(personal_id: int):
+    """
+    Función de fondo que se ejecuta en un hilo secundario.
+    Traduce el tipo de personal local (TipoPersonal) e inserta o actualiza
+    en la tabla legado backup_actual.vc_tab_categorias.
+    """
+    personal = TipoPersonal.objects.filter(id_personal=personal_id).first()
+    if not personal:
+        logger.warning(f"[SyncLegado] TipoPersonal ID {personal_id} no encontrado en base de datos local.")
+        return
+
+    codigo = (personal.codigo or "").replace("-", "").strip()[:4]
+    lock = get_lock_for_personal(codigo)
+    lock.acquire()
+    try:
+        logger.info(f"[SyncLegado] Iniciando sincronización de TipoPersonal ID: {personal_id} (Código: {codigo})")
+
+        nombre = (personal.nombre or "")[:70]
+        cos_min = personal.costo_min if personal.costo_min is not None else 0.00
+        cos_max = personal.costo_max if personal.costo_max is not None else 0.00
+
+        area_val = personal.id_area_id
+        if area_val == 10 or area_val is None:
+            cod_area = "0"
+        else:
+            cod_area = str(area_val)[:1]
+
+        if isinstance(personal.activo, int):
+            activo_str = "1" if personal.activo == 1 else "0"
+        else:
+            activo_str = str(personal.activo if personal.activo is not None else "1").strip()[:1]
+            if activo_str not in ("0", "1"):
+                activo_str = "1"
+
+        sql = """
+            INSERT INTO backup_actual.vc_tab_categorias (
+                codigo, nombre, cos_min, cos_max, cod_area, activo
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s
+            )
+            ON DUPLICATE KEY UPDATE
+                nombre = VALUES(nombre),
+                cos_min = VALUES(cos_min),
+                cos_max = VALUES(cos_max),
+                cod_area = VALUES(cod_area),
+                activo = VALUES(activo);
+        """
+
+        params = (codigo, nombre, cos_min, cos_max, cod_area, activo_str)
+
+        db_alias = "legacy" if "legacy" in connections else "default"
+        with connections[db_alias].cursor() as cursor:
+            cursor.execute(sql, params)
+
+        logger.info(f"[SyncLegado] Sincronización exitosa para TipoPersonal Código {codigo}.")
+
+    except Exception as e:
+        logger.error(f"[SyncLegado] Error durante la sincronización de TipoPersonal Código {codigo}: {str(e)}", exc_info=True)
+    finally:
+        connections.close_all()
+        lock.release()
+
+
+def disparar_sincronizacion_tipo_personal_legado(personal_id: int):
+    """
+    Registra la tarea de sincronización de TipoPersonal para que se ejecute en segundo plano
+    inmediatamente después de confirmarse el COMMIT en la base local.
+    """
+    try:
+        transaction.on_commit(lambda: SYNC_EXECUTOR.submit(_ejecutar_sincronizacion_tipo_personal_legado, personal_id))
+        logger.debug(f"[SyncLegado] Tarea de sincronización registrada en on_commit para TipoPersonal ID: {personal_id}")
+    except Exception as e:
+        logger.error(f"[SyncLegado] No se pudo encolar la sincronización para TipoPersonal ID {personal_id}: {str(e)}", exc_info=True)
+
+
+def _ejecutar_eliminacion_tipo_personal_legado(codigo: str):
+    """
+    Función de fondo que se ejecuta en un hilo secundario.
+    Elimina el registro de la categoría en la BD legada backup_actual.vc_tab_categorias.
+    """
+    cod_clean = (codigo or "").replace("-", "").strip()[:4]
+
+    lock = get_lock_for_personal(cod_clean)
+    lock.acquire()
+    try:
+        logger.info(f"[SyncLegado] Iniciando eliminación legada para TipoPersonal Código: {cod_clean}")
+
+        db_alias = "legacy" if "legacy" in connections else "default"
+        with connections[db_alias].cursor() as cursor:
+            cursor.execute("DELETE FROM backup_actual.vc_tab_categorias WHERE codigo = %s", [cod_clean])
+
+        logger.info(f"[SyncLegado] Eliminación legada exitosa para TipoPersonal Código {cod_clean}.")
+
+    except Exception as e:
+        logger.error(f"[SyncLegado] Error durante la eliminación legada de TipoPersonal Código {cod_clean}: {str(e)}", exc_info=True)
+    finally:
+        connections.close_all()
+        lock.release()
+
+
+def disparar_eliminacion_tipo_personal_legado(codigo: str):
+    """
+    Registra la tarea de eliminación de TipoPersonal para que se ejecute en segundo plano
+    inmediatamente después de confirmarse el COMMIT en la base local.
+    """
+    try:
+        transaction.on_commit(lambda: SYNC_EXECUTOR.submit(_ejecutar_eliminacion_tipo_personal_legado, codigo))
+        logger.debug(f"[SyncLegado] Tarea de eliminación registrada en on_commit para TipoPersonal Código: {codigo}")
+    except Exception as e:
+        logger.error(f"[SyncLegado] No se pudo encolar la eliminación legada para TipoPersonal Código {codigo}: {str(e)}", exc_info=True)
+
+
+def _ejecutar_sincronizacion_gasto_detalle_legado(gasto_detalle_id: int):
+    """
+    Función de fondo que se ejecuta en un hilo secundario.
+    Traduce el detalle de tipo de gasto local (TipoGastoDetalle) e inserta o actualiza
+    en la tabla legado backup_actual.vc_tab_tgastos_d.
+    """
+    gasto_det = TipoGastoDetalle.objects.filter(id_gasto_detalle=gasto_detalle_id).select_related('id_tipo_gasto').first()
+    if not gasto_det:
+        logger.warning(f"[SyncLegado] TipoGastoDetalle ID {gasto_detalle_id} no encontrado en base de datos local.")
+        return
+
+    codigo = (gasto_det.codigo or "").replace("-", "").strip()[:5]
+    lock = get_lock_for_gasto_detalle(codigo)
+    lock.acquire()
+    try:
+        logger.info(f"[SyncLegado] Iniciando sincronización de TipoGastoDetalle ID: {gasto_detalle_id} (Código: {codigo})")
+
+        nombre = (gasto_det.nombre or "")[:100]
+
+        parent_gasto = gasto_det.id_tipo_gasto
+        if parent_gasto and hasattr(parent_gasto, 'codigo') and parent_gasto.codigo:
+            cod_tipo = str(parent_gasto.codigo)[:2]
+        else:
+            cod_tipo = str(gasto_det.id_tipo_gasto_id or 0).zfill(2)[:2]
+
+        if isinstance(gasto_det.activo, int):
+            activo_str = "1" if gasto_det.activo == 1 else "0"
+        else:
+            activo_str = str(gasto_det.activo if gasto_det.activo is not None else "1").strip()[:1]
+            if activo_str not in ("0", "1"):
+                activo_str = "1"
+
+        sql = """
+            INSERT INTO backup_actual.vc_tab_tgastos_d (
+                codigo, nombre, unimed, importe, cod_tipo, activo, cantidad
+            ) VALUES (
+                %s, %s, NULL, NULL, %s, %s, NULL
+            )
+            ON DUPLICATE KEY UPDATE
+                nombre = VALUES(nombre),
+                cod_tipo = VALUES(cod_tipo),
+                activo = VALUES(activo);
+        """
+
+        params = (codigo, nombre, cod_tipo, activo_str)
+
+        db_alias = "legacy" if "legacy" in connections else "default"
+        with connections[db_alias].cursor() as cursor:
+            cursor.execute(sql, params)
+
+        logger.info(f"[SyncLegado] Sincronización exitosa para TipoGastoDetalle Código {codigo}.")
+
+    except Exception as e:
+        logger.error(f"[SyncLegado] Error durante la sincronización de TipoGastoDetalle Código {codigo}: {str(e)}", exc_info=True)
+    finally:
+        connections.close_all()
+        lock.release()
+
+
+def disparar_sincronizacion_gasto_detalle_legado(gasto_detalle_id: int):
+    """
+    Registra la tarea de sincronización de TipoGastoDetalle para que se ejecute en segundo plano
+    inmediatamente después de confirmarse el COMMIT en la base local.
+    """
+    try:
+        transaction.on_commit(lambda: SYNC_EXECUTOR.submit(_ejecutar_sincronizacion_gasto_detalle_legado, gasto_detalle_id))
+        logger.debug(f"[SyncLegado] Tarea de sincronización registrada en on_commit para TipoGastoDetalle ID: {gasto_detalle_id}")
+    except Exception as e:
+        logger.error(f"[SyncLegado] No se pudo encolar la sincronización para TipoGastoDetalle ID {gasto_detalle_id}: {str(e)}", exc_info=True)
+
+
+def _ejecutar_eliminacion_gasto_detalle_legado(codigo: str):
+    """
+    Función de fondo que se ejecuta en un hilo secundario.
+    Elimina el registro del detalle de gasto en la BD legada backup_actual.vc_tab_tgastos_d.
+    """
+    cod_clean = (codigo or "").replace("-", "").strip()[:5]
+    lock = get_lock_for_gasto_detalle(cod_clean)
+    lock.acquire()
+    try:
+        logger.info(f"[SyncLegado] Iniciando eliminación legada para TipoGastoDetalle Código: {cod_clean}")
+
+        db_alias = "legacy" if "legacy" in connections else "default"
+        with connections[db_alias].cursor() as cursor:
+            cursor.execute("DELETE FROM backup_actual.vc_tab_tgastos_d WHERE codigo = %s", [cod_clean])
+
+        logger.info(f"[SyncLegado] Eliminación legada exitosa para TipoGastoDetalle Código {cod_clean}.")
+
+    except Exception as e:
+        logger.error(f"[SyncLegado] Error durante la eliminación legada de TipoGastoDetalle Código {cod_clean}: {str(e)}", exc_info=True)
+    finally:
+        connections.close_all()
+        lock.release()
+
+
+def disparar_eliminacion_gasto_detalle_legado(codigo: str):
+    """
+    Registra la tarea de eliminación de TipoGastoDetalle para que se ejecute en segundo plano
+    inmediatamente después de confirmarse el COMMIT en la base local.
+    """
+    try:
+        transaction.on_commit(lambda: SYNC_EXECUTOR.submit(_ejecutar_eliminacion_gasto_detalle_legado, codigo))
+        logger.debug(f"[SyncLegado] Tarea de eliminación registrada en on_commit para TipoGastoDetalle Código: {codigo}")
+    except Exception as e:
+        logger.error(f"[SyncLegado] No se pudo encolar la eliminación legada para TipoGastoDetalle Código {codigo}: {str(e)}", exc_info=True)
+
+
+def _ejecutar_sincronizacion_usuario_legado(usuario_id: int):
+    """
+    Función de fondo que se ejecuta en un hilo secundario.
+    Traduce el usuario local (Usuario) e inserta o actualiza
+    en la tabla legado backup_actual.seg_usuarios.
+    """
+    usr = Usuario.objects.filter(id_usuario=usuario_id).select_related('id_area', 'id_cargo').first()
+    if not usr:
+        logger.warning(f"[SyncLegado] Usuario ID {usuario_id} no encontrado en base de datos local.")
+        return
+
+    usuario_usu = (usr.usuario or "")[:30]
+    lock = get_lock_for_usuario(usuario_usu)
+    lock.acquire()
+    try:
+        logger.info(f"[SyncLegado] Iniciando sincronización de Usuario ID: {usuario_id} (Usuario: {usuario_usu})")
+
+        nomb_cort_usu = (usr.nombre_completo or "")[:100]
+        email_usu = (usr.correo or "")[:100]
+        email_o = (usr.correo_personal or "")[:100]
+        fech_crea_usu = timezone.now()
+        dni = (usr.dni or "")[:15]
+        telefono = (usr.telefono or "")[:50]
+        movil1 = (usr.movil_personal or "")[:50]
+        movil2 = (usr.movil_coorporativo or "")[:50]
+        fecha_nac = usr.fecha_nacimiento
+        fecha_ing = usr.fecha_ingreso
+        password_usu = (usr.contrasena or "")[:30]
+        doc = (getattr(usr, 'documento', None) or "")[:3]
+        direccion = (usr.direccion or "")[:200]
+        estc = (usr.estado_civil or "")[:1]
+        sex = (usr.genero or "")[:1]
+
+        if isinstance(usr.activo, int):
+            activo_str = "1" if usr.activo == 1 else "0"
+        else:
+            activo_str = str(usr.activo if usr.activo is not None else "1").strip()[:1]
+            if activo_str not in ("0", "1"):
+                activo_str = "1"
+
+        area_val = usr.id_area_id
+        if area_val == 10 or area_val is None:
+            area = "0"
+        else:
+            area = str(area_val)[:1]
+
+        cargo = str(usr.id_cargo_id or 0).zfill(3)[:3]
+
+        sql = """
+            INSERT INTO backup_actual.seg_usuarios (
+                usuario_usu, nomb_cort_usu, email_usu, email_o, fech_crea_usu,
+                dni, telefono, movil1, movil2, fecha_nac, fecha_ing,
+                password_usu, doc, dir, estc, sex, activo, area, cargo
+            ) VALUES (
+                %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, %s, %s
+            )
+            ON DUPLICATE KEY UPDATE
+                nomb_cort_usu = VALUES(nomb_cort_usu),
+                email_usu = VALUES(email_usu),
+                email_o = VALUES(email_o),
+                fech_crea_usu = VALUES(fech_crea_usu),
+                dni = VALUES(dni),
+                telefono = VALUES(telefono),
+                movil1 = VALUES(movil1),
+                movil2 = VALUES(movil2),
+                fecha_nac = VALUES(fecha_nac),
+                fecha_ing = VALUES(fecha_ing),
+                password_usu = VALUES(password_usu),
+                doc = VALUES(doc),
+                dir = VALUES(dir),
+                estc = VALUES(estc),
+                sex = VALUES(sex),
+                activo = VALUES(activo),
+                area = VALUES(area),
+                cargo = VALUES(cargo);
+        """
+
+        params = (
+            usuario_usu, nomb_cort_usu, email_usu, email_o, fech_crea_usu,
+            dni, telefono, movil1, movil2, fecha_nac, fecha_ing,
+            password_usu, doc, direccion, estc, sex, activo_str, area, cargo
+        )
+
+        db_alias = "legacy" if "legacy" in connections else "default"
+        with connections[db_alias].cursor() as cursor:
+            cursor.execute(sql, params)
+
+        logger.info(f"[SyncLegado] Sincronización exitosa para Usuario '{usuario_usu}'.")
+
+    except Exception as e:
+        logger.error(f"[SyncLegado] Error durante la sincronización de Usuario '{usuario_usu}': {str(e)}", exc_info=True)
+    finally:
+        connections.close_all()
+        lock.release()
+
+
+def disparar_sincronizacion_usuario_legado(usuario_id: int):
+    """
+    Registra la tarea de sincronización de Usuario para que se ejecute en segundo plano
+    inmediatamente después de confirmarse el COMMIT en la base local.
+    """
+    try:
+        transaction.on_commit(lambda: SYNC_EXECUTOR.submit(_ejecutar_sincronizacion_usuario_legado, usuario_id))
+        logger.debug(f"[SyncLegado] Tarea de sincronización registrada en on_commit para Usuario ID: {usuario_id}")
+    except Exception as e:
+        logger.error(f"[SyncLegado] No se pudo encolar la sincronización para Usuario ID {usuario_id}: {str(e)}", exc_info=True)
+
+
+def _ejecutar_eliminacion_usuario_legado(username: str):
+    """
+    Función de fondo que se ejecuta en un hilo secundario.
+    Elimina el registro de usuario en la BD legada backup_actual.seg_usuarios.
+    """
+    usr_clean = (username or "")[:30]
+    lock = get_lock_for_usuario(usr_clean)
+    lock.acquire()
+    try:
+        logger.info(f"[SyncLegado] Iniciando eliminación legada para Usuario: {usr_clean}")
+
+        db_alias = "legacy" if "legacy" in connections else "default"
+        with connections[db_alias].cursor() as cursor:
+            cursor.execute("DELETE FROM backup_actual.seg_usuarios WHERE usuario_usu = %s", [usr_clean])
+
+        logger.info(f"[SyncLegado] Eliminación legada exitosa para Usuario '{usr_clean}'.")
+
+    except Exception as e:
+        logger.error(f"[SyncLegado] Error durante la eliminación legada de Usuario '{usr_clean}': {str(e)}", exc_info=True)
+    finally:
+        connections.close_all()
+        lock.release()
+
+
+def disparar_eliminacion_usuario_legado(username: str):
+    """
+    Registra la tarea de eliminación de Usuario para que se ejecute en segundo plano
+    inmediatamente después de confirmarse el COMMIT en la base local.
+    """
+    try:
+        transaction.on_commit(lambda: SYNC_EXECUTOR.submit(_ejecutar_eliminacion_usuario_legado, username))
+        logger.debug(f"[SyncLegado] Tarea de eliminación registrada en on_commit para Usuario: {username}")
+    except Exception as e:
+        logger.error(f"[SyncLegado] No se pudo encolar la eliminación legada para Usuario '{username}': {str(e)}", exc_info=True)
+
+
+def _ejecutar_sincronizacion_producto_legado(producto_id: int):
+    """
+    Función de fondo que se ejecuta en un hilo secundario.
+    Traduce el producto local (Producto) e inserta o actualiza
+    en la tabla legado correspondiente (vc_tab_rittal, vc_tab_rockwell, vc_tab_hoffman o alm_articulos)
+    según la marca del producto.
+    """
+    prod = Producto.objects.filter(id_producto=producto_id).select_related('id_marca', 'id_medida').first()
+    if not prod:
+        logger.warning(f"[SyncLegado] Producto ID {producto_id} no encontrado en base de datos local.")
+        return
+
+    marca_nombre = (prod.id_marca.nombre or "").strip() if prod.id_marca else ""
+    marca_lower = marca_nombre.lower()
+
+    if "rittal" in marca_lower:
+        target_table = "vc_tab_rittal"
+        max_cod_len = 10
+        max_nom_len = 100
+    elif "rockwell" in marca_lower:
+        target_table = "vc_tab_rockwell"
+        max_cod_len = 60
+        max_nom_len = 150
+    elif "hoffman" in marca_lower:
+        target_table = "vc_tab_hoffman"
+        max_cod_len = 10
+        max_nom_len = 100
+    else:
+        target_table = "alm_articulos"
+        max_cod_len = 30
+        max_nom_len = 200
+
+    codigo = (prod.codigo or "")[:max_cod_len]
+    lock = get_lock_for_producto(codigo)
+    lock.acquire()
+    try:
+        logger.info(f"[SyncLegado] Iniciando sincronización de Producto ID: {producto_id} (Código: {codigo}) hacia tabla '{target_table}' (Marca: {marca_nombre})")
+
+        activo_str = "1" if prod.activo == 1 else "0"
+
+        if target_table == "vc_tab_rockwell":
+            codigo2 = (prod.codigo2 or "")[:60]
+            descripcion = (prod.descripcion or prod.nombre or "")[:150]
+            precio = prod.precio_dolares or 0.00
+            proveedor = (prod.proveedor or "")[:20]
+
+            sql = """
+                INSERT INTO backup_actual.vc_tab_rockwell (
+                    codigo, codigo2, descripcion, precio, proveedor, activo
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s
+                )
+                ON DUPLICATE KEY UPDATE
+                    codigo2 = VALUES(codigo2),
+                    descripcion = VALUES(descripcion),
+                    precio = VALUES(precio),
+                    proveedor = VALUES(proveedor),
+                    activo = VALUES(activo);
+            """
+            params = (codigo, codigo2, descripcion, precio, proveedor, activo_str)
+
+        else:
+            nombre = (prod.nombre or "")[:max_nom_len]
+            um = (prod.id_medida.codigo if prod.id_medida and hasattr(prod.id_medida, 'codigo') and prod.id_medida.codigo else (prod.id_medida.nombre if prod.id_medida else ""))[:10]
+            descripcion = (prod.descripcion or prod.nombre or "")[:100]
+            precio_s = prod.precio_soles or 0.00
+            precio_d = prod.precio_dolares or 0.00
+            cantidad = prod.cantidad or 0
+            ocodigo = (prod.codigo2 or "")[:15]
+            stock_min = prod.stock_min or 0
+            stock_max = prod.stock_max or 0
+            descuento = prod.descuento or 0.00
+            proveedor = (prod.proveedor or "")[:70]
+
+            sql = f"""
+                INSERT INTO backup_actual.{target_table} (
+                    codigo, nombre, um, descripcion, precio_s, precio_d, cantidad, ocodigo, stock_min, stock_max, descuento, proveedor, activo
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                )
+                ON DUPLICATE KEY UPDATE
+                    nombre = VALUES(nombre),
+                    um = VALUES(um),
+                    descripcion = VALUES(descripcion),
+                    precio_s = VALUES(precio_s),
+                    precio_d = VALUES(precio_d),
+                    cantidad = VALUES(cantidad),
+                    ocodigo = VALUES(ocodigo),
+                    stock_min = VALUES(stock_min),
+                    stock_max = VALUES(stock_max),
+                    descuento = VALUES(descuento),
+                    proveedor = VALUES(proveedor),
+                    activo = VALUES(activo);
+            """
+            params = (
+                codigo, nombre, um, descripcion, precio_s, precio_d,
+                cantidad, ocodigo, stock_min, stock_max, descuento, proveedor, activo_str
+            )
+
+        db_alias = "legacy" if "legacy" in connections else "default"
+        with connections[db_alias].cursor() as cursor:
+            cursor.execute(sql, params)
+
+        logger.info(f"[SyncLegado] Sincronización exitosa para Producto Código '{codigo}' en tabla '{target_table}'.")
+
+    except Exception as e:
+        logger.error(f"[SyncLegado] Error durante la sincronización de Producto Código '{codigo}' en '{target_table}': {str(e)}", exc_info=True)
+    finally:
+        connections.close_all()
+        lock.release()
+
+
+def disparar_sincronizacion_producto_legado(producto_id: int):
+    """
+    Registra la tarea de sincronización de Producto para que se ejecute en segundo plano
+    inmediatamente después de confirmarse el COMMIT en la base local.
+    """
+    try:
+        transaction.on_commit(lambda: SYNC_EXECUTOR.submit(_ejecutar_sincronizacion_producto_legado, producto_id))
+        logger.debug(f"[SyncLegado] Tarea de sincronización registrada en on_commit para Producto ID: {producto_id}")
+    except Exception as e:
+        logger.error(f"[SyncLegado] No se pudo encolar la sincronización para Producto ID {producto_id}: {str(e)}", exc_info=True)
+
+
+def _ejecutar_eliminacion_producto_legado(codigo: str, marca_nombre: str = ""):
+    """
+    Función de fondo que se ejecuta en un hilo secundario.
+    Elimina el registro de producto en la BD legada según su marca.
+    """
+    marca_lower = (marca_nombre or "").lower()
+
+    if "rittal" in marca_lower:
+        target_table = "vc_tab_rittal"
+        max_cod_len = 10
+    elif "rockwell" in marca_lower:
+        target_table = "vc_tab_rockwell"
+        max_cod_len = 60
+    elif "hoffman" in marca_lower:
+        target_table = "vc_tab_hoffman"
+        max_cod_len = 10
+    else:
+        target_table = "alm_articulos"
+        max_cod_len = 30
+
+    cod_clean = (codigo or "")[:max_cod_len]
+    lock = get_lock_for_producto(cod_clean)
+    lock.acquire()
+    try:
+        logger.info(f"[SyncLegado] Iniciando eliminación legada para Producto Código '{cod_clean}' en '{target_table}'")
+
+        db_alias = "legacy" if "legacy" in connections else "default"
+        with connections[db_alias].cursor() as cursor:
+            cursor.execute(f"DELETE FROM backup_actual.{target_table} WHERE codigo = %s", [cod_clean])
+
+        logger.info(f"[SyncLegado] Eliminación legada exitosa para Producto '{cod_clean}' en '{target_table}'.")
+
+    except Exception as e:
+        logger.error(f"[SyncLegado] Error durante la eliminación legada de Producto '{cod_clean}' en '{target_table}': {str(e)}", exc_info=True)
+    finally:
+        connections.close_all()
+        lock.release()
+
+
+def disparar_eliminacion_producto_legado(codigo: str, marca_nombre: str = ""):
+    """
+    Registra la tarea de eliminación de Producto para que se ejecute en segundo plano
+    inmediatamente después de confirmarse el COMMIT en la base local.
+    """
+    try:
+        transaction.on_commit(lambda: SYNC_EXECUTOR.submit(_ejecutar_eliminacion_producto_legado, codigo, marca_nombre))
+        logger.debug(f"[SyncLegado] Tarea de eliminación registrada en on_commit para Producto Código '{codigo}' ({marca_nombre})")
+    except Exception as e:
+        logger.error(f"[SyncLegado] No se pudo encolar la eliminación legada para Producto Código '{codigo}': {str(e)}", exc_info=True)
+
+
+
+
+
+
+
 

@@ -3,6 +3,9 @@ import { createPortal } from "react-dom";
 import * as LucideIcons from "lucide-react";
 import api from "@/services/api";
 import { toast } from "../../utils/toast";
+import QuickCreateClienteModal from "../ui/QuickCreateClienteModal";
+import QuickCreateRepresentanteModal from "../ui/QuickCreateRepresentanteModal";
+
 
 const Icon = ({ name, className }) => {
   const iconName = name
@@ -18,6 +21,20 @@ const normalizeText = (text = "") =>
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
+
+const hasMatchingPrefix = (name = "", query = "") => {
+  const normName = (name || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  const normQuery = (query || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  if (!normQuery) return false;
+  
+  if (normName === normQuery || normName.startsWith(normQuery)) return true;
+
+  const cleanName = normName.replace(/\b(s\.?a\.?c\.?|s\.?a\.?|e\.?i\.?r\.?l\.?|s\.?r\.?l\.?|s\.?a\.?b\.?)\b/g, "").trim();
+  if (cleanName === normQuery || cleanName.startsWith(normQuery)) return true;
+
+  return false;
+};
+
 
 const highlightMatch = (text, query) => {
   if (!text) return "";
@@ -55,7 +72,7 @@ const highlightMatch = (text, query) => {
   return parts;
 };
 
-export const ClienteAutocomplete = ({ value, onSelect, isReadOnly, initialId, onContextMenu, onOptionsClick, tabIndex }) => {
+export const ClienteAutocomplete = ({ value, onSelect, isReadOnly, initialId, onContextMenu, onOptionsClick, tabIndex, numReg }) => {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -65,10 +82,12 @@ export const ClienteAutocomplete = ({ value, onSelect, isReadOnly, initialId, on
   const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 });
   const [isFocused, setIsFocused] = useState(false);
 
+  const [showQuickClienteModal, setShowQuickClienteModal] = useState(false);
   const containerRef = useRef(null);
   const spanRef = useRef(null);
   const inputRef = useRef(null);
   const dropdownRef = useRef(null);
+
 
   // Sync with parent value
   useEffect(() => {
@@ -198,17 +217,26 @@ export const ClienteAutocomplete = ({ value, onSelect, isReadOnly, initialId, on
     }, 150);
   };
 
+  const matchFound = results.some(
+    (c) => hasMatchingPrefix(c.nombre, query)
+  );
+
   const handleKeyDown = (e) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setHighlightIndex((prev) => (prev + 1 < results.length ? prev + 1 : 0));
+      const maxIndex = query.trim() && !matchFound ? results.length : results.length - 1;
+      setHighlightIndex((prev) => (prev + 1 <= maxIndex ? prev + 1 : 0));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      setHighlightIndex((prev) => (prev - 1 >= 0 ? prev - 1 : results.length - 1));
+      const maxIndex = query.trim() && !matchFound ? results.length : results.length - 1;
+      setHighlightIndex((prev) => (prev - 1 >= 0 ? prev - 1 : maxIndex));
     } else if (e.key === "Enter") {
       e.preventDefault();
       if (highlightIndex >= 0 && results[highlightIndex]) {
         handleSelectOption(results[highlightIndex]);
+      } else if (highlightIndex === results.length || (query.trim() && !matchFound)) {
+        setShowDropdown(false);
+        setShowQuickClienteModal(true);
       } else {
         setShowDropdown(false);
         setHighlightIndex(-1);
@@ -285,7 +313,7 @@ export const ClienteAutocomplete = ({ value, onSelect, isReadOnly, initialId, on
             onKeyDown={handleKeyDown}
             placeholder="Buscar cliente..."
           />
-          {showDropdown && (results.length > 0 || loading) && createPortal(
+          {showDropdown && (results.length > 0 || loading || (query.trim() && !matchFound)) && createPortal(
             <div
               ref={dropdownRef}
               style={{
@@ -304,25 +332,41 @@ export const ClienteAutocomplete = ({ value, onSelect, isReadOnly, initialId, on
               {loading ? (
                 <div className="p-3 text-center text-xs text-slate-400 font-bold uppercase tracking-wider animate-pulse">Buscando...</div>
               ) : (
-                results.map((c, index) => (
-                  <div
-                    key={c.id_cliente}
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      handleSelectOption(c);
-                    }}
-                    className={`px-3 py-2 text-[10px] cursor-pointer rounded-lg mb-0.5 last:mb-0 transition-all duration-150 border-l-2
-                      ${highlightIndex === index 
-                        ? "bg-teal-50/80 text-teal-950 border-teal-500 font-semibold" 
-                        : "hover:bg-slate-50/80 text-slate-700 border-transparent"}`}
-                  >
-                    <div className="font-black uppercase">{highlightMatch(c.nombre, query)}</div>
-                    <div className={`text-[8px] mt-0.5 font-bold transition-colors
-                      ${highlightIndex === index ? "text-teal-600/80" : "text-slate-400"}`}>
-                      RUC: {c.ruc || "SIN RUC"}
+                <>
+                  {results.map((c, index) => (
+                    <div
+                      key={c.id_cliente}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        handleSelectOption(c);
+                      }}
+                      className={`px-3 py-2 text-[10px] cursor-pointer rounded-lg mb-0.5 last:mb-0 transition-all duration-150 border-l-2
+                        ${highlightIndex === index 
+                          ? "bg-teal-50/80 text-teal-950 border-teal-500 font-semibold" 
+                          : "hover:bg-slate-50/80 text-slate-700 border-transparent"}`}
+                    >
+                      <div className="font-black uppercase">{highlightMatch(c.nombre, query)}</div>
+                      <div className={`text-[8px] mt-0.5 font-bold transition-colors
+                        ${highlightIndex === index ? "text-teal-600/80" : "text-slate-400"}`}>
+                        RUC: {c.ruc || "SIN RUC"}
+                      </div>
                     </div>
-                  </div>
-                ))
+                  ))}
+                  {query.trim() && !matchFound && (
+                    <div
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setShowDropdown(false);
+                        setShowQuickClienteModal(true);
+                      }}
+                      className={`px-3 py-2 text-[10px] cursor-pointer rounded-lg mt-1 bg-teal-50 hover:bg-teal-100 text-teal-800 font-black border border-teal-200/80 flex items-center gap-1.5 transition-all shadow-sm
+                        ${highlightIndex === results.length ? "ring-2 ring-teal-500 font-bold" : ""}`}
+                    >
+                      <Icon name="plus-circle" className="h-3.5 w-3.5 text-teal-600" />
+                      <span className="uppercase">Crear Cliente "{query.trim()}"</span>
+                    </div>
+                  )}
+                </>
               )}
             </div>,
             document.body
@@ -342,11 +386,24 @@ export const ClienteAutocomplete = ({ value, onSelect, isReadOnly, initialId, on
           <Icon name="more-vertical" className="h-3.5 w-3.5" />
         </button>
       )}
+      <QuickCreateClienteModal
+        open={showQuickClienteModal}
+        onClose={() => setShowQuickClienteModal(false)}
+        initialName={query}
+        coords={coords}
+        numReg={numReg}
+        onSave={(nuevoCliente) => {
+          handleSelectOption(nuevoCliente);
+        }}
+      />
     </div>
   );
 };
 
-export const RepresentanteAutocomplete = ({ value, clienteId, onSelect, isReadOnly, initialId, onContextMenu, onOptionsClick, tabIndex }) => {
+
+
+
+export const RepresentanteAutocomplete = ({ value, clienteId, onSelect, isReadOnly, initialId, onContextMenu, onOptionsClick, tabIndex, numReg }) => {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -356,10 +413,12 @@ export const RepresentanteAutocomplete = ({ value, clienteId, onSelect, isReadOn
   const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 });
   const [isFocused, setIsFocused] = useState(false);
 
+  const [showQuickRepModal, setShowQuickRepModal] = useState(false);
   const containerRef = useRef(null);
   const spanRef = useRef(null);
   const inputRef = useRef(null);
   const dropdownRef = useRef(null);
+
   const cacheRef = useRef({}); // Keyed by clienteId: { [clienteId]: [...] }
 
   // Sync with parent value
@@ -498,17 +557,27 @@ export const RepresentanteAutocomplete = ({ value, clienteId, onSelect, isReadOn
     }, 150);
   };
 
+
+  const matchFound = results.some(
+    (enc) => hasMatchingPrefix(enc.nombre_representante, query)
+  );
+
   const handleKeyDown = (e) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setHighlightIndex((prev) => (prev + 1 < results.length ? prev + 1 : 0));
+      const maxIndex = clienteId && query.trim() && !matchFound ? results.length : results.length - 1;
+      setHighlightIndex((prev) => (prev + 1 <= maxIndex ? prev + 1 : 0));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      setHighlightIndex((prev) => (prev - 1 >= 0 ? prev - 1 : results.length - 1));
+      const maxIndex = clienteId && query.trim() && !matchFound ? results.length : results.length - 1;
+      setHighlightIndex((prev) => (prev - 1 >= 0 ? prev - 1 : maxIndex));
     } else if (e.key === "Enter") {
       e.preventDefault();
       if (highlightIndex >= 0 && results[highlightIndex]) {
         handleSelectOption(results[highlightIndex]);
+      } else if (highlightIndex === results.length || (clienteId && query.trim() && !matchFound)) {
+        setShowDropdown(false);
+        setShowQuickRepModal(true);
       } else {
         setShowDropdown(false);
         setHighlightIndex(-1);
@@ -586,7 +655,7 @@ export const RepresentanteAutocomplete = ({ value, clienteId, onSelect, isReadOn
             placeholder={clienteId ? "Buscar encargado..." : "Selecciona cliente primero"}
             disabled={!clienteId}
           />
-          {showDropdown && (results.length > 0 || loading) && createPortal(
+          {showDropdown && (results.length > 0 || loading || (clienteId && query.trim() && !matchFound)) && createPortal(
             <div
               ref={dropdownRef}
               style={{
@@ -605,25 +674,41 @@ export const RepresentanteAutocomplete = ({ value, clienteId, onSelect, isReadOn
               {loading ? (
                 <div className="p-3 text-center text-xs text-slate-400 font-bold uppercase tracking-wider animate-pulse">Buscando...</div>
               ) : (
-                results.map((enc, index) => (
-                  <div
-                    key={enc.id_representante}
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      handleSelectOption(enc);
-                    }}
-                    className={`px-3 py-2 text-[10px] cursor-pointer rounded-lg mb-0.5 last:mb-0 transition-all duration-150 border-l-2
-                      ${highlightIndex === index 
-                        ? "bg-teal-50/80 text-teal-950 border-teal-500 font-semibold" 
-                        : "hover:bg-slate-50/80 text-slate-700 border-transparent"}`}
-                  >
-                    <div className="font-black uppercase">{highlightMatch(enc.nombre_representante, query)}</div>
-                    <div className={`text-[8px] mt-0.5 font-bold transition-colors
-                      ${highlightIndex === index ? "text-teal-600/80" : "text-slate-400"}`}>
-                      {enc.cargo || "SIN CARGO"}
+                <>
+                  {results.map((enc, index) => (
+                    <div
+                      key={enc.id_representante}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        handleSelectOption(enc);
+                      }}
+                      className={`px-3 py-2 text-[10px] cursor-pointer rounded-lg mb-0.5 last:mb-0 transition-all duration-150 border-l-2
+                        ${highlightIndex === index 
+                          ? "bg-amber-50/80 text-amber-950 border-amber-500 font-semibold" 
+                          : "hover:bg-slate-50/80 text-slate-700 border-transparent"}`}
+                    >
+                      <div className="font-black uppercase">{highlightMatch(enc.nombre_representante, query)}</div>
+                      <div className={`text-[8px] mt-0.5 font-bold transition-colors
+                        ${highlightIndex === index ? "text-amber-600/80" : "text-slate-400"}`}>
+                        {enc.cargo || "SIN CARGO"}
+                      </div>
                     </div>
-                  </div>
-                ))
+                  ))}
+                  {clienteId && query.trim() && !matchFound && (
+                    <div
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setShowDropdown(false);
+                        setShowQuickRepModal(true);
+                      }}
+                      className={`px-3 py-2 text-[10px] cursor-pointer rounded-lg mt-1 bg-amber-50 hover:bg-amber-100 text-amber-900 font-black border border-amber-200/80 flex items-center gap-1.5 transition-all shadow-sm
+                        ${highlightIndex === results.length ? "ring-2 ring-amber-500 font-bold" : ""}`}
+                    >
+                      <Icon name="user-plus" className="h-3.5 w-3.5 text-amber-600" />
+                      <span className="uppercase">Crear Representante "{query.trim()}"</span>
+                    </div>
+                  )}
+                </>
               )}
             </div>,
             document.body
@@ -643,9 +728,26 @@ export const RepresentanteAutocomplete = ({ value, clienteId, onSelect, isReadOn
           <Icon name="more-vertical" className="h-3.5 w-3.5" />
         </button>
       )}
+      <QuickCreateRepresentanteModal
+        open={showQuickRepModal}
+        onClose={() => setShowQuickRepModal(false)}
+        clienteId={clienteId}
+        initialName={query}
+        coords={coords}
+        numReg={numReg}
+        onSave={(nuevoRep) => {
+          // Limpiar caché para este clienteId
+          if (cacheRef.current[clienteId]) {
+            delete cacheRef.current[clienteId];
+          }
+          handleSelectOption(nuevoRep);
+        }}
+      />
     </div>
   );
 };
+
+
 
 export const ProductoAutocomplete = ({
   value,
