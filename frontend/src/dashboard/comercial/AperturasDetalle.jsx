@@ -61,6 +61,30 @@ export default function AperturasDetalle({ idRegistro }) {
   const [aperturas, setAperturas] = useState([]);
   const [formsState, setFormsState] = useState({});
   const [previewDoc, setPreviewDoc] = useState(null);
+  
+  // Handle closing preview modal with Escape key
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") {
+        setPreviewDoc(null);
+      }
+    };
+    const handleMessage = (e) => {
+      if (e.data && e.data.type === "close-report-modal") {
+        setPreviewDoc(null);
+      }
+    };
+
+    if (previewDoc) {
+      window.addEventListener("keydown", handleKeyDown);
+      window.addEventListener("message", handleMessage);
+    }
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("message", handleMessage);
+    };
+  }, [previewDoc]);
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [usuariosActivos, setUsuariosActivos] = useState([]);
@@ -2476,13 +2500,37 @@ export default function AperturasDetalle({ idRegistro }) {
             </div>
 
             {/* Contenido del Modal */}
-            <div className="flex-1 bg-slate-50 p-4 overflow-hidden">
+            <div 
+              className="flex-1 bg-slate-50 p-4 overflow-hidden"
+              onMouseEnter={(e) => {
+                const iframe = e.currentTarget.querySelector('iframe');
+                if (iframe) {
+                  try {
+                    iframe.focus();
+                    iframe.contentWindow?.focus();
+                  } catch (err) {
+                    console.error("Error focusing iframe on hover:", err);
+                  }
+                }
+              }}
+            >
               {previewDoc.url ? (
                 previewDoc.extension === '.pdf' ? (
                   <iframe 
                     src={previewDoc.url} 
                     className="w-full h-full bg-white rounded-xl border border-slate-200 shadow-sm" 
                     title="Previsualización PDF" 
+                    onLoad={(e) => {
+                      const iframe = e.target;
+                      setTimeout(() => {
+                        try {
+                          iframe.focus();
+                          iframe.contentWindow?.focus();
+                        } catch (err) {
+                          console.error("Error focusing iframe on load:", err);
+                        }
+                      }, 50);
+                    }}
                   />
                 ) : ['.png', '.jpg', '.jpeg', '.webp'].includes(previewDoc.extension) ? (
                   <div className="w-full h-full flex items-center justify-center bg-white rounded-xl border border-slate-200 shadow-sm p-4 overflow-auto">

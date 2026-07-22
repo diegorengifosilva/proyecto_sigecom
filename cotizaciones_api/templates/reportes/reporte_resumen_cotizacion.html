@@ -319,5 +319,13 @@ function descargarExcel(tablaHTML){
   window.addEventListener('load', notifyParentHeight);
   window.addEventListener('resize', notifyParentHeight);
 </script>
+<script>
+  window.focus();
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      window.parent.postMessage({ type: 'close-report-modal' }, '*');
+    }
+  });
+</script>
 </body>
 </html>

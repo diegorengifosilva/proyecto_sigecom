@@ -104,6 +104,7 @@ class Cotizacion(models.Model):
     mensajes = models.IntegerField(null=True, blank=True)
     seguimiento = models.IntegerField(null=True, blank=True)
     probabilidad = models.IntegerField(null=True, blank=True)
+    fijar = models.IntegerField(default=0, db_column='fijar')
 
     # ── OPORTUNIDADES ─────────────────────────────
     recepcion_solicitud = models.DateTimeField(null=True, blank=True)

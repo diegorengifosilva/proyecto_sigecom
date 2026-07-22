@@ -182,6 +182,7 @@ class CotizacionTablaSerializer(serializers.ModelSerializer):
             "servicios_unidad",
             "validez_valor",
             "validez_unidad",
+            "fijar",
         ]
 
     # ── 3. Lógica de Métodos ──
@@ -758,6 +759,7 @@ class OportunidadTablaSerializer(serializers.ModelSerializer):
             "comercial_movil_corporativo",
             "comercial_movil_personal",
             "comentario",
+            "fijar",
         ]
 
     # ── 2. Lógica de Métodos (Getters) ──
@@ -895,7 +897,7 @@ class CotizacionCompactaSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Cotizacion
-        fields = ["codigo", "referencia", "id_cliente", "cliente_nombre", "id_area", "area_nombre"]
+        fields = ["codigo", "referencia", "id_cliente", "cliente_nombre", "id_area", "area_nombre", "fijar"]
 
     def get_cliente_nombre(self, obj):
         if obj.id_cliente:

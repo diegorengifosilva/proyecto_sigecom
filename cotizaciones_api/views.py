@@ -5411,6 +5411,24 @@ def cambiar_estado_cotizacion(request, num_reg):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+def toggle_fijar_cotizacion(request, id_registro):
+    try:
+        cotizacion = Cotizacion.objects.get(id_registro=id_registro)
+        # Toggle between 0 and 1
+        cotizacion.fijar = 1 if cotizacion.fijar == 0 else 0
+        cotizacion.save(update_fields=['fijar'])
+        return Response({
+            "ok": True,
+            "fijar": cotizacion.fijar,
+            "message": "Estado de anclaje actualizado exitosamente"
+        })
+    except Cotizacion.DoesNotExist:
+        return Response({"error": "La cotización/oportunidad no existe"}, status=404)
+    except Exception as e:
+        return Response({"error": f"Error al anclar registro: {str(e)}"}, status=500)
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def pasar_a_cotizacion(request, id_registro):
     try:
         with transaction.atomic():

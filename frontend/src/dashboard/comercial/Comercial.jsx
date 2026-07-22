@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { Plus, Search, FileText, Filter, MoreHorizontal, LayoutDashboard, ClipboardCheck, TrendingUp, FolderCheck, CalendarRange, ArrowUpRight, X, Trash2, Brush } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Plus, Search, FileText, Filter, MoreHorizontal, LayoutDashboard, ClipboardCheck, TrendingUp, FolderCheck, CalendarRange, ArrowUpRight, X, Trash2, Brush, Pin, PinOff, ExternalLink, Copy, Mail, GitBranch, ShieldCheck, FileDown } from "lucide-react";
 import api from "@/services/api";
 import { useAuth } from "@/context/AuthContext";
 import { ERPTable, StatusBadge, ERPButton, ERPInput, FilterDropdown } from "@/components/ui/ERPComponents";
@@ -11,6 +11,9 @@ import { formatDate } from "@/utils/formatters";
 import TablaCotizaciones from "./tablas/TablaCotizaciones";
 import TablaOportunidades from "./tablas/TablaOportunidades";
 import TablaApertura from "./tablas/TablaAperturas";
+import ActionMenu from "@/components/ui/ActionMenu";
+import { toast } from "../../utils/toast";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 
 const getSessionValue = (key, defaultValue) => {
   try {
@@ -345,14 +348,18 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
     }
   }, [reporteDashboardOpen]);
 
-  // Escuchar mensaje de altura de los reportes
+  // Escuchar mensaje de altura de los reportes y cierre
   useEffect(() => {
     const handleMessage = (e) => {
-      if (e.data && e.data.type === 'set-iframe-height') {
-        const h = Number(e.data.height);
-        if (h > 0) {
-          setReporteHeight(h);
-          setReporteLoading(false);
+      if (e.data) {
+        if (e.data.type === 'set-iframe-height') {
+          const h = Number(e.data.height);
+          if (h > 0) {
+            setReporteHeight(h);
+            setReporteLoading(false);
+          }
+        } else if (e.data.type === 'close-report-modal') {
+          setReporteDashboardOpen(false);
         }
       }
     };
@@ -389,6 +396,156 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
 
   // Sorting state - Default by date descending
   const [sortConfig, setSortConfig] = useState({ key: 'fecha', direction: 'desc' });
+
+  const queryClient = useQueryClient();
+  const [reporteTitle, setReporteTitle] = useState("Reporte de Cotizaciones");
+  const [reporteActiveId, setReporteActiveId] = useState(null);
+  const [isPdfReport, setIsPdfReport] = useState(false);
+
+  // Pinned items state and toggle are defined below where queries are loaded.
+
+  // Context Menu State
+  const [contextMenuPos, setContextMenuPos] = useState(null);
+  const [contextMenuOpen, setContextMenuOpen] = useState(false);
+  const [contextMenuItem, setContextMenuItem] = useState(null);
+
+  const handleRowContextMenu = (e, item) => {
+    e.preventDefault();
+    setContextMenuPos({ x: e.clientX, y: e.clientY });
+    setContextMenuItem(item);
+    setContextMenuOpen(true);
+  };
+
+  const handleGenerarCopia = async (item) => {
+    try {
+      const token = localStorage.getItem("access_token");
+      toast.info("Generando copia...");
+      const res = await api.post(
+        `cotizaciones/${item.id_registro}/generar-copia/`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (res.data && res.data.ok) {
+        const { id_registro_nuevo } = res.data.data;
+        toast.success("Copia de cotización generada exitosamente");
+        queryClient.invalidateQueries({ queryKey: ["cotizaciones"] });
+        queryClient.invalidateQueries({ queryKey: ["oportunidades"] });
+        queryClient.invalidateQueries({ queryKey: ["aperturas"] });
+        navigate(`/sigecom/comercial/cotizaciones/${id_registro_nuevo}`);
+      } else {
+        toast.error("No se pudo generar la copia");
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error(error.response?.data?.error || "Error al generar la copia");
+    }
+  };
+
+  const handleNuevaVersion = async (item) => {
+    try {
+      const token = localStorage.getItem("access_token");
+      toast.info("Generando nueva versión...");
+      const res = await api.post(
+        `cotizaciones/nueva-version/${item.id_registro}/`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (res.data && res.data.ok) {
+        const { id_registro_nuevo, codigo_nuevo } = res.data.data;
+        toast.success(`Versión ${codigo_nuevo} creada exitosamente`);
+        queryClient.invalidateQueries({ queryKey: ["cotizaciones"] });
+        queryClient.invalidateQueries({ queryKey: ["oportunidades"] });
+        queryClient.invalidateQueries({ queryKey: ["aperturas"] });
+        navigate(`/sigecom/comercial/cotizaciones/${id_registro_nuevo}`);
+      } else {
+        toast.error("No se pudo crear la nueva versión");
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error(error.response?.data?.error || "Error al crear la nueva versión");
+    }
+  };
+
+  const handleEnviarCotizacion = async (item) => {
+    try {
+      const token = localStorage.getItem("access_token");
+      toast.info("Enviando cotización...");
+      const res = await api.patch(
+        `cotizaciones/enviar-aprobacion/${item.id_registro}/`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      toast.success(res.data?.message || "Cotización enviada exitosamente");
+      queryClient.invalidateQueries({ queryKey: ["cotizaciones"] });
+    } catch (error) {
+      console.error(error);
+      toast.error(error.response?.data?.error || "Error al enviar la cotización");
+    }
+  };
+
+  const handlePasarAApertura = async (item) => {
+    try {
+      const token = localStorage.getItem("access_token");
+      toast.info("Procesando transición...");
+      await api.post(
+        `cotizaciones/${item.id_registro}/pasar-a-apertura/`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      toast.success("La cotización ha pasado a estado Apertura", "Transición Exitosa");
+      queryClient.invalidateQueries({ queryKey: ["cotizaciones"] });
+      queryClient.invalidateQueries({ queryKey: ["aperturas"] });
+      navigate(`/sigecom/comercial/aperturas/${item.id_registro}`, { replace: true });
+    } catch (error) {
+      console.error(error);
+      const errMsg = error.response?.data?.error || "Error al realizar la transición";
+      toast.error(errMsg, "Error de Transición");
+    }
+  };
+
+  const handlePasarACotizacion = async (item) => {
+    try {
+      const token = localStorage.getItem("access_token");
+      toast.info("Procesando transición...");
+      await api.post(
+        `cotizaciones/${item.id_registro}/pasar-a-cotizacion/`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      toast.success("La oportunidad ha pasado a estado Cotización", "Transición Exitosa");
+      queryClient.invalidateQueries({ queryKey: ["cotizaciones"] });
+      queryClient.invalidateQueries({ queryKey: ["oportunidades"] });
+      navigate(`/sigecom/comercial/cotizaciones/${item.id_registro}`, { replace: true });
+    } catch (error) {
+      console.error(error);
+      const errMsg = error.response?.data?.error || "Error al realizar la transición";
+      toast.error(errMsg, "Error de Transición");
+    }
+  };
+
+  const handleEliminarCotizacion = async (item) => {
+    try {
+      const token = localStorage.getItem("access_token");
+      toast.info("Eliminando cotización...");
+      await api.delete(
+        `cotizaciones/eliminar/${item.id_registro}/`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      toast.success("La cotización ha sido eliminada del sistema");
+      queryClient.invalidateQueries({ queryKey: ["cotizaciones"] });
+      queryClient.invalidateQueries({ queryKey: ["oportunidades"] });
+      queryClient.invalidateQueries({ queryKey: ["aperturas"] });
+    } catch (error) {
+      console.error(error);
+      toast.error(error.response?.data?.error || "Error al eliminar la cotización");
+    }
+  };
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(() => getSessionValue("comercial_filter_currentPage", 1));
@@ -557,6 +714,51 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
   const backendStats = (currentTab === "cotizaciones" ? dataCotizaciones?.dashboard : dataOportunidades?.dashboard) || {};
   const isLoading = currentTab === "cotizaciones" ? isLoadingCotizaciones : isLoadingOportunidades;
 
+  // Pinned items computed dynamically from database data
+  const pinnedIds = useMemo(() => {
+    const ids = new Set();
+    if (dataCotizaciones?.tabla) {
+      dataCotizaciones.tabla.forEach(item => {
+        if (item.fijar === 1) ids.add(item.id_registro);
+      });
+    }
+    if (dataOportunidades?.tabla) {
+      dataOportunidades.tabla.forEach(item => {
+        if (item.fijar === 1) ids.add(item.id_registro);
+      });
+    }
+    if (dataAperturas?.tabla) {
+      dataAperturas.tabla.forEach(item => {
+        if (item.id_registro?.fijar === 1 || item.fijar === 1) ids.add(item.cotizacion_id);
+      });
+    }
+    return ids;
+  }, [dataCotizaciones, dataOportunidades, dataAperturas]);
+
+  const togglePin = async (id) => {
+    try {
+      const token = localStorage.getItem("access_token");
+      const res = await api.post(
+        `cotizaciones/${id}/toggle-fijar/`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (res.data && res.data.ok) {
+        if (res.data.fijar === 1) {
+          toast.success("Fijado al inicio de la lista");
+        } else {
+          toast.info("Desfijado de la lista");
+        }
+        queryClient.invalidateQueries({ queryKey: ["cotizaciones"] });
+        queryClient.invalidateQueries({ queryKey: ["oportunidades"] });
+        queryClient.invalidateQueries({ queryKey: ["aperturas"] });
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error(error.response?.data?.error || "Error al cambiar estado de fijado");
+    }
+  };
+
   // Dynamic PageSize based on screen height
   useEffect(() => {
     const calculatePageSize = () => {
@@ -622,25 +824,30 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
       return matchesSearch && matchesStatus;
     });
 
-    // Sorting
-    if (sortConfig.key) {
-      result.sort((a, b) => {
+    // Sorting (pinned items always first)
+    result.sort((a, b) => {
+      const aPinned = pinnedIds.has(a.id_registro);
+      const bPinned = pinnedIds.has(b.id_registro);
+      if (aPinned && !bPinned) return -1;
+      if (!aPinned && bPinned) return 1;
+
+      if (sortConfig.key) {
         const aValue = a[sortConfig.key];
         const bValue = b[sortConfig.key];
 
         if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
         if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
-        return 0;
-      });
-    }
+      }
+      return 0;
+    });
 
     return result;
-  }, [cotizaciones, globalSearch, statusFilter, sortConfig]);
+  }, [cotizaciones, globalSearch, statusFilter, sortConfig, pinnedIds]);
 
   const filteredOportunidades = useMemo(() => {
     const searchLower = globalSearch.toLowerCase().trim();
     const MAPPING_ESTADOS = { 1: "pendiente", 2: "no cotizado", 3: "rechazado", 4: "cotizado" };
-    return oportunidades.filter((item) => {
+    const filtered = oportunidades.filter((item) => {
       const statusText = MAPPING_ESTADOS[item.estado_oportunidad] || "pendiente";
       return (
         !searchLower ||
@@ -657,11 +864,19 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
         item.comentario?.toLowerCase().includes(searchLower)
       );
     });
-  }, [oportunidades, globalSearch]);
+
+    return filtered.sort((a, b) => {
+      const aPinned = pinnedIds.has(a.id_registro);
+      const bPinned = pinnedIds.has(b.id_registro);
+      if (aPinned && !bPinned) return -1;
+      if (!aPinned && bPinned) return 1;
+      return 0;
+    });
+  }, [oportunidades, globalSearch, pinnedIds]);
 
   const filteredAperturas = useMemo(() => {
     const searchLower = globalSearch.toLowerCase().trim();
-    return (dataAperturas?.tabla || []).filter((item) => {
+    const filtered = (dataAperturas?.tabla || []).filter((item) => {
       const codigo = item.cotizacion_codigo || item.id_registro?.codigo || "";
       const referencia = item.cotizacion_referencia || item.id_registro?.referencia || "";
       const area = item.id_registro?.area_nombre || "";
@@ -679,7 +894,15 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
         formattedTotal.includes(searchLower)
       );
     });
-  }, [dataAperturas?.tabla, globalSearch]);
+
+    return filtered.sort((a, b) => {
+      const aPinned = pinnedIds.has(a.cotizacion_id);
+      const bPinned = pinnedIds.has(b.cotizacion_id);
+      if (aPinned && !bPinned) return -1;
+      if (!aPinned && bPinned) return 1;
+      return 0;
+    });
+  }, [dataAperturas?.tabla, globalSearch, pinnedIds]);
 
   const stats = useMemo(() => {
     return {
@@ -1774,6 +1997,8 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
             totalPages={totalPages}
             onPageChange={setCurrentPage}
             onRowClick={(id) => navigate(`/sigecom/comercial/cotizaciones/${id}`)}
+            onRowContextMenu={handleRowContextMenu}
+            pinnedIds={pinnedIds}
           />
         )}
 
@@ -1785,6 +2010,8 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
             pageSize={pageSize}
             onPageChange={setCurrentPageOportunidades}
             onRowClick={(id) => navigate(`/sigecom/comercial/oportunidades/${id}`)}
+            onRowContextMenu={handleRowContextMenu}
+            pinnedIds={pinnedIds}
           />
         )}
 
@@ -1796,6 +2023,8 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
             pageSize={pageSize}
             onPageChange={setCurrentPageApertura}
             onRowClick={(cotizacionId) => navigate(`/sigecom/comercial/aperturas/${cotizacionId}`)}
+            onRowContextMenu={handleRowContextMenu}
+            pinnedIds={pinnedIds}
           />
         )}
 
@@ -1819,32 +2048,72 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
       {reporteDashboardOpen && createPortal(
         <div 
           onClick={() => setReporteDashboardOpen(false)}
-          className="fixed inset-0 bg-slate-900/40 z-50 flex items-center justify-center p-4 transition-all"
+          className="fixed inset-0 bg-slate-900/40 z-[10000] flex items-center justify-center p-4 transition-all"
         >
           <div 
             onClick={(e) => e.stopPropagation()}
             className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl flex flex-col overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150 transition-all duration-300"
             style={{
-              height: reporteHeight ? `${Math.min(window.innerHeight * 0.88, reporteHeight + 140)}px` : '350px'
+              height: isPdfReport ? '88vh' : (reporteHeight ? `${Math.min(window.innerHeight * 0.88, reporteHeight + 140)}px` : '350px')
             }}
           >
             {/* Cabecera del Modal */}
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
               <div>
                 <h3 className="text-[13px] font-black text-slate-900 uppercase tracking-widest">
-                  Reporte de Cotizaciones
+                  {reporteTitle}
                 </h3>
               </div>
-              <button 
-                onClick={() => setReporteDashboardOpen(false)}
-                className="p-2 hover:bg-slate-200 rounded-xl transition-all text-slate-400 hover:text-slate-600 bg-slate-100"
-              >
-                <X className="h-4 w-4" />
-              </button>
+              <div className="flex items-center gap-3">
+                {isPdfReport && (
+                  <>
+                    <button
+                      onClick={() => {
+                        const cleanBaseURL = api.defaults.baseURL.endsWith('/') ? api.defaults.baseURL.slice(0, -1) : api.defaults.baseURL;
+                        window.open(`${cleanBaseURL}/cotizaciones/${reporteActiveId}/pdf/`, '_blank');
+                      }}
+                      className="flex items-center px-3.5 py-2 bg-emerald-50 border border-emerald-200 rounded-xl text-[10px] font-black text-emerald-700 hover:bg-emerald-100 hover:border-emerald-300 hover:shadow-sm transition-all uppercase group"
+                    >
+                      <FileText className="h-3.5 w-3.5 mr-1.5 text-emerald-600 group-hover:scale-110 transition-transform" />
+                      Descargar PDF
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        const cleanBaseURL = api.defaults.baseURL.endsWith('/') ? api.defaults.baseURL.slice(0, -1) : api.defaults.baseURL;
+                        window.open(`${cleanBaseURL}/cotizaciones/cotizacion/word/${reporteActiveId}/`, '_blank');
+                      }}
+                      className="flex items-center px-3.5 py-2 bg-blue-50 border border-blue-200 rounded-xl text-[10px] font-black text-blue-700 hover:bg-blue-100 hover:border-blue-300 hover:shadow-sm transition-all uppercase group"
+                    >
+                      <FileDown className="h-3.5 w-3.5 mr-1.5 text-blue-600 group-hover:scale-110 transition-transform" />
+                      Descargar Word
+                    </button>
+                  </>
+                )}
+                <button 
+                  onClick={() => setReporteDashboardOpen(false)}
+                  className="p-2 hover:bg-slate-200 rounded-xl transition-all text-slate-400 hover:text-slate-600 bg-slate-100 ml-2"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
             {/* Cuerpo del Modal con Iframe */}
-            <div className="flex-1 bg-slate-50 p-4 overflow-hidden relative flex items-center justify-center">
+            <div 
+              className="flex-1 bg-slate-50 p-4 overflow-hidden relative flex items-center justify-center"
+              onMouseEnter={(e) => {
+                const iframe = e.currentTarget.querySelector('iframe');
+                if (iframe) {
+                  try {
+                    iframe.focus();
+                    iframe.contentWindow?.focus();
+                  } catch (err) {
+                    console.error("Error focusing iframe on hover:", err);
+                  }
+                }
+              }}
+            >
               {reporteLoading && (
                 <div className="absolute inset-0 bg-white flex flex-col items-center justify-center z-10">
                   <div className="h-8 w-8 border-4 border-teal-600 border-t-transparent rounded-full animate-spin" />
@@ -1855,13 +2124,213 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
                 src={reporteUrl}
                 className="w-full h-full bg-white rounded-xl border border-slate-200 shadow-sm"
                 title="Reporte Cotizaciones Dashboard"
-                scrolling={reporteHeight && (reporteHeight + 140 < window.innerHeight * 0.88) ? "no" : "auto"}
-                style={{ overflow: reporteHeight && (reporteHeight + 140 < window.innerHeight * 0.88) ? 'hidden' : 'auto' }}
+                scrolling={isPdfReport ? "auto" : (reporteHeight && (reporteHeight + 140 < window.innerHeight * 0.88) ? "no" : "auto")}
+                style={{ overflow: isPdfReport ? "auto" : (reporteHeight && (reporteHeight + 140 < window.innerHeight * 0.88) ? 'hidden' : 'auto') }}
+                onLoad={(e) => {
+                  const iframe = e.target;
+                  setTimeout(() => {
+                    try {
+                      iframe.focus();
+                      iframe.contentWindow?.focus();
+                    } catch (err) {
+                      console.error("Error focusing iframe on load:", err);
+                    }
+                  }, 50);
+                }}
               />
             </div>
           </div>
         </div>,
         document.body
+      )}
+
+      {/* Context Menu for right-click on Table Rows */}
+      {contextMenuOpen && contextMenuPos && contextMenuItem && (
+        <div
+          style={{
+            position: "fixed",
+            left: contextMenuPos.x,
+            top: contextMenuPos.y,
+            width: 1,
+            height: 1,
+            pointerEvents: "none",
+            zIndex: 9999
+          }}
+        >
+          <ActionMenu
+            open={contextMenuOpen}
+            onOpenChange={setContextMenuOpen}
+            title="Opciones de Registro"
+            align="start"
+            customTrigger={<div className="w-0 h-0" />}
+            options={
+              currentTab === "cotizaciones"
+                ? [
+                    {
+                      label: pinnedIds.has(contextMenuItem.id_registro) ? "Desfijar de la lista" : "Fijar al inicio",
+                      icon: pinnedIds.has(contextMenuItem.id_registro) ? PinOff : Pin,
+                      onClick: () => togglePin(contextMenuItem.id_registro)
+                    },
+                    {
+                      label: "Nueva Versión",
+                      icon: GitBranch,
+                      onClick: () => handleNuevaVersion(contextMenuItem)
+                    },
+                    {
+                      label: "Generar Copia",
+                      icon: Copy,
+                      onClick: () => handleGenerarCopia(contextMenuItem)
+                    },
+                    {
+                      label: "Enviar Cotización",
+                      icon: Mail,
+                      disabled: contextMenuItem.estado_envio === 2,
+                      onClick: () => handleEnviarCotizacion(contextMenuItem)
+                    },
+                    {
+                      label: "Pasar a Apertura",
+                      icon: ShieldCheck,
+                      onClick: () => handlePasarAApertura(contextMenuItem)
+                    },
+
+                    {
+                      label: "Reporte",
+                      icon: FileText,
+                      hasSubmenu: true,
+                      submenuContent: (
+                        <>
+                          <DropdownMenu.Item
+                            onSelect={(e) => e.preventDefault()}
+                            className="flex items-center gap-1 px-2 py-2 text-[11px] font-bold uppercase tracking-tight rounded-xl cursor-pointer outline-none transition-all text-slate-600 hover:bg-slate-50 hover:text-indigo-600 select-none"
+                            onClick={() => {
+                              const cleanBaseURL = api.defaults.baseURL.endsWith('/') ? api.defaults.baseURL.slice(0, -1) : api.defaults.baseURL;
+                              setReporteActiveId(contextMenuItem.id_registro);
+                              setIsPdfReport(false);
+                              setReporteTitle("Reporte Detallado");
+                              setReporteUrl(`${cleanBaseURL}/cotizaciones/reporte-detallado/${contextMenuItem.id_registro}/`);
+                              setReporteDashboardOpen(true);
+                              setContextMenuOpen(false);
+                            }}
+                          >
+                            <FileText className="w-4 h-4 opacity-70 text-indigo-600" />
+                            <span>Reporte Detallado</span>
+                          </DropdownMenu.Item>
+                          <DropdownMenu.Item
+                            onSelect={(e) => e.preventDefault()}
+                            className="flex items-center gap-1 px-2 py-2 text-[11px] font-bold uppercase tracking-tight rounded-xl cursor-pointer outline-none transition-all text-slate-600 hover:bg-slate-50 hover:text-indigo-600 select-none"
+                            onClick={() => {
+                              const cleanBaseURL = api.defaults.baseURL.endsWith('/') ? api.defaults.baseURL.slice(0, -1) : api.defaults.baseURL;
+                              setReporteActiveId(contextMenuItem.id_registro);
+                              setIsPdfReport(false);
+                              setReporteTitle("Reporte Resumen");
+                              setReporteUrl(`${cleanBaseURL}/cotizaciones/reporte-resumen/${contextMenuItem.id_registro}/`);
+                              setReporteDashboardOpen(true);
+                              setContextMenuOpen(false);
+                            }}
+                          >
+                            <FileText className="w-4 h-4 opacity-70 text-amber-600" />
+                            <span>Reporte Resumen</span>
+                          </DropdownMenu.Item>
+                          <DropdownMenu.Item
+                            onSelect={(e) => e.preventDefault()}
+                            className="flex items-center gap-1 px-2 py-2 text-[11px] font-bold uppercase tracking-tight rounded-xl cursor-pointer outline-none transition-all text-slate-600 hover:bg-slate-50 hover:text-indigo-600 select-none"
+                            onClick={() => {
+                              const cleanBaseURL = api.defaults.baseURL.endsWith('/') ? api.defaults.baseURL.slice(0, -1) : api.defaults.baseURL;
+                              setReporteActiveId(contextMenuItem.id_registro);
+                              setIsPdfReport(true);
+                              setReporteTitle("Previsualización de Propuesta Económica");
+                              setReporteUrl(`${cleanBaseURL}/cotizaciones/${contextMenuItem.id_registro}/pdf-preview/`);
+                              setReporteDashboardOpen(true);
+                              setContextMenuOpen(false);
+                            }}
+                          >
+                            <FileText className="w-4 h-4 opacity-70 text-slate-500" />
+                            <span>Reporte PDF / Word</span>
+                          </DropdownMenu.Item>
+                        </>
+                      )
+                    },
+                    {
+                      label: "Borrar",
+                      icon: Trash2,
+                      className: "text-red-600 hover:bg-red-50 hover:text-red-700",
+                      onClick: () => handleEliminarCotizacion(contextMenuItem)
+                    }
+                  ]
+                : currentTab === "oportunidades"
+                ? [
+                    {
+                      label: pinnedIds.has(contextMenuItem.id_registro) ? "Desfijar de la lista" : "Fijar al inicio",
+                      icon: pinnedIds.has(contextMenuItem.id_registro) ? PinOff : Pin,
+                      onClick: () => togglePin(contextMenuItem.id_registro)
+                    },
+                    {
+                      label: "Nueva Versión",
+                      icon: GitBranch,
+                      onClick: () => handleNuevaVersion(contextMenuItem)
+                    },
+                    {
+                      label: "Generar Copia",
+                      icon: Copy,
+                      onClick: () => handleGenerarCopia(contextMenuItem)
+                    },
+                    {
+                      label: "Pasar a Cotización",
+                      icon: ArrowUpRight,
+                      onClick: () => handlePasarACotizacion(contextMenuItem)
+                    },
+                    {
+                      label: "Eliminar",
+                      icon: Trash2,
+                      className: "text-red-600 hover:bg-red-50 hover:text-red-700",
+                      onClick: () => handleEliminarCotizacion(contextMenuItem)
+                    }
+                  ]
+                : [
+                    {
+                      label: pinnedIds.has(
+                        currentTab === "aperturas" 
+                          ? contextMenuItem.cotizacion_id 
+                          : contextMenuItem.id_registro
+                      ) ? "Desfijar de la lista" : "Fijar al inicio",
+                      icon: pinnedIds.has(
+                        currentTab === "aperturas" 
+                          ? contextMenuItem.cotizacion_id 
+                          : contextMenuItem.id_registro
+                      ) ? PinOff : Pin,
+                      onClick: () => {
+                        const targetId = currentTab === "aperturas" 
+                          ? contextMenuItem.cotizacion_id 
+                          : contextMenuItem.id_registro;
+                        togglePin(targetId);
+                      }
+                    },
+                    {
+                      label: "Copiar Código",
+                      icon: Copy,
+                      onClick: () => {
+                        const code = contextMenuItem.codigo || contextMenuItem.cotizacion_codigo || contextMenuItem.numero_orden || "";
+                        if (code) {
+                          navigator.clipboard.writeText(code);
+                          toast.success(`Código "${code}" copiado`);
+                        }
+                      }
+                    },
+                    {
+                      label: "Copiar Cliente",
+                      icon: ClipboardCheck,
+                      onClick: () => {
+                        const client = contextMenuItem.cliente_nombre || "";
+                        if (client) {
+                          navigator.clipboard.writeText(client);
+                          toast.success("Nombre del cliente copiado");
+                        }
+                      }
+                    }
+                  ]
+            }
+          />
+        </div>
       )}
     </div>
   );

@@ -75,7 +75,10 @@ const ActionMenu = ({
               ) : option.hasSubmenu ? (
                 <DropdownMenu.Sub key={index}>
                   <DropdownMenu.SubTrigger 
-                    className="flex items-center justify-between w-full px-3 py-2.5 text-[11px] font-bold uppercase tracking-tight rounded-xl cursor-pointer outline-none transition-all text-slate-600 hover:bg-slate-50 hover:text-indigo-600 select-none data-[state=open]:bg-slate-50 data-[state=open]:text-indigo-600"
+                    className={`flex items-center justify-between w-full px-3 py-2.5 text-[11px] font-bold uppercase tracking-tight rounded-xl cursor-pointer outline-none transition-all 
+                      ${option.variant === 'danger' 
+                        ? 'text-red-500 hover:bg-red-50' 
+                        : 'text-slate-600 hover:bg-slate-50 hover:text-emerald-600'}`}
                     onPointerEnter={() => option.onHover?.()}
                     onClick={(e) => {
                       e.preventDefault();
@@ -83,7 +86,7 @@ const ActionMenu = ({
                     }}
                   >
                     <div className="flex items-center gap-2">
-                      {option.icon && <option.icon className="w-4.5 h-4.5 opacity-70" />}
+                      {option.icon && <option.icon className="w-4 h-4 opacity-70" />}
                       <span>{option.label}</span>
                     </div>
                     <ChevronRight className="w-3.5 h-3.5 opacity-60 ml-2" />

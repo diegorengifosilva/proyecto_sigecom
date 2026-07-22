@@ -72,7 +72,7 @@ const highlightMatch = (text, query) => {
   return parts;
 };
 
-export const ClienteAutocomplete = ({ value, onSelect, isReadOnly, initialId, onContextMenu, onOptionsClick, tabIndex, numReg }) => {
+export const ClienteAutocomplete = ({ value, onSelect, isReadOnly, initialId, onContextMenu, onOptionsClick, tabIndex, numReg, className }) => {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -267,7 +267,7 @@ export const ClienteAutocomplete = ({ value, onSelect, isReadOnly, initialId, on
         setShowDropdown(false);
         if (onContextMenu) onContextMenu(e);
       }}
-      className="relative flex items-center px-2 py-1 -ml-2 rounded-lg hover:bg-gray-50 transition-all font-sans"
+      className={className || "relative flex items-center px-2 py-1 -ml-2 rounded-lg hover:bg-gray-50 transition-all font-sans"}
     >
       <Icon name="briefcase" className="h-3.5 w-3.5 mr-1.5 text-teal-500" />
       {isReadOnly ? (
@@ -403,7 +403,7 @@ export const ClienteAutocomplete = ({ value, onSelect, isReadOnly, initialId, on
 
 
 
-export const RepresentanteAutocomplete = ({ value, clienteId, onSelect, isReadOnly, initialId, onContextMenu, onOptionsClick, tabIndex, numReg }) => {
+export const RepresentanteAutocomplete = ({ value, clienteId, onSelect, isReadOnly, initialId, onContextMenu, onOptionsClick, tabIndex, numReg, className }) => {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -608,7 +608,7 @@ export const RepresentanteAutocomplete = ({ value, clienteId, onSelect, isReadOn
         setShowDropdown(false);
         if (onContextMenu) onContextMenu(e);
       }}
-      className="relative flex items-center px-2 py-1 rounded-lg hover:bg-gray-50 transition-all font-sans"
+      className={className || "relative flex items-center px-2 py-1 rounded-lg hover:bg-gray-50 transition-all font-sans"}
     >
       <Icon name="user" className="h-3.5 w-3.5 mr-1.5 text-amber-500" />
       {isReadOnly ? (

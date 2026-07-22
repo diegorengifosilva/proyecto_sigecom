@@ -3955,14 +3955,22 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     }
   }, [reporteSuministrosOpen, reporteServiciosOpen, reporteDetalladoOpen, reporteResumenOpen, reportePdfOpen]);
 
-  // Escuchar mensaje de altura de los reportes
+  // Escuchar mensaje de altura de los reportes y cierre
   useEffect(() => {
     const handleMessage = (e) => {
-      if (e.data && e.data.type === 'set-iframe-height') {
-        const h = Number(e.data.height);
-        if (h > 0) {
-          setReporteHeight(h);
-          setReporteLoading(false);
+      if (e.data) {
+        if (e.data.type === 'set-iframe-height') {
+          const h = Number(e.data.height);
+          if (h > 0) {
+            setReporteHeight(h);
+            setReporteLoading(false);
+          }
+        } else if (e.data.type === 'close-report-modal') {
+          setReporteSuministrosOpen(false);
+          setReporteServiciosOpen(false);
+          setReporteDetalladoOpen(false);
+          setReporteResumenOpen(false);
+          setReportePdfOpen(false);
         }
       }
     };
@@ -8002,81 +8010,87 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                   )}
                 </div>
 
-                {/* LÍNEA DE DATOS EDITABLES */}
-                <div className="relative flex flex-wrap items-center text-[12px] gap-x-4 gap-y-2">
+                {/* LÍNEA DE DATOS EDITABLES (Unificada y Responsiva) */}
+                <div className="relative flex flex-wrap items-center gap-1.5 mt-2 bg-slate-50/50 p-1 rounded-2xl border border-slate-100/80 w-fit max-w-full">
                   {/* CLIENTE (Editable Autocomplete) */}
-                  <ClienteAutocomplete
-                    value={data.cliente_nombre}
-                    initialId={data.id_cliente}
-                    isReadOnly={isReadOnly}
-                    numReg={numReg}
-                    onSelect={(cliente) => {
-                      const updated = {
-                        ...data,
-                        id_cliente: cliente.id_cliente,
-                        cliente_nombre: cliente.nombre,
-                        id_representante: null,
-                        representante_nombre: "",
-                        representante_cargo: "",
-                        representante_telefono: "",
-                        representante_movil: "",
-                        representante_correo: "",
-                      };
-                      setData(updated);
-                      saveHeaderInstantly(updated);
-                    }}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      setContextMenuPos({ x: e.clientX, y: e.clientY });
-                      setContextMenuType('cliente');
-                      setContextMenuOpen(true);
-                    }}
-                    onOptionsClick={(e) => {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      setContextMenuPos({ x: rect.left, y: rect.bottom });
-                      setContextMenuType('cliente');
-                      setContextMenuOpen(true);
-                    }}
-                  />
+                  <div className="bg-white pl-2 pr-1 py-0.5 rounded-xl border border-gray-200/80 shadow-sm flex items-center transition-all hover:border-gray-300">
+                    <ClienteAutocomplete
+                      value={data.cliente_nombre}
+                      initialId={data.id_cliente}
+                      isReadOnly={isReadOnly}
+                      numReg={numReg}
+                      className="relative flex items-center px-1 py-0.5 rounded-lg hover:bg-gray-50 transition-all font-sans"
+                      onSelect={(cliente) => {
+                        const updated = {
+                          ...data,
+                          id_cliente: cliente.id_cliente,
+                          cliente_nombre: cliente.nombre,
+                          id_representante: null,
+                          representante_nombre: "",
+                          representante_cargo: "",
+                          representante_telefono: "",
+                          representante_movil: "",
+                          representante_correo: "",
+                        };
+                        setData(updated);
+                        saveHeaderInstantly(updated);
+                      }}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setContextMenuPos({ x: e.clientX, y: e.clientY });
+                        setContextMenuType('cliente');
+                        setContextMenuOpen(true);
+                      }}
+                      onOptionsClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        setContextMenuPos({ x: rect.left, y: rect.bottom });
+                        setContextMenuType('cliente');
+                        setContextMenuOpen(true);
+                      }}
+                    />
+                  </div>
 
                   {/* REPRESENTANTE (Editable Autocomplete) */}
-                  <RepresentanteAutocomplete
-                    value={data.representante_nombre}
-                    clienteId={data.id_cliente}
-                    initialId={data.id_representante}
-                    isReadOnly={isReadOnly}
-                    numReg={numReg}
-                    onSelect={(enc) => {
-                      const updated = {
-                        ...data,
-                        id_representante: enc.id_representante,
-                        representante_nombre: enc.nombre_representante,
-                        representante_cargo: enc.cargo || "",
-                        representante_telefono: enc.telefono || "",
-                        representante_movil: enc.movil || "",
-                        representante_correo: enc.email || "",
-                      };
-                      setData(updated);
-                      saveHeaderInstantly(updated);
-                    }}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      setContextMenuPos({ x: e.clientX, y: e.clientY });
-                      setContextMenuType('representante');
-                      setContextMenuOpen(true);
-                    }}
-                    onOptionsClick={(e) => {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      setContextMenuPos({ x: rect.left, y: rect.bottom });
-                      setContextMenuType('representante');
-                      setContextMenuOpen(true);
-                    }}
-                  />
+                  <div className="bg-white pl-2 pr-1 py-0.5 rounded-xl border border-gray-200/80 shadow-sm flex items-center transition-all hover:border-gray-300">
+                    <RepresentanteAutocomplete
+                      value={data.representante_nombre}
+                      clienteId={data.id_cliente}
+                      initialId={data.id_representante}
+                      isReadOnly={isReadOnly}
+                      numReg={numReg}
+                      className="relative flex items-center px-1 py-0.5 rounded-lg hover:bg-gray-50 transition-all font-sans"
+                      onSelect={(enc) => {
+                        const updated = {
+                          ...data,
+                          id_representante: enc.id_representante,
+                          representante_nombre: enc.nombre_representante,
+                          representante_cargo: enc.cargo || "",
+                          representante_telefono: enc.telefono || "",
+                          representante_movil: enc.movil || "",
+                          representante_correo: enc.email || "",
+                        };
+                        setData(updated);
+                        saveHeaderInstantly(updated);
+                      }}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setContextMenuPos({ x: e.clientX, y: e.clientY });
+                        setContextMenuType('representante');
+                        setContextMenuOpen(true);
+                      }}
+                      onOptionsClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        setContextMenuPos({ x: rect.left, y: rect.bottom });
+                        setContextMenuType('representante');
+                        setContextMenuOpen(true);
+                      }}
+                    />
+                  </div>
 
                   {/* ÁREA COMERCIAL (Select Directo con opciones reales) */}
-                  <div className="group relative flex items-center cursor-pointer px-2 py-1 rounded-lg hover:bg-gray-50 transition-all">
+                  <div className="bg-white px-2.5 py-1 rounded-xl border border-gray-200/80 shadow-sm flex items-center transition-all hover:border-gray-300 group relative cursor-pointer">
                     <Icon name="layers" className="h-3.5 w-3.5 mr-1.5 text-teal-400" />
-                    <span className="font-bold text-gray-800 uppercase tracking-tight">
+                    <span className="font-bold text-[11px] text-gray-800 uppercase tracking-tight">
                       {areasOptions.find(o => o.id === String(data.id_area))?.nombre || data.area_nombre || 'Seleccionar Área'}
                     </span>
                     {!isReadOnly && <Icon name="chevron-down" className="h-3 w-3 ml-1 text-gray-400" />}
@@ -8094,11 +8108,11 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                     </select>
                   </div>
 
-                  {/* TIPO Y TIPO VENTA*/}
-                  <div className="group relative flex items-center cursor-pointer px-2 py-1 rounded-lg hover:bg-gray-50 transition-all whitespace-nowrap">
+                  {/* TIPO Y TIPO VENTA */}
+                  <div className="bg-white px-2.5 py-1 rounded-xl border border-gray-200/80 shadow-sm flex items-center transition-all hover:border-gray-300 group relative cursor-pointer whitespace-nowrap">
                     <Icon name="tag" className="h-3.5 w-3.5 mr-1.5 text-blue-500" />
 
-                    <div className="flex items-center flex-nowrap">
+                    <div className="flex items-center flex-nowrap text-[11px]">
                       {/* Selector Principal (Tipo) */}
                       <div className="relative flex items-center shrink-0">
                         <span className="font-bold text-gray-800 uppercase tracking-tight">
@@ -10955,7 +10969,20 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
             </div>
 
             {/* Cuerpo del Modal con Iframe */}
-            <div className="flex-1 bg-slate-50 p-4 overflow-hidden relative flex items-center justify-center">
+            <div 
+              className="flex-1 bg-slate-50 p-4 overflow-hidden relative flex items-center justify-center"
+              onMouseEnter={(e) => {
+                const iframe = e.currentTarget.querySelector('iframe');
+                if (iframe) {
+                  try {
+                    iframe.focus();
+                    iframe.contentWindow?.focus();
+                  } catch (err) {
+                    console.error("Error focusing iframe on hover:", err);
+                  }
+                }
+              }}
+            >
               {reporteLoading && (
                 <div className="absolute inset-0 bg-white flex flex-col items-center justify-center z-10">
                   <div className="h-8 w-8 border-4 border-teal-600 border-t-transparent rounded-full animate-spin" />
@@ -10968,6 +10995,17 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 title="Reporte de Suministros Oficial"
                 scrolling={reporteHeight && (reporteHeight + 160 < window.innerHeight * 0.88) ? "no" : "auto"}
                 style={{ overflow: reporteHeight && (reporteHeight + 160 < window.innerHeight * 0.88) ? 'hidden' : 'auto' }}
+                onLoad={(e) => {
+                  const iframe = e.target;
+                  setTimeout(() => {
+                    try {
+                      iframe.focus();
+                      iframe.contentWindow?.focus();
+                    } catch (err) {
+                      console.error("Error focusing iframe on load:", err);
+                    }
+                  }, 50);
+                }}
               />
             </div>
           </div>
@@ -11010,7 +11048,20 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
             </div>
 
             {/* Cuerpo del Modal con el Iframe apuntando al endpoint de Servicios */}
-            <div className="flex-1 bg-slate-50 p-4 overflow-hidden relative flex items-center justify-center">
+            <div 
+              className="flex-1 bg-slate-50 p-4 overflow-hidden relative flex items-center justify-center"
+              onMouseEnter={(e) => {
+                const iframe = e.currentTarget.querySelector('iframe');
+                if (iframe) {
+                  try {
+                    iframe.focus();
+                    iframe.contentWindow?.focus();
+                  } catch (err) {
+                    console.error("Error focusing iframe on hover:", err);
+                  }
+                }
+              }}
+            >
               {reporteLoading && (
                 <div className="absolute inset-0 bg-white flex flex-col items-center justify-center z-10">
                   <div className="h-8 w-8 border-4 border-teal-600 border-t-transparent rounded-full animate-spin" />
@@ -11023,6 +11074,17 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 title="Reporte de Servicios Oficial"
                 scrolling={reporteHeight && (reporteHeight + 160 < window.innerHeight * 0.88) ? "no" : "auto"}
                 style={{ overflow: reporteHeight && (reporteHeight + 160 < window.innerHeight * 0.88) ? 'hidden' : 'auto' }}
+                onLoad={(e) => {
+                  const iframe = e.target;
+                  setTimeout(() => {
+                    try {
+                      iframe.focus();
+                      iframe.contentWindow?.focus();
+                    } catch (err) {
+                      console.error("Error focusing iframe on load:", err);
+                    }
+                  }, 50);
+                }}
               />
             </div>
           </div>
@@ -11059,7 +11121,20 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
             </div>
 
             {/* CUERPO: El iframe usa exactamente tu PATH de Django */}
-            <div className="flex-1 bg-slate-50 p-4 overflow-hidden relative flex items-center justify-center">
+            <div 
+              className="flex-1 bg-slate-50 p-4 overflow-hidden relative flex items-center justify-center"
+              onMouseEnter={(e) => {
+                const iframe = e.currentTarget.querySelector('iframe');
+                if (iframe) {
+                  try {
+                    iframe.focus();
+                    iframe.contentWindow?.focus();
+                  } catch (err) {
+                    console.error("Error focusing iframe on hover:", err);
+                  }
+                }
+              }}
+            >
               {reporteLoading && (
                 <div className="absolute inset-0 bg-white flex flex-col items-center justify-center z-10">
                   <div className="h-8 w-8 border-4 border-teal-600 border-t-transparent rounded-full animate-spin" />
@@ -11072,6 +11147,17 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 title="Reporte Cliente Detallado"
                 scrolling={reporteHeight && (reporteHeight + 140 < window.innerHeight * 0.88) ? "no" : "auto"}
                 style={{ overflow: reporteHeight && (reporteHeight + 140 < window.innerHeight * 0.88) ? 'hidden' : 'auto' }}
+                onLoad={(e) => {
+                  const iframe = e.target;
+                  setTimeout(() => {
+                    try {
+                      iframe.focus();
+                      iframe.contentWindow?.focus();
+                    } catch (err) {
+                      console.error("Error focusing iframe on load:", err);
+                    }
+                  }, 50);
+                }}
               />
             </div>
           </div>
@@ -11108,7 +11194,20 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
             </div>
 
             {/* CUERPO: El iframe usa exactamente tu PATH de Django */}
-            <div className="flex-1 bg-slate-50 p-4 overflow-hidden relative flex items-center justify-center">
+            <div 
+              className="flex-1 bg-slate-50 p-4 overflow-hidden relative flex items-center justify-center"
+              onMouseEnter={(e) => {
+                const iframe = e.currentTarget.querySelector('iframe');
+                if (iframe) {
+                  try {
+                    iframe.focus();
+                    iframe.contentWindow?.focus();
+                  } catch (err) {
+                    console.error("Error focusing iframe on hover:", err);
+                  }
+                }
+              }}
+            >
               {reporteLoading && (
                 <div className="absolute inset-0 bg-white flex flex-col items-center justify-center z-10">
                   <div className="h-8 w-8 border-4 border-teal-600 border-t-transparent rounded-full animate-spin" />
@@ -11121,6 +11220,17 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 title="Reporte Cliente Resumen"
                 scrolling={reporteHeight && (reporteHeight + 140 < window.innerHeight * 0.88) ? "no" : "auto"}
                 style={{ overflow: reporteHeight && (reporteHeight + 140 < window.innerHeight * 0.88) ? 'hidden' : 'auto' }}
+                onLoad={(e) => {
+                  const iframe = e.target;
+                  setTimeout(() => {
+                    try {
+                      iframe.focus();
+                      iframe.contentWindow?.focus();
+                    } catch (err) {
+                      console.error("Error focusing iframe on load:", err);
+                    }
+                  }, 50);
+                }}
               />
             </div>
           </div>
@@ -11175,7 +11285,20 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
             </div>
 
             {/* CUERPO: El iframe usa exactamente tu PATH de Django */}
-            <div className="flex-1 bg-slate-50 p-4 overflow-hidden relative flex items-center justify-center">
+            <div 
+              className="flex-1 bg-slate-50 p-4 overflow-hidden relative flex items-center justify-center"
+              onMouseEnter={(e) => {
+                const iframe = e.currentTarget.querySelector('iframe');
+                if (iframe) {
+                  try {
+                    iframe.focus();
+                    iframe.contentWindow?.focus();
+                  } catch (err) {
+                    console.error("Error focusing iframe on hover:", err);
+                  }
+                }
+              }}
+            >
               {reporteLoading && (
                 <div className="absolute inset-0 bg-white flex flex-col items-center justify-center z-10">
                   <div className="h-8 w-8 border-4 border-teal-600 border-t-transparent rounded-full animate-spin" />
@@ -11188,6 +11311,17 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 title="Previsualización de Cotización PDF"
                 scrolling="auto"
                 style={{ overflow: 'auto' }}
+                onLoad={(e) => {
+                  const iframe = e.target;
+                  setTimeout(() => {
+                    try {
+                      iframe.focus();
+                      iframe.contentWindow?.focus();
+                    } catch (err) {
+                      console.error("Error focusing iframe on load:", err);
+                    }
+                  }, 50);
+                }}
               />
             </div>
           </div>

@@ -102,8 +102,10 @@ export const AuthProvider = ({ children }) => {
      ========================================================== */
   const logout = () => {
     localStorage.clear();
+    if (api.defaults.headers.common["Authorization"]) {
+      delete api.defaults.headers.common["Authorization"];
+    }
     setAuthUser(null);
-    window.location.href = "/login";
   };
 
   /* ==========================================================

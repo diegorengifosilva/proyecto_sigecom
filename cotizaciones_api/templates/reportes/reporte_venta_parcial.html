@@ -197,6 +197,13 @@ document.getElementById("btnExportarExcel").addEventListener("click", function()
     link.click();
 });
 </script>
-
+<script>
+  window.focus();
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      window.parent.postMessage({ type: 'close-report-modal' }, '*');
+    }
+  });
+</script>
 </body>
 </html>

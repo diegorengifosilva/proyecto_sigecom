@@ -62,6 +62,7 @@ urlpatterns = [
     path("<int:num_reg>/cambiar-estado/", views.cambiar_estado_cotizacion, name="cambiar_estado_cotizacion"),
     path("<int:id_registro>/pasar-a-cotizacion/", views.pasar_a_cotizacion, name="pasar_a_cotizacion"),
     path("<int:id_registro>/pasar-a-apertura/", views.pasar_a_apertura, name="pasar_a_apertura"),
+    path("<int:id_registro>/toggle-fijar/", views.toggle_fijar_cotizacion, name="toggle_fijar_cotizacion"),
     path("<int:num_reg>/retornar/", views.retornar_cotizacion, name="retornar_cotizacion"),
     path("<str:num_reg>/pdf-context/", views.cotizacion_pdf_context, name="cotizacion_pdf_context"),
     path("<str:num_reg>/pdf-preview/", views.cotizacion_pdf_preview, name="cotizacion_pdf_preview"),
