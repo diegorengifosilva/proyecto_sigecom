@@ -107,7 +107,6 @@
             justify-content: center;
         }
 
-
         .client-logo-box img {
             max-width: 100%;
             max-height: 100%;
@@ -517,6 +516,19 @@
             font-style: italic;
         }
 
+        /* CLASES DE SOPORTE PARA EDITOR QUILL (Previsualización e Indentación) */
+        .ql-align-center { text-align: center !important; }
+        .ql-align-right { text-align: right !important; }
+        .ql-align-justify { text-align: justify !important; }
+        .ql-indent-1 { margin-left: 3em !important; }
+        .ql-indent-2 { margin-left: 6em !important; }
+        .ql-indent-3 { margin-left: 9em !important; }
+        .ql-indent-4 { margin-left: 12em !important; }
+        .ql-indent-5 { margin-left: 15em !important; }
+        .ql-indent-6 { margin-left: 18em !important; }
+        .ql-indent-7 { margin-left: 21em !important; }
+        .ql-indent-8 { margin-left: 24em !important; }
+
         /* BLOCKQUOTE */
         .rich-text blockquote {
             border-left: 3px solid var(--primary);
@@ -526,33 +538,28 @@
             font-style: italic;
         }
 
-.separador{
-    margin-top: 420px; /* ajusta el espacio */
-}
+        .separador{
+            margin-top: 420px; /* ajusta el espacio */
+        }
 
+        /* Mantener subtotal junto */
+        .tabla-moderna tfoot{
+            display: table-footer-group;
+        }
 
+        /* Header invisible */
+        .header-espacio{
+            position: fixed;
+            top: -90px;
+            left: 0;
+            right: 0;
+            height: 90px;   /* MISMA ALTURA que el margin-top */
+        }
 
-/* Mantener subtotal junto */
-.tabla-moderna tfoot{
-    display: table-footer-group;
-}
-
-/* Header invisible */
-.header-espacio{
-    position: fixed;
-    top: -90px;
-    left: 0;
-    right: 0;
-    height: 90px;   /* MISMA ALTURA que el margin-top */
-}
-
-
-/* Contenido */
-.contenido-pdf{
-    width:100%;
-}
-
-
+        /* Contenido */
+        .contenido-pdf{
+            width:100%;
+        }
 
     </style>
 </head>
@@ -790,7 +797,7 @@
         {% for item in indice %}
         <div class="indice-item">
             <span class="indice-numero">
-                {{ item.numero|stringformat:"02d" }}
+                {% if item.numero %}{{ item.numero|stringformat:"02d" }}{% endif %}
             </span>
             <span class="indice-titulo">{{ item.titulo }}</span>
             <span class="indice-puntos"></span>
@@ -814,7 +821,7 @@
         <img src="{{ header_path }}" class="header-img">
     </div>
     <div class="content-padding">
-        <p class="subtit">{{ secciones.presupuesto }}.- PRESUPUESTO GENERAL</p>
+        <p class="subtit">PRESUPUESTO GENERAL</p>
         <table class="tabla-moderna">
             <thead>
                 <tr>
@@ -850,6 +857,7 @@
             </tbody>
             <tfoot>
                 <!-- DESCUENTO -->
+                {% if totales.descuento and totales.descuento > 0 %}
                 <tr class="total-fila soft">
                     <td colspan="4" class="text-right total-label">
                         DESCUENTO:
@@ -858,6 +866,7 @@
                         {{ totales.descuento|moneda:totales.moneda }}
                     </td>
                 </tr>
+                {% endif %}
 
                 <!-- TOTAL FINAL -->
                 <tr class="total-fila main-total">
@@ -876,7 +885,7 @@
             {% for grupo in suministros %}
 <div class="grupo-detalle">
            
-                <p class="subtit">{{ grupo.seccion }}.- DETALLE: {{ grupo.titulo }}</p>
+                <p class="subtit">{{ grupo.seccion }}.- DETALLE SUMINISTRO: {{ grupo.titulo }}</p>
                 <br>
                 <table class="tabla-moderna">
                     <thead>
@@ -918,7 +927,7 @@
             {% with start_idx=suministros|length|add:1 %}
                 {% for grupo in servicios %}
                 <div style="margin-top: 30px; page-break-inside: avoid;">
-                    <p class="subtit">{{ grupo.seccion }}.- DETALLE: {{ grupo.titulo }}</p>
+                    <p class="subtit">{{ grupo.seccion }}.- DETALLE SERVICIO: {{ grupo.titulo }}</p>
                     <table class="tabla-moderna">
                         <thead>
                             <tr>

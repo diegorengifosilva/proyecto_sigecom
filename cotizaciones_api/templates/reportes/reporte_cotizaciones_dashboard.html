@@ -1,167 +1,327 @@
 {% load static %}
 {% load humanize %}
+{% load currency %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
 <title>{{ titulo }}</title>
-
 <style>
-    body {
-        font-family: Arial, Helvetica, sans-serif;
-        font-size: 12px;
-        color: #333;
-        margin: 20px;
+/* ====== BASE ====== */
+body{
+    font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+    font-size: 12px;
+    color:#2b2b2b;
+    margin:0;
+    padding:20px;
+    background:#ffffff;
+}
+
+/* ====== HEADER ====== */
+.header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    border-bottom:3px solid #0f766e;
+    padding-bottom:12px;
+    margin-bottom:18px;
+}
+
+.logo-img{
+    width:150px;
+}
+
+/* ====== BOTON EXCEL ====== */
+.excel-btn button{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:8px 14px;
+    background:#1D6F42;
+    border:none;
+    border-radius:6px;
+    color:white;
+    font-weight:600;
+    cursor:pointer;
+    box-shadow:0 2px 5px rgba(0,0,0,.15);
+    transition:.2s ease;
+}
+
+.excel-btn button:hover{
+    background:#155c36;
+    transform:translateY(-1px);
+}
+
+.excel-btn img{
+    width:18px;
+}
+
+/* ====== TITULOS ====== */
+h2{
+    text-align:center;
+    margin:8px 0 0;
+    font-size:20px;
+    letter-spacing:.5px;
+    color:#0f766e;
+    font-weight:700;
+}
+
+h3{
+    text-align:center;
+    margin:4px 0 18px;
+    font-size:13px;
+    font-weight:600;
+    color:#374151;
+}
+
+/* ====== TABLA ====== */
+table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:12px;
+}
+
+/* encabezado */
+thead th{
+    background:#008080;
+    color:white;
+    padding:9px 6px;
+    text-align:center;
+    font-weight:700;
+    border:1px solid #0c5f58;
+}
+
+/* filas */
+tbody td{
+    padding:7px 8px;
+    border:1px solid #000307;
+}
+
+/* zebra profesional */
+tbody tr:nth-child(even){
+    background:#f4f6f7;
+}
+
+/* hover visual (solo pantalla) */
+tbody tr:hover{
+    background:#e6f4f1;
+}
+
+/* alineaciones */
+.text-right{
+    text-align:right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.text-center{
+    text-align:center;
+}
+
+/* ====== FILA TOTAL ====== */
+.total-final td{
+    background:#0f766e !important;
+    color:white;
+    font-weight:700;
+    font-size:13px;
+    border-top:2px solid #0c5f58;
+}
+
+/* ====== MODO IMPRESION ====== */
+@media print{
+    .excel-btn{
+        display:none;
     }
 
-    /* ---------- HEADER ---------- */
-    .header {
-        position: relative;
-        margin-bottom: 25px;
+    body{
+        margin:0;
     }
 
-    .logo {
-        position: absolute;
-        top: 0;
-        left: 0; /* ← CAMBIADO */
+    table{
+        font-size:11px;
     }
-
-    .logo img {
-        width: 120px;
-        height: auto;
-    }
-
-    h2 {
-        text-align: center;
-        margin-bottom: 6px;
-        color: #008080;
-        letter-spacing: 1px;
-    }
-
-    .subtitle {
-        text-align: center;
-        font-size: 11px;
-        color: #555;
-        margin-bottom: 18px;
-    }
-
-    /* ---------- TABLE ---------- */
-    table {
-        width: 100%;
-        border-collapse: collapse;
-    }
-
-    th, td {
-        border: 1px solid #cbd5e1;
-        padding: 6px;
-    }
-
-    th {
-        background-color: #008080;
-        color: white;
-        text-align: center;
-        font-weight: bold;
-    }
-
-    td.text-right {
-        text-align: right;
-    }
-
-    td.text-center {
-        text-align: center;
-    }
-
-    tfoot td {
-        font-weight: bold;
-        background-color: #f1f5f9;
-    }
-
-    .total-final {
-        font-weight: bold;
-    }
-
-    /* BOTON EXCEL DERECHA */
-    .excel-btn {
-        position: absolute;
-        top: 0;
-        right: 0;
-        text-align: center;
-        font-size: 10px;
-    }
-
-    .excel-btn img {
-        width: 38px;
-        display: block;
-        margin: auto;
-    }
-
-    .excel-btn a {
-        text-decoration: none;
-        color: #1D6F42;
-        font-weight: bold;
-    }
-
-    
+}
 </style>
 </head>
-
 <body>
-<!-- ENCABEZADO -->
-<div class="header">
-    <div class="mi-empresa-logo">
-        <img src="{% static 'logo.png' %}" alt="Logo Empresa">
+<div id="report-content-wrapper">
+    <div class="header">
+        <div>
+            <img class="logo-img" src="{% static 'logo.png' %}" alt="Logo Empresa">
+        </div>
+        <div class="excel-btn">
+            <button type="button" id="btnExcel_dashboard">
+                <img src="{% static 'Formatos/excel.png' %}" alt="excel">
+                Exportar Excel
+            </button>
+        </div>
     </div>
 
-    
-</div>
+    <h2>{{ titulo }}</h2>
+    <div id="contenedor_tabla">
+        <h3 style="text-align:center; text-transform: uppercase; font-size: 13px; color: #475569; letter-spacing: 0.5px;">
+            AGRUPADO POR ÁREA
+        </h3>
 
-
-<div class="excel-btn">
-        <a href="{{ url_excel }}">
-            <img src="{% static 'importar-xls.png' %}" alt="excel">
-            Exportar Excel
-        </a>
+        <table id="tabla_reporte_dashboard">
+            <thead>
+                <tr>
+                    <th>ÁREA</th>
+                    <th>N° {{ tipo_registro_label }}</th>
+                    <th>IMPORTE TOTAL</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in resultados %}
+                <tr>
+                    <td style="font-weight: 600;">{{ row.area }}</td>
+                    <td class="text-center" data-num="{{ row.cantidad }}">{{ row.cantidad }}</td>
+                    <td class="text-right" data-num="{{ row.importe }}" style="font-weight: 700;">
+                        {{ row.importe|format_custom:"$" }}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="3" class="text-center">
+                        No existen datos para los filtros seleccionados
+                    </td>
+                </tr>
+                {% endfor %}
+                
+                <tr class="total-final">
+                    <td style="text-align:left; font-weight: bold;">TOTAL GENERAL</td>
+                    <td></td>
+                    <td class="text-right" data-num="{{ total_general }}" style="background: #111827;">
+                        {{ total_general|format_custom:"$" }}
+                    </td>
+                </tr>
+            </tbody>
+        </table>
     </div>
+</div> <!-- /report-content-wrapper -->
 
-<div class="subtitle">
-   <h2>Resumen general de cotizaciones agrupadas por área</h2> 
-</div>
+<script>
+document.addEventListener("DOMContentLoaded", function(){
+    const btn = document.getElementById("btnExcel_dashboard");
+    if (btn) {
+        btn.addEventListener("click", function(e){
+            e.preventDefault();
+            exportarExcelReal();
+        });
+    }
+});
 
+function exportarExcelReal(){
+    const tabla = document.getElementById("tabla_reporte_dashboard");
+    const filas = tabla.querySelectorAll("tr");
 
-<!-- TABLA -->
-<table>
-    <thead>
-        <tr>
-            <th>ÁREA</th>
-            <th>N° COTIZACIONES</th>
-            <th>IMPORTE TOTAL</th>
-        </tr>
-    </thead>
+    let excel = `
+    <table border="1" style="border-collapse:collapse;font-family:Segoe UI;font-size:12px;">`;
 
-    <tbody>
-        {% for row in resultados %}
-        <tr>
-            <td>{{ row.area }}</td>
-            <td class="text-center">{{ row.cantidad }}</td>
-         <td class="text-right">{{ row.importe|floatformat:2|intcomma }}</td>
-        </tr>
-        {% empty %}
-        <tr>
-            <td colspan="3" class="text-center">
-                No existen datos para los filtros seleccionados
-            </td>
-        </tr>
-        {% endfor %}
-    </tbody>
+    /* ===== TITULO ===== */
+    excel += `
+    <tr>
+        <td colspan="3" style="font-size:18px;font-weight:bold;text-align:center;background:#0f766e;color:white;padding:10px;">
+            {{ titulo }}
+        </td>
+    </tr>
+    <tr>
+        <td colspan="3" style="text-align:center;font-weight:bold;padding:6px;background:#f8fafc;">
+            AGRUPADO POR ÁREA
+        </td>
+    </tr>
+    <tr><td colspan="3"></td></tr>
+    `;
 
-    <tfoot>
-        <tr class="total-final">
-            <td style="text-align:right;">TOTAL GENERAL</td>
-            <td></td>
-            <td class="text-right">{{ total_general|floatformat:2|intcomma }}</td>
-        </tr>
-    </tfoot>
-</table>
+    /* ===== TABLA ===== */
+    filas.forEach((row, i) => {
+        excel += "<tr>";
+        row.querySelectorAll("th, td").forEach(cell => {
+            let text = cell.dataset.num ? cell.dataset.num : cell.innerText.trim();
+            let style = "padding:6px;";
 
+            if (row.parentElement.tagName === "THEAD") {
+                style += "background:#008080;color:white;font-weight:bold;text-align:center;";
+            }
+
+            if (cell.classList.contains("text-right")) {
+                style += "text-align:right;mso-number-format:'$#,##0.00';";
+            } else if (cell.classList.contains("text-center")) {
+                style += "text-align:center;";
+            }
+
+            if (row.classList.contains("total-final")) {
+                style += "background:#0f766e;color:white;font-weight:bold;";
+            }
+
+            excel += `<td style="${style}">${text}</td>`;
+        });
+        excel += "</tr>";
+    });
+
+    excel += "</table>";
+    descargarExcel(excel);
+}
+
+function descargarExcel(tablaHTML){
+    const template = `
+    <html xmlns:o="urn:schemas-microsoft-com:office:office"
+          xmlns:x="urn:schemas-microsoft-com:office:excel"
+          xmlns="http://www.w3.org/TR/REC-html40">
+    <head>
+        <meta charset="UTF-8">
+        <!--[if gte mso 9]>
+        <xml>
+            <x:ExcelWorkbook>
+                <x:ExcelWorksheets>
+                    <x:ExcelWorksheet>
+                        <x:Name>Reporte Áreas</x:Name>
+                        <x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>
+                    </x:ExcelWorksheet>
+                </x:ExcelWorksheets>
+            </x:ExcelWorkbook>
+        </xml>
+        <![endif]-->
+    </head>
+    <body>
+        ${tablaHTML}
+    </body>
+    </html>`;
+
+    const blob = new Blob(['\ufeff', template], { type:"application/vnd.ms-excel;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "REPORTE_{{ tipo_registro_label }}_AREAS.xls";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+</script>
+
+<!-- Script to notify parent of height changes for responsive iframe modals -->
+<script>
+  function notifyParentHeight() {
+    if (window.parent && window.parent !== window) {
+      const wrapper = document.getElementById('report-content-wrapper');
+      const height = wrapper ? wrapper.offsetHeight : (document.documentElement.scrollHeight || document.body.scrollHeight);
+      window.parent.postMessage({ 
+        type: 'set-iframe-height', 
+        height: height
+      }, '*');
+    }
+  }
+  notifyParentHeight();
+  window.addEventListener('DOMContentLoaded', notifyParentHeight);
+  window.addEventListener('load', notifyParentHeight);
+  window.addEventListener('resize', notifyParentHeight);
+</script>
+<script>
+  window.focus();
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      window.parent.postMessage({ type: 'close-report-modal' }, '*');
+    }
+  });
+</script>
 </body>
 </html>

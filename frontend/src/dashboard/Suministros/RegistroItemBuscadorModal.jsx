@@ -49,7 +49,7 @@ function RegistroItemBuscadorModal({ open, onClose, onSelect, item, num_reg }) {
     if (!open || !num_reg) return;
 
     const fetchCotizacion = async () => {
-      const res = await api.get(`/cotizaciones/modal/${num_reg}/`);
+      const res = await api.get(`/cotizaciones/cotizacion_detalle/${num_reg}/`);
       setTcamb(Number(res.data.tcamb) || 1);
     };
     fetchCotizacion();
@@ -77,14 +77,14 @@ function RegistroItemBuscadorModal({ open, onClose, onSelect, item, num_reg }) {
       setLoading(false);
     }
   };
-  
+
   // ==============
   // PROVEEDORES
   // ==============
   useEffect(() => {
     const fetchProveedores = async () => {
       try {
-        const res = await api.get("/cotizaciones/proveedores/");
+        const res = await api.get("/core/tipo_marca/");
         setProveedores(Array.isArray(res.data) ? res.data : []);
       } catch (error) {
         console.error("Error cargando proveedores", error);
@@ -213,7 +213,7 @@ function RegistroItemBuscadorModal({ open, onClose, onSelect, item, num_reg }) {
             onSelect={handleSelectRittal}
           />
         );
-      
+
       // PHOENIX CONTACT
       case "05":
         return (
@@ -226,7 +226,7 @@ function RegistroItemBuscadorModal({ open, onClose, onSelect, item, num_reg }) {
             onSelect={handleSelectPhoenix}
           />
         );
-      
+
       // SCHNEIDER / LS
       case "06":
         return (
@@ -251,7 +251,7 @@ function RegistroItemBuscadorModal({ open, onClose, onSelect, item, num_reg }) {
             onSelect={handleSelectAlm}
           />
         );
-      
+
       // OTROS
       case "99":
         return (
@@ -274,7 +274,7 @@ function RegistroItemBuscadorModal({ open, onClose, onSelect, item, num_reg }) {
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl bg-white rounded-2xl shadow-2xl border-none p-0 overflow-hidden font-sans">
-        
+
         {/* HEADER MODERNO */}
         <div className="bg-slate-50/80 px-6 py-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
@@ -294,7 +294,7 @@ function RegistroItemBuscadorModal({ open, onClose, onSelect, item, num_reg }) {
 
         {/* CONTENIDO PRINCIPAL (p-2 para mantener consistencia) */}
         <div className="p-2 space-y-2">
-          
+
           {/* PANEL DE FILTROS ESTILIZADO */}
           <div className="bg-slate-50/50 border border-slate-100 rounded-2xl p-4 shadow-inner">
             <div className="grid grid-cols-4 gap-4 items-end">

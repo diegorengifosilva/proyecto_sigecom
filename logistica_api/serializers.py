@@ -5,6 +5,12 @@ from django.contrib.auth import get_user_model
 import uuid
 from .models import (
     DashboardCotizacion,
+    CotiSuministros,
+    CotiServicios,
+    CotiMensajes,
+    CotiSeguimiento,
+    vc_tab_clientes,
+    vc_tab_clientes_d,
     vc_tab_estado,
     vc_tab_categorias,
     vc_tab_tproveedor,
@@ -18,14 +24,14 @@ from .models import (
     alm_articulos,
     sis_alm_tab_almacen,
     cont_cias,
-    CotiSuministros,
-    CotiServicios,
-    CotiMensajes,
-    CotiSeguimiento,
     sis_alm_tab_grupo,
     sis_alm_tab_articulos,
     AlmTabUmed,
     sis_alm_tab_ccosto,
+    AlmacenNew,
+    Grupo,
+    DocumentoAlmacen,
+    CostoAlmacen,
 )
 from django.contrib.auth import get_user_model
 from django.utils.timezone import localtime
@@ -78,9 +84,174 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
         return token
 
-##============================##
-## APROBACIÓN DE COTIZACIONES ##
-##============================##
+#========================================================================================
+
+##================##
+## DATOS DE BD_VC ##
+##================##
+# vc_tab_estado
+class EstadoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = vc_tab_estado
+        fields = "__all__"
+
+class ProveedoresSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = vc_tab_tproveedor
+        fields = "__all__"
+
+# vc_mov_cotizaciones
+class CotizacionesSerializer(serializers.ModelSerializer):
+    # Campos derivados para mostrar nombres legibles
+    cliente_nombre = serializers.SerializerMethodField()
+    area_nombre = serializers.SerializerMethodField()
+    estado_nombre = serializers.SerializerMethodField()
+
+    # Exponer IDs de FK si quieres (aunque en vc_mov_cotizaciones son strings)
+    cliente_id = serializers.SerializerMethodField()
+    area_id = serializers.SerializerMethodField()
+    estado_id = serializers.SerializerMethodField()
+
+    class Meta:
+        model = vc_mov_cotizaciones
+        fields = [
+            "cotif",
+            "cotin",
+            "refer",
+            "empre",
+            "nombr",
+            "area",
+            "estad",
+            "tot_c",
+            "cliente_id",
+            "cliente_nombre",
+            "area_id",
+            "area_nombre",
+            "estado_id",
+            "estado_nombre",
+        ]
+
+    # --------------------------
+    # Métodos para campos legibles
+    # --------------------------
+    def get_cliente_nombre(self, obj):
+        return obj.get_cliente_nombre()
+
+    def get_area_nombre(self, obj):
+        return obj.get_area_nombre()
+
+    def get_estado_nombre(self, obj):
+        return obj.get_estado_nombre()
+
+    # --------------------------
+    # Métodos para exponer los "IDs" de las relaciones
+    # --------------------------
+    def get_cliente_id(self, obj):
+        return obj.empre
+
+    def get_area_id(self, obj):
+        return obj.area
+
+    def get_estado_id(self, obj):
+        return obj.estad
+
+# vc_tab_categorias
+class CategoriasSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = vc_tab_categorias
+        fields = "__all__"
+
+# vc_tab_tgastos
+class TGastosSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = vc_tab_tgastos
+        fields = "__all__"
+
+# vc_tab_tgastos_d
+class TGastosDSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = vc_tab_tgastos_d
+        fields = "__all__"
+
+# vc_tab_rittal
+class RittalSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = vc_tab_rittal
+        fields = "__all__"
+
+# vc_tab_rockwell
+class RockwellSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = vc_tab_rockwell
+        fields = "__all__"
+
+# vc_tab_ceyesa
+class CeyesaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = vc_tab_ceyesa
+        fields = "__all__"
+
+# vc_tab_hoffman
+class HoffmanSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = vc_tab_hoffman
+        fields = "__all__"
+
+# alm_articulos
+class AlmArticulosSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = alm_articulos
+        fields = "__all__"
+
+# cont_cias
+class ContCiasSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = cont_cias
+        fields = "__all__"
+
+# sis_alm_tab_almacen
+class AlmacenSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = sis_alm_tab_almacen
+        fields = "__all__"
+
+
+class AlmacenNewSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AlmacenNew
+        fields = ["idalmacen", "nombre", "direccion", "activo", "usuario_id_usuario"]
+
+# AlmTabUmed
+class AlmTabUmedSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AlmTabUmed
+        fields = "__all__"
+
+# sis_alm_tab_grupo
+class GrupoAnaliticoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = sis_alm_tab_grupo
+        fields = "__all__"
+
+# sis_alm_tab_articulos
+class ArticuloSerializer(serializers.ModelSerializer):
+    # Opcional: podrías incluir nombres de grupo y um si lo deseas
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        # Limpiar valores null o strings vacíos si es necesario
+        return representation
+
+    class Meta:
+        model = sis_alm_tab_articulos
+        fields = "__all__"
+
+# sis_alm_tab_ccosto
+class CcostoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = sis_alm_tab_ccosto
+        fields = "__all__"
+
+# --- Missing serializers restored ---
 class DashboardCotizacionSerializer(serializers.ModelSerializer):
     # ── Campos derivados (SOLO LECTURA) ─────────────────
     cliente_nombre = serializers.CharField(source="nombr", required=False, allow_blank=True)
@@ -251,8 +422,8 @@ class DashboardCotizacionModalSerializer(serializers.ModelSerializer):
         try:
             if not obj.cliente_codigo:
                 return obj.cargr or ""
-            from logistica_api.models import Representante
-            cliente = Representante.objects.get(codigo=obj.cliente_codigo)
+            from logistica_api.models import vc_tab_clientes_d
+            cliente = vc_tab_clientes_d.objects.get(codigo=obj.cliente_codigo)
             return cliente.cargo or obj.cargr or ""
         except Exception:
             return obj.cargr or ""
@@ -322,158 +493,30 @@ class CotiSeguimientoSerializer(serializers.ModelSerializer):
 ##================##
 ## DATOS DE BD_VC ##
 ##================##
+
+# vc_tab_clientes
+class ClientesSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = vc_tab_clientes
+        fields = "__all__"
+
+
+class GrupoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Grupo
+        fields = "__all__"
+
+
+class DocumentoAlmacenSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DocumentoAlmacen
+        fields = "__all__"
+
+
+class CostoAlmacenSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CostoAlmacen
+        fields = "__all__"
+
+
 # vc_tab_estado
-class EstadoSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = vc_tab_estado
-        fields = "__all__"
-
-class ProveedoresSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = vc_tab_tproveedor
-        fields = "__all__"
-
-# vc_mov_cotizaciones
-class CotizacionesSerializer(serializers.ModelSerializer):
-    # Campos derivados para mostrar nombres legibles
-    cliente_nombre = serializers.SerializerMethodField()
-    area_nombre = serializers.SerializerMethodField()
-    estado_nombre = serializers.SerializerMethodField()
-
-    # Exponer IDs de FK si quieres (aunque en vc_mov_cotizaciones son strings)
-    cliente_id = serializers.SerializerMethodField()
-    area_id = serializers.SerializerMethodField()
-    estado_id = serializers.SerializerMethodField()
-
-    class Meta:
-        model = vc_mov_cotizaciones
-        fields = [
-            "cotif",
-            "cotin",
-            "refer",
-            "empre",
-            "nombr",
-            "area",
-            "estad",
-            "tot_c",
-            "cliente_id",
-            "cliente_nombre",
-            "area_id",
-            "area_nombre",
-            "estado_id",
-            "estado_nombre",
-        ]
-
-    # --------------------------
-    # Métodos para campos legibles
-    # --------------------------
-    def get_cliente_nombre(self, obj):
-        return obj.get_cliente_nombre()
-
-    def get_area_nombre(self, obj):
-        return obj.get_area_nombre()
-
-    def get_estado_nombre(self, obj):
-        return obj.get_estado_nombre()
-
-    # --------------------------
-    # Métodos para exponer los "IDs" de las relaciones
-    # --------------------------
-    def get_cliente_id(self, obj):
-        return obj.empre
-
-    def get_area_id(self, obj):
-        return obj.area
-
-    def get_estado_id(self, obj):
-        return obj.estad
-
-# vc_tab_categorias
-class CategoriasSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = vc_tab_categorias
-        fields = "__all__"
-
-# vc_tab_tgastos
-class TGastosSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = vc_tab_tgastos
-        fields = "__all__"
-
-# vc_tab_tgastos_d
-class TGastosDSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = vc_tab_tgastos_d
-        fields = "__all__"
-
-# vc_tab_rittal
-class RittalSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = vc_tab_rittal
-        fields = "__all__"
-
-# vc_tab_rockwell
-class RockwellSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = vc_tab_rockwell
-        fields = "__all__"
-
-# vc_tab_ceyesa
-class CeyesaSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = vc_tab_ceyesa
-        fields = "__all__"
-
-# vc_tab_hoffman
-class HoffmanSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = vc_tab_hoffman
-        fields = "__all__"
-
-# alm_articulos
-class AlmArticulosSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = alm_articulos
-        fields = "__all__"
-
-# cont_cias
-class ContCiasSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = cont_cias
-        fields = "__all__"
-
-# sis_alm_tab_almacen
-class AlmacenSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = sis_alm_tab_almacen
-        fields = "__all__"
-
-# AlmTabUmed
-class AlmTabUmedSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = AlmTabUmed
-        fields = "__all__"
-
-# sis_alm_tab_grupo
-class GrupoAnaliticoSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = sis_alm_tab_grupo
-        fields = "__all__"
-
-# sis_alm_tab_articulos
-class ArticuloSerializer(serializers.ModelSerializer):
-    # Opcional: podrías incluir nombres de grupo y um si lo deseas
-    def to_representation(self, instance):
-        representation = super().to_representation(instance)
-        # Limpiar valores null o strings vacíos si es necesario
-        return representation
-
-    class Meta:
-        model = sis_alm_tab_articulos
-        fields = "__all__"
-
-# sis_alm_tab_ccosto
-class CcostoSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = sis_alm_tab_ccosto
-        fields = "__all__"

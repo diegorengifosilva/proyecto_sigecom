@@ -102,7 +102,7 @@ const KPICard = ({ label, current, accumulated, icon: Icon, color, category, uni
 /* =========================
    COMPONENTE PRINCIPAL
 ========================= */
-export default function KpisResumen({ anno = 2025 }) {
+export default function KpisResumen({ anno = new Date().getFullYear(), mes = "%" }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -110,7 +110,7 @@ export default function KpisResumen({ anno = 2025 }) {
     const cargar = async () => {
       try {
         setLoading(true);
-        const res = await api.get(`/dashboard/kpis/?anno=${anno}`);
+        const res = await api.get(`dashboard/kpis/?anno=${anno}&mes=${mes}`);
         setData(res.data);
       } catch (err) {
         console.error("Error cargando KPIs", err);
@@ -119,7 +119,7 @@ export default function KpisResumen({ anno = 2025 }) {
       }
     };
     cargar();
-  }, [anno]);
+  }, [anno, mes]);
 
   if (loading) return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">

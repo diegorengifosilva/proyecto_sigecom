@@ -169,7 +169,7 @@ class Migration(migrations.Migration):
             },
         ),
         migrations.CreateModel(
-            name='DashboardCotizacion',
+            name='Cotizacion',
             fields=[
                 ('numero', models.CharField(blank=True, db_column='cotin', max_length=70, null=True)),
                 ('fecha', models.DateField(db_column='cotif', db_index=True, default=django.utils.timezone.now)),

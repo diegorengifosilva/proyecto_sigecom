@@ -29,14 +29,12 @@ const FilterCard = ({ onProcess, onReport, initialFilters = {}, dashboard = "cot
     estado: initialFilters.estado || "%",
     area: initialFilters.area || "%",
     envio: initialFilters.envio || "%",
-    operacion: initialFilters.operacion || "%",
     generalCampo: "",
     generalValor: "",
   });
 
   const [clientes, setClientes] = useState([]);
   const [areas, setAreas] = useState([]);
-  const [almacenes, setAlmacenes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState(null);
@@ -58,12 +56,6 @@ const FilterCard = ({ onProcess, onReport, initialFilters = {}, dashboard = "cot
     { value: "ANULADO", label: "Anulado" },
   ];
 
-  const operacionesLog = [
-    { value: "%", label: "-- Todas --" },
-    { value: "E", label: "Entradas" },
-    { value: "S", label: "Salidas" },
-  ];
-
   const envios = [
     { value: "%", label: "-- Todos --" },
     { value: "0", label: "Pendiente de Envio" },
@@ -77,19 +69,11 @@ const FilterCard = ({ onProcess, onReport, initialFilters = {}, dashboard = "cot
       try {
         setLoading(true);
         const [clientesRes, areasRes] = await Promise.all([
-          api.get("core/clientes/").catch(() => ({ data: [] })),
-          api.get("users/areas/").catch(() => ({ data: [] })),
+          api.get("core/clientes/"),
+          api.get("users/areas/"),
         ]);
         setClientes(clientesRes.data || []);
         setAreas(areasRes.data || []);
-        
-        try {
-          const almacenesRes = await api.get("logistica/dashboard/almacenes/");
-          setAlmacenes(Array.isArray(almacenesRes.data) ? almacenesRes.data : []);
-        } catch (err) {
-          console.error("Error cargando almacenes:", err);
-          setAlmacenes([]);
-        }
       } catch (err) {
         console.error("Error cargando filtros:", err);
       } finally {
@@ -146,55 +130,39 @@ const FilterCard = ({ onProcess, onReport, initialFilters = {}, dashboard = "cot
       setProcessing(false);
     }
   };
+
   return (
-    <div className={`bg-white rounded-xl border border-slate-200 shadow-sm p-3 ${className}`}>
-      <div className={`grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 ${dashboard === "logistica" ? "lg:grid-cols-9" : "lg:grid-cols-8"} gap-2`}>
-        <SelectBox label="Año" icon={<Calendar size={12} />} options={aniosOptions} value={filters.anio} onChange={(e) => setFilters({ ...filters, anio: e.target.value })} />
-        <SelectBox label="Mes" icon={<CalendarDays size={12} />} options={meses} value={filters.mes} onChange={(e) => setFilters({ ...filters, mes: e.target.value })} />
-        <SelectBox label="Cliente" icon={<Building2 size={12} />} options={[{ value: "%", label: "-- Todos --" }, ...clientes.map(c => ({ value: c.codigo, label: c.nombre }))]} value={filters.cliente} onChange={(e) => setFilters({ ...filters, cliente: e.target.value })} />
-        <SelectBox label="Estado" icon={<Info size={12} />} options={dashboard === "logistica" ? estadosLog : estadosCot} value={filters.estado} onChange={(e) => setFilters({ ...filters, estado: e.target.value })} />
-
-        {dashboard === "logistica" && (
-          <SelectBox label="Operación" icon={<Repeat2 size={12} />} options={operacionesLog} value={filters.operacion} onChange={(e) => setFilters({ ...filters, operacion: e.target.value })} />
-        )}
-
-        {dashboard === "logistica" && (
-          <SelectBox 
-            label="Almacén" 
-            icon={<Building2 size={12} />} 
-            options={[
-              { value: "%", label: "-- Todos --" },
-              ...(Array.isArray(almacenes) ? almacenes.map(a => ({ value: a.idalmacen.toString(), label: a.nombre })) : [])
-            ]} 
-            value={filters.area} 
-            onChange={(e) => setFilters({ ...filters, area: e.target.value })} 
-          />
-        )}
+    <div className={`bg-white rounded-2xl border border-slate-200 shadow-sm p-4 ${className}`}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <SelectBox label="Año" icon={<Calendar size={14} />} options={aniosOptions} value={filters.anio} onChange={(e) => setFilters({ ...filters, anio: e.target.value })} />
+        <SelectBox label="Mes" icon={<CalendarDays size={14} />} options={meses} value={filters.mes} onChange={(e) => setFilters({ ...filters, mes: e.target.value })} />
+        <SelectBox label="Cliente" icon={<Building2 size={14} />} options={[{ value: "%", label: "-- Todos --" }, ...clientes.map(c => ({ value: c.codigo, label: c.nombre }))]} value={filters.cliente} onChange={(e) => setFilters({ ...filters, cliente: e.target.value })} />
+        <SelectBox label="Estado" icon={<Info size={14} />} options={dashboard === "logistica" ? estadosLog : estadosCot} value={filters.estado} onChange={(e) => setFilters({ ...filters, estado: e.target.value })} />
 
         {dashboard === "cotizaciones" && (
-          <SelectBox label="Envío" icon={<Send size={12} />} options={envios} value={filters.envio} onChange={(e) => setFilters({ ...filters, envio: e.target.value })} />
+          <SelectBox label="Envío" icon={<Send size={14} />} options={envios} value={filters.envio} onChange={(e) => setFilters({ ...filters, envio: e.target.value })} />
         )}
 
-        <SelectBox label="Campo" icon={<Binoculars size={12} />} options={camposGenerales} value={filters.generalCampo} onChange={(e) => setFilters({ ...filters, generalCampo: e.target.value })} />
+        <SelectBox label="Campo" icon={<Binoculars size={14} />} options={camposGenerales} value={filters.generalCampo} onChange={(e) => setFilters({ ...filters, generalCampo: e.target.value })} />
 
-        <div className="flex flex-col gap-1">
-          <label className="flex items-center gap-1 text-[9px] font-bold text-slate-500 uppercase tracking-wider"><Search size={12} /> Buscador</label>
+        <div className="flex flex-col gap-1.5 lg:col-span-1">
+          <label className="flex items-center gap-1 text-[10px] font-bold text-slate-500 uppercase tracking-wider"><Search size={14} /> Buscador</label>
           <input
             type="text"
             placeholder="Buscar..."
             value={filters.generalValor}
             onChange={(e) => setFilters({ ...filters, generalValor: e.target.value })}
-            className="h-8 w-full rounded-lg border border-slate-200 px-2 text-[10px] focus:ring-2 focus:ring-teal-500/20 transition-all shadow-sm"
+            className="h-9 w-full rounded-xl border border-slate-200 px-3 text-xs focus:ring-2 focus:ring-teal-500/20 transition-all shadow-sm"
           />
         </div>
 
-        <div className="flex items-end gap-1.5">
-          <Button onClick={handleProcess} disabled={processing} className="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-bold h-8 rounded-lg text-[10px] gap-1 px-1">
-            {processing ? <Loader2 size={12} className="animate-spin" /> : <Repeat2 size={12} />}
+        <div className="flex items-end gap-2 lg:col-span-1">
+          <Button onClick={handleProcess} disabled={processing} className="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-bold h-9 rounded-xl text-xs gap-2">
+            {processing ? <Loader2 size={14} className="animate-spin" /> : <Repeat2 size={14} />}
             PROCESAR
           </Button>
-          <Button onClick={() => onReport?.(filters)} variant="outline" className="h-8 w-8 p-0 rounded-lg border-slate-200 text-slate-600 hover:bg-slate-50 shrink-0">
-            <FileSliders size={14} />
+          <Button onClick={() => onReport?.(filters)} variant="outline" className="h-9 w-9 p-0 rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50">
+            <FileSliders size={16} />
           </Button>
         </div>
       </div>
@@ -203,9 +171,9 @@ const FilterCard = ({ onProcess, onReport, initialFilters = {}, dashboard = "cot
 };
 
 const SelectBox = ({ label, icon, options, value, onChange }) => (
-  <div className="flex flex-col gap-1">
-    <label className="flex items-center gap-1 text-[9px] font-bold text-slate-500 uppercase tracking-wider">{icon} {label}</label>
-    <select value={value} onChange={onChange} className="h-8 w-full rounded-lg border border-slate-200 px-2 text-[10px] focus:ring-2 focus:ring-teal-500/20 transition-all bg-white shadow-sm appearance-none cursor-pointer">
+  <div className="flex flex-col gap-1.5">
+    <label className="flex items-center gap-1 text-[10px] font-bold text-slate-500 uppercase tracking-wider">{icon} {label}</label>
+    <select value={value} onChange={onChange} className="h-9 w-full rounded-xl border border-slate-200 px-3 text-xs focus:ring-2 focus:ring-teal-500/20 transition-all bg-white shadow-sm appearance-none">
       {options.map((opt) => (
         <option key={opt.value} value={opt.value}>{opt.label}</option>
       ))}

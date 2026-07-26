@@ -1,0 +1,188 @@
+
+====================================
+FUNCTION: handleGuardarCabecera
+====================================
+Starts on line 1339:
+1339:   const handleGuardarCabecera = async () => {
+1340:     if (isReadOnly) return;
+1341:     setSavingHeader(true);
+1342:     try {
+1343:       const endpoint = esOportunidad ? `oportunidades/modal/${numReg}/` : `cotizaciones/cotizacion_detalle/${numReg}/`;
+1344:       const payload = {
+1345:         referencia: data.referencia,
+1346:         forma_pago: data.forma_pago,
+1347:         lugar: data.lugar,
+1348:         tipo_moneda: data.tipo_moneda,
+1349:         tipo_cambio: data.tipo_cambio,
+1350:         igv: data.igv,
+1351:         entrega_suministros: data.entrega_suministros,
+1352:         id_unidad_tiempo_entrega_suministros: data.id_unidad_tiempo_entrega_suministros,
+1353:         entrega_servicios: data.entrega_servicios,
+1354:         id_unidad_tiempo_entrega_servicios: data.id_unidad_tiempo_entrega_servicios,
+1355:         validez_oferta: data.validez_oferta,
+1356:         id_unidad_tiempo_validez: data.id_unidad_tiempo_validez,
+1357:         id_area: data.id_area,
+1358:         id_tipo: data.id_tipo,
+1359:         tipo_venta: data.tipo_venta,
+1360:         probabilidad: data.probabilidad,
+1361:         id_cliente: data.id_cliente,
+1362:         id_representante: data.id_representante,
+1363:         representante_nombre: data.representante_nombre,
+1364:         representante_cargo: data.representante_cargo,
+1365:         representante_telefono: data.representante_telefono,
+1366:         representante_movil: data.representante_movil,
+1367:         representante_correo: data.representante_correo,
+1368:       };
+1369: 
+1370:       const res = await api.put(endpoint, payload);
+1371:       setData(res.data);
+1372:       setOriginalData(res.data);
+1373:       toast.success("Cabecera guardada correctamente");
+1374:       queryClient.invalidateQueries({ queryKey: ["cotizaciones-aprobacion"] });
+1375:       queryClient.invalidateQueries({ queryKey: ["cotizacion", numReg] });
+1376:       queryClient.invalidateQueries({ queryKey: ["cotizacion-detalle", numReg] });
+1377:     } catch (err) {
+1378:       console.error("Error al guardar cabecera:", err);
+1379:       const errMsg = err.response?.data?.error || "Error al guardar cambios de cabecera";
+1380:       toast.error(errMsg);
+1381:     } finally {
+1382:       setSavingHeader(false);
+1383:     }
+1384:   };
+
+====================================
+FUNCTION: handleFieldChange
+====================================
+Starts on line 1387:
+1387:   const handleFieldChange = (field, value) => {
+1388:     if (!canEdit) {
+1389:       toast.warn("Edición bloqueada: cotización congelada");
+1390:       return;
+1391:     }
+1392: 
+1393:     setData(prev => {
+1394:       const newState = { ...prev, [field]: value };
+1395: 
+1396:       // 1. Si el tipo de cotización deja de ser Venta (V), 
+1397:       // reseteamos los campos logísticos (tven y costo_envio)
+1398:       if (field === "cotit" && value !== "V") {
+1399:         newState.tven = "";
+1400:         newState.costo_envio = "";
+1401:       }
+1402: 
+1403:       // 2. Lógica de limpieza al cambiar entre Total y Parcial
+1404:       if (field === "tven" && value === "P") {
+1405:         newState.costo_envio = 0;
+1406:       }
+1407: 
+1408:       return newState;
+1409:     });
+1410:   };
+
+====================================
+FUNCTION: handleAgregarGrupoSuministro
+====================================
+Starts on line 1471:
+1471:   const handleAgregarGrupoSuministro = async (form) => {
+1472:     const success = await hookAgregarGrupoSuministro(form);
+1473:     if (success) setOpenGrupoModal(false);
+1474:   };
+
+====================================
+FUNCTION: handleAgregarItem
+====================================
+Starts on line 1476:
+1476:   const handleAgregarItem = async (form) => {
+1477:     const activeGrupoKey = form.cog_override || grupoActivo;
+1478:     const success = await hookAgregarItem(form, activeGrupoKey);
+1479:     if (success) setOpenItemModal(false);
+1480:   };
+
+====================================
+FUNCTION: saveEditItem
+====================================
+Starts on line 1482:
+1482:   const saveEditItem = async () => {
+1483:     const success = await hookSaveEditItem(editingItemId, editForm);
+1484:     if (success) setEditingItemId(null);
+1485:   };
+
+====================================
+FUNCTION: handleConfirmGrupoServicio
+====================================
+Starts on line 1487:
+1487:   const handleConfirmGrupoServicio = async (form) => {
+1488:     await handleAgregarGrupoServicio({
+1489:       nombre: form.nombre,
+1490:       cantidad: form.cantidad,
+1491:       lineasPdf: form.lineasPdf,
+1492:       detalle: form.detalle,
+1493:       _key: form._key
+1494:     });
+1495:   };
+
+====================================
+FUNCTION: handleConfirmManoObraInline
+====================================
+Starts on line 1497:
+1497:   const handleConfirmManoObraInline = async (form, grupoId, subgrupoId) => {
+1498:     const hookForm = {
+1499:       id_servicio: form.id_servicio || null,
+1500:       codigo_item: form.codigo_item,
+1501:       descripcion_item: form.descripcion_item,
+1502:       cantidad_hombres: Number(form.cantidad_hombres || 0),
+1503:       cantidad_dias: Number(form.cantidad_dias || 0),
+1504:       horas: Number(form.horas || 0),
+1505:       costo_hombre_dia: Number(form.costo_hombre_dia || 0),
+1506:       porcentaje: Number(form.porcentaje || 0),
+1507:     };
+1508:     const success = await handleAgregarItemServicio(hookForm, grupoId, subgrupoId, data?.id_area);
+1509:     if (success) {
+1510:       setAddingItemSubgrupoId(null);
+1511:       setEditingItemServicioId(null);
+1512:     }
+1513:   };
+
+====================================
+FUNCTION: handleConfirmGastosServicioInline
+====================================
+Starts on line 1515:
+1515:   const handleConfirmGastosServicioInline = async (form, grupoId, subgrupoId) => {
+1516:     const hookForm = {
+1517:       id_servicio: form.id_servicio || null,
+1518:       codigo_item: form.codigo_item,
+1519:       descripcion_item: form.descripcion_item,
+1520:       cantidad_hombres: Number(form.cantidad_hombres || 0),
+1521:       cantidad_dias: Number(form.cantidad_dias || 0),
+1522:       costo_hombre_dia: Number(form.costo_hombre_dia || 0),
+1523:       horas: 8,
+1524:       porcentaje: 0,
+1525:     };
+1526:     const success = await handleAgregarItemServicio(hookForm, grupoId, subgrupoId, data?.id_area);
+1527:     if (success) {
+1528:       setAddingItemSubgrupoId(null);
+1529:       setEditingItemServicioId(null);
+1530:     }
+1531:   };
+
+====================================
+FUNCTION: handleConfirmOtrosInline
+====================================
+Starts on line 1533:
+1533:   const handleConfirmOtrosInline = async (form, grupoId, subgrupoId) => {
+1534:     const hookForm = {
+1535:       id_servicio: form.id_servicio || null,
+1536:       codigo_item: form.codigo_item,
+1537:       descripcion_item: form.descripcion_item,
+1538:       cantidad_hombres: Number(form.cantidad_hombres || 0),
+1539:       cantidad_dias: 1,
+1540:       costo_hombre_dia: Number(form.costo_hombre_dia || 0),
+1541:       horas: 8,
+1542:       porcentaje: Number(form.porcentaje || 0),
+1543:     };
+1544:     const success = await handleAgregarItemServicio(hookForm, grupoId, subgrupoId, data?.id_area);
+1545:     if (success) {
+1546:       setAddingItemSubgrupoId(null);
+1547:       setEditingItemServicioId(null);
+1548:     }
+1549:   };

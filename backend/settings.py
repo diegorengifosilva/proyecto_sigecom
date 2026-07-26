@@ -14,7 +14,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # ------------
 SECRET_KEY = os.environ.get("SECRET_KEY", "django-insecure-dev-key")
 DEBUG = True
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", "192.168.1.14", "*"]
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "192.168.1.27", "*"]
 
 # ----------
 # Entorno
@@ -36,6 +36,8 @@ INSTALLED_APPS = [
     'core',
     'cotizaciones_api',
     'logistica_api',
+    'dashboard_api',
+    'notificaciones_api',
     'rest_framework',
     'rest_framework_simplejwt',
     'corsheaders',
@@ -46,6 +48,7 @@ INSTALLED_APPS = [
 # Middleware
 # ---------------
 MIDDLEWARE = [
+    'backend.middleware.DisableXFrameOptionsMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
@@ -54,7 +57,7 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    # 'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
 ROOT_URLCONF = 'backend.urls'
@@ -127,6 +130,21 @@ DATABASES = {
         "PASSWORD": "270509",
         "HOST": "127.0.0.1",
         "PORT": "3306",
+        "TIME_ZONE": "America/Lima",
+        "OPTIONS": {
+            "charset": "utf8mb4",
+            "conv": dict_conv,
+            "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
+        },
+    },
+    "legacy": {
+        "ENGINE": "django.db.backends.mysql",
+        "NAME": "backup_actual",
+        "USER": "admin",
+        "PASSWORD": "270509",
+        "HOST": "127.0.0.1",
+        "PORT": "3306",
+        "TIME_ZONE": "America/Lima",
         "OPTIONS": {
             "charset": "utf8mb4",
             "conv": dict_conv,
@@ -230,7 +248,7 @@ CORS_ALLOW_ALL_ORIGINS = True
 
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:5173",
-    "http://192.168.1.14:5173",
+    "http://192.168.1.27:5173",
 ]
 CSRF_COOKIE_SECURE = False
 SESSION_COOKIE_SECURE = False

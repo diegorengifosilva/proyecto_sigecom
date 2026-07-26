@@ -152,7 +152,8 @@ export const normalizarRockwell = (item, tcamb = 1, cantidad = 1, tpr, proveedor
 export const calcularItemSegunProveedor = (item, proveedor, tcamb, cantidad) => {
   switch (proveedor) {
     case "03": return normalizarRittal(item, tcamb, cantidad);
-    case "02": return normalizarPhoenix(item, tcamb, cantidad);
+    case "02":
+    case "05": return normalizarPhoenix(item, tcamb, cantidad);
     case "01": return normalizarRockwell(item, tcamb, cantidad);
     case "06": return normalizarAlmLista(item, tcamb, cantidad);
     case "07": return normalizarAlmLista(item, tcamb, cantidad);
@@ -172,27 +173,32 @@ export const resolverEndpointPorProveedor = (proveedor) => ({
   "99": "/cotizaciones/alm-articulos/?proveedor=OTROS",
 }[proveedor] ?? null);
 
-// =====================
-// RESOLVER TPR POR CODIGO (XLS / automático)
-// =====================
 export const resolverEndpointPorCodigo = async (codigo) => {
   const proveedores = ["01", "03", "05", "06", "07"];
+  const key = String(codigo).trim().toUpperCase();
+  if (!key || ["S/C", "."].includes(key)) return "99";
 
-  for (const tpr of proveedores) {
-    const endpoint = resolverEndpointPorProveedor(tpr);
-    if (!endpoint) continue;
+  try {
+    const promesas = proveedores.map(async (tpr) => {
+      const endpoint = resolverEndpointPorProveedor(tpr);
+      if (!endpoint) return null;
+      try {
+        const res = await api.get(endpoint, { params: { search: key, limit: 5 } });
+        const rows = Array.isArray(res.data) ? res.data : [];
+        const match = rows.some(r =>
+          String(r.codigo || "").trim().toUpperCase() === key ||
+          String(r.ocodigo || "").trim().toUpperCase() === key ||
+          String(r.codigo2 || "").trim().toUpperCase() === key
+        );
+        if (match) return tpr;
+      } catch (_) {}
+      return null;
+    });
 
-    try {
-      const res = await api.get(endpoint, { params: { codigo } });
-      const rows = res.data;
-
-      if (Array.isArray(rows) && rows.some(r =>
-        r.codigo === codigo || r.ocodigo === codigo
-      )) {
-        return tpr;
-      }
-    } catch (_) {}
+    const resultados = await Promise.all(promesas);
+    const encontrado = resultados.find(res => res !== null);
+    return encontrado || "99";
+  } catch (_) {
+    return "99";
   }
-
-  return "99";
 };

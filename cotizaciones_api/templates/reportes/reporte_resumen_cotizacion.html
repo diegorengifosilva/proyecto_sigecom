@@ -1,5 +1,6 @@
 {% load static %}
 {% load humanize %}
+{% load currency %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -11,7 +12,8 @@ body{
     font-family: "Segoe UI", Arial, Helvetica, sans-serif;
     font-size: 12px;
     color:#2b2b2b;
-    margin:20px;
+    margin:0;
+    padding:20px;
     background:#ffffff;
 }
 
@@ -109,6 +111,7 @@ tbody tr:hover{
 .text-right{
     text-align:right;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }
 
 .text-center{
@@ -142,48 +145,53 @@ tbody tr:hover{
 </style>
 </head>
 <body>
-<!-- ENCABEZADO -->
+<div id="report-content-wrapper">
 <div class="header">
     <div>
         <img class="logo-img" src="{% static 'logo.png' %}" alt="Logo Empresa">
     </div>
 
-   <div class="excel-btn">
-    <button type="button" id="btnExcel_detallecot">
-        <img src="{% static 'importar-xls.png' %}" alt="excel">
-        Exportar Excel
-    </button>
+    <div class="excel-btn">
+        <button type="button" id="btnExcel_detallecot" onclick="exportarExcelResumen()">
+            <img src="{% static 'Formatos/excel.png' %}" alt="excel">
+            Exportar Excel
+        </button>
+    </div>
 </div>
 
-</div>
-
-    
 <h2>{{ titulo }}</h2>
 <div id="contenedor_tabla">
 
-<h3 style="text-align:center;">PROYECTO: {{ proyecto }}</h3>
+    <h3 style="text-align:center; color: #64748b; font-size: 13px; margin-bottom: 20px;">
+        COTIZACIÓN: {{ codigo_cotizacion }}
+    </h3>
 
-<table>
-    <thead>
-        <tr>
-            <th>CONCEPTO</th>
-            <th>IMPORTE</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for fila in resumen %}
-        <tr>
-            <td>{{ fila.concepto }}</td>
-            <td class="text-right">{{ fila.importe|floatformat:2 }}</td>
-        </tr>
-        {% endfor %}
-        <tr class="total-final">
-            <td style="text-align:right;">TOTAL FINAL</td>
-            <td class="text-right">{{ total_final|floatformat:2 }}</td>
-        </tr>
-    </tbody>
-</table>
+    <table id="tabla_resumen_cotizacion">
+        <thead>
+            <tr>
+                <th>CONCEPTO</th>
+                <th class="text-right" style="width: 180px;">IMPORTE</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for fila in resumen %}
+            <tr>
+                <td class="font-bold" style="color: #475569;">{{ fila.concepto }}</td>
+                <td class="text-right font-bold" style="color: #1e293b;">
+                    {{ fila.importe|format_custom:moneda }}
+                </td>
+            </tr>
+            {% endfor %}
+            <tr class="total-final">
+                <td class="font-bold" style="text-align:right;">TOTAL FINAL CONSOLIDADO</td>
+                <td class="text-right font-bold" style="font-size: 13px;">
+                    {{ total_final|format_custom:moneda }}
+                </td>
+            </tr>
+        </tbody>
+    </table>
 </div>
+</div> <!-- /report-content-wrapper -->
 
 <script>
 
@@ -293,5 +301,31 @@ function descargarExcel(tablaHTML){
 </script>
 
 
+
+<!-- Script to notify parent of height changes for responsive iframe modals -->
+<script>
+  function notifyParentHeight() {
+    if (window.parent && window.parent !== window) {
+      const wrapper = document.getElementById('report-content-wrapper');
+      const height = wrapper ? wrapper.offsetHeight : (document.documentElement.scrollHeight || document.body.scrollHeight);
+      window.parent.postMessage({ 
+        type: 'set-iframe-height', 
+        height: height
+      }, '*');
+    }
+  }
+  notifyParentHeight();
+  window.addEventListener('DOMContentLoaded', notifyParentHeight);
+  window.addEventListener('load', notifyParentHeight);
+  window.addEventListener('resize', notifyParentHeight);
+</script>
+<script>
+  window.focus();
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      window.parent.postMessage({ type: 'close-report-modal' }, '*');
+    }
+  });
+</script>
 </body>
 </html>

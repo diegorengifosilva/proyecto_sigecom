@@ -1,0 +1,173 @@
+﻿
+> frontend@0.0.0 dev
+> vite
+
+
+  [32m[1mVITE[22m v7.1.10[39m  [2mready in [0m[1m3539[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m5173[22m/[39m
+  [32m➜[39m  [1mNetwork[22m: [36mhttp://172.20.128.1:[1m5173[22m/[39m
+  [32m➜[39m  [1mNetwork[22m: [36mhttp://10.242.177.238:[1m5173[22m/[39m
+  [32m➜[39m  [1mNetwork[22m: [36mhttp://192.168.1.20:[1m5173[22m/[39m
+node.exe : [BABEL] Note: The code generator has deoptimised the styling of C:\Us
+ers\VC-\PROYECTOS\proyecto_sigecom\frontend\src\dashboard\comercial\CotizacionDe
+talle.jsx as it exceeds the max of 500KB.
+En C:\Program Files\nodejs\npm.ps1: 29 Carácter: 3
++   & $NODE_EXE $NPM_CLI_JS $args
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([BABEL] Note: T...e max of 500KB.: 
+   String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[2m3:01:26 p.m.[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m 
+Pre-transform error: Failed to resolve import "xlsx-js-style" from 
+"src/hook/useCotizacionSuministros.js". Does the file exist?
+  Plugin: [35mvite:import-analysis[39m
+  File: [36mC:/Users/VC-/PROYECTOS/proyecto_sigecom/frontend/src/hook/useCotiza
+cionSuministros.js[39m:4:18
+[33m  2  |  import api from '@/services/api';
+  3  |  import { toast } from 'react-toastify';
+  4  |  import XLSX from 'xlsx-js-style';
+     |                       ^
+  5  |  import { calcularItemSegunProveedor, resolverEndpointPorCodigo } from 
+'@/dashboard/Suministros/tables/tablaUtils';
+  6  |  import { useSensors, useSensor, PointerSensor } from 
+'@dnd-kit/core';[39m
+[2m3:01:26 p.m.[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m 
+Pre-transform error: Failed to resolve import "xlsx-js-style" from 
+"src/hook/useCotizacionSuministros.js". Does the file exist?
+  Plugin: [35mvite:import-analysis[39m
+  File: [36mC:/Users/VC-/PROYECTOS/proyecto_sigecom/frontend/src/hook/useCotiza
+cionSuministros.js[39m:4:18
+[33m  2  |  import api from '@/services/api';
+  3  |  import { toast } from 'react-toastify';
+  4  |  import XLSX from 'xlsx-js-style';
+     |                       ^
+  5  |  import { calcularItemSegunProveedor, resolverEndpointPorCodigo } from 
+'@/dashboard/Suministros/tables/tablaUtils';
+  6  |  import { useSensors, useSensor, PointerSensor } from 
+'@dnd-kit/core';[39m
+[2m3:01:27 p.m.[22m [31m[1m[vite][22m[39m [31mInternal server error: 
+Failed to resolve import "xlsx-js-style" from 
+"src/hook/useCotizacionSuministros.js". Does the file exist?[39m
+  Plugin: [35mvite:import-analysis[39m
+  File: [36mC:/Users/VC-/PROYECTOS/proyecto_sigecom/frontend/src/hook/useCotiza
+cionSuministros.js[39m:4:18
+[33m  2  |  import api from '@/services/api';
+  3  |  import { toast } from 'react-toastify';
+  4  |  import XLSX from 'xlsx-js-style';
+     |                       ^
+  5  |  import { calcularItemSegunProveedor, resolverEndpointPorCodigo } from 
+'@/dashboard/Suministros/tables/tablaUtils';
+  6  |  import { useSensors, useSensor, PointerSensor } from 
+'@dnd-kit/core';[39m
+      at TransformPluginContext._formatLog (file:///C:/Users/VC-/PROYECTOS/proye
+cto_sigecom/frontend/node_modules/vite/dist/node/chunks/dep-B0GuR2De.js:31105:43
+)
+      at TransformPluginContext.error (file:///C:/Users/VC-/PROYECTOS/proyecto_s
+igecom/frontend/node_modules/vite/dist/node/chunks/dep-B0GuR2De.js:31102:14)
+      at normalizeUrl (file:///C:/Users/VC-/PROYECTOS/proyecto_sigecom/frontend/
+node_modules/vite/dist/node/chunks/dep-B0GuR2De.js:29589:18)
+      at async file:///C:/Users/VC-/PROYECTOS/proyecto_sigecom/frontend/node_mod
+ules/vite/dist/node/chunks/dep-B0GuR2De.js:29647:32
+      at async Promise.all (index 3)
+      at async TransformPluginContext.transform (file:///C:/Users/VC-/PROYECTOS/
+proyecto_sigecom/frontend/node_modules/vite/dist/node/chunks/dep-B0GuR2De.js:296
+15:4)
+      at async EnvironmentPluginContainer.transform (file:///C:/Users/VC-/PROYEC
+TOS/proyecto_sigecom/frontend/node_modules/vite/dist/node/chunks/dep-B0GuR2De.js
+:30904:14)
+      at async loadAndTransform (file:///C:/Users/VC-/PROYECTOS/proyecto_sigecom
+/frontend/node_modules/vite/dist/node/chunks/dep-B0GuR2De.js:26042:26)
+      at async viteTransformMiddleware (file:///C:/Users/VC-/PROYECTOS/proyecto_
+sigecom/frontend/node_modules/vite/dist/node/chunks/dep-B0GuR2De.js:27117:20)
+[2m3:05:14 p.m.[22m [31m[1m[vite][22m[39m [31mInternal server error: 
+Failed to resolve import "xlsx-js-style" from 
+"src/hook/useCotizacionSuministros.js". Does the file exist?[39m
+  Plugin: [35mvite:import-analysis[39m
+  File: [36mC:/Users/VC-/PROYECTOS/proyecto_sigecom/frontend/src/hook/useCotiza
+cionSuministros.js[39m:4:18
+[33m  2  |  import api from '@/services/api';
+  3  |  import { toast } from 'react-toastify';
+  4  |  import XLSX from 'xlsx-js-style';
+     |                       ^
+  5  |  import { calcularItemSegunProveedor, resolverEndpointPorCodigo } from 
+'@/dashboard/Suministros/tables/tablaUtils';
+  6  |  import { useSensors, useSensor, PointerSensor } from 
+'@dnd-kit/core';[39m
+      at TransformPluginContext._formatLog (file:///C:/Users/VC-/PROYECTOS/proye
+cto_sigecom/frontend/node_modules/vite/dist/node/chunks/dep-B0GuR2De.js:31105:43
+)
+      at TransformPluginContext.error (file:///C:/Users/VC-/PROYECTOS/proyecto_s
+igecom/frontend/node_modules/vite/dist/node/chunks/dep-B0GuR2De.js:31102:14)
+      at normalizeUrl (file:///C:/Users/VC-/PROYECTOS/proyecto_sigecom/frontend/
+node_modules/vite/dist/node/chunks/dep-B0GuR2De.js:29589:18)
+      at async file:///C:/Users/VC-/PROYECTOS/proyecto_sigecom/frontend/node_mod
+ules/vite/dist/node/chunks/dep-B0GuR2De.js:29647:32
+      at async Promise.all (index 3)
+      at async TransformPluginContext.transform (file:///C:/Users/VC-/PROYECTOS/
+proyecto_sigecom/frontend/node_modules/vite/dist/node/chunks/dep-B0GuR2De.js:296
+15:4)
+      at async EnvironmentPluginContainer.transform (file:///C:/Users/VC-/PROYEC
+TOS/proyecto_sigecom/frontend/node_modules/vite/dist/node/chunks/dep-B0GuR2De.js
+:30904:14)
+      at async loadAndTransform (file:///C:/Users/VC-/PROYECTOS/proyecto_sigecom
+/frontend/node_modules/vite/dist/node/chunks/dep-B0GuR2De.js:26042:26)
+      at async viteTransformMiddleware (file:///C:/Users/VC-/PROYECTOS/proyecto_
+sigecom/frontend/node_modules/vite/dist/node/chunks/dep-B0GuR2De.js:27117:20)
+[2m3:05:57 p.m.[22m [31m[1m[vite][22m[39m [31mInternal server error: 
+Failed to resolve import "xlsx-js-style" from 
+"src/hook/useCotizacionSuministros.js". Does the file exist?[39m
+  Plugin: [35mvite:import-analysis[39m
+  File: [36mC:/Users/VC-/PROYECTOS/proyecto_sigecom/frontend/src/hook/useCotiza
+cionSuministros.js[39m:4:18
+[33m  2  |  import api from '@/services/api';
+  3  |  import { toast } from 'react-toastify';
+  4  |  import XLSX from 'xlsx-js-style';
+     |                       ^
+  5  |  import { calcularItemSegunProveedor, resolverEndpointPorCodigo } from 
+'@/dashboard/Suministros/tables/tablaUtils';
+  6  |  import { useSensors, useSensor, PointerSensor } from 
+'@dnd-kit/core';[39m
+      at TransformPluginContext._formatLog (file:///C:/Users/VC-/PROYECTOS/proye
+cto_sigecom/frontend/node_modules/vite/dist/node/chunks/dep-B0GuR2De.js:31105:43
+)
+      at TransformPluginContext.error (file:///C:/Users/VC-/PROYECTOS/proyecto_s
+igecom/frontend/node_modules/vite/dist/node/chunks/dep-B0GuR2De.js:31102:14)
+      at normalizeUrl (file:///C:/Users/VC-/PROYECTOS/proyecto_sigecom/frontend/
+node_modules/vite/dist/node/chunks/dep-B0GuR2De.js:29589:18)
+      at async file:///C:/Users/VC-/PROYECTOS/proyecto_sigecom/frontend/node_mod
+ules/vite/dist/node/chunks/dep-B0GuR2De.js:29647:32
+      at async Promise.all (index 3)
+      at async TransformPluginContext.transform (file:///C:/Users/VC-/PROYECTOS/
+proyecto_sigecom/frontend/node_modules/vite/dist/node/chunks/dep-B0GuR2De.js:296
+15:4)
+      at async EnvironmentPluginContainer.transform (file:///C:/Users/VC-/PROYEC
+TOS/proyecto_sigecom/frontend/node_modules/vite/dist/node/chunks/dep-B0GuR2De.js
+:30904:14)
+      at async loadAndTransform (file:///C:/Users/VC-/PROYECTOS/proyecto_sigecom
+/frontend/node_modules/vite/dist/node/chunks/dep-B0GuR2De.js:26042:26)
+      at async viteTransformMiddleware (file:///C:/Users/VC-/PROYECTOS/proyecto_
+sigecom/frontend/node_modules/vite/dist/node/chunks/dep-B0GuR2De.js:27117:20)
+[2m3:12:15 p.m.[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m 
+[31merror while updating dependencies:
+Error: ENOENT: no such file or directory, open 'C:\Users\VC-\PROYECTOS\proyecto_
+sigecom\frontend\node_modules\date-fns\locale\es.js'
+    at async open (node:internal/fs/promises:639:25)
+    at async Object.readFile (node:internal/fs/promises:1243:14)
+    at async extractExportsData (file:///C:/Users/VC-/PROYECTOS/proyecto_sigecom
+/frontend/node_modules/vite/dist/node/chunks/dep-B0GuR2De.js:11254:23)
+    at async file:///C:/Users/VC-/PROYECTOS/proyecto_sigecom/frontend/node_modul
+es/vite/dist/node/chunks/dep-B0GuR2De.js:11062:23
+    at async Promise.all (index 17)
+    at async prepareEsbuildOptimizerRun (file:///C:/Users/VC-/PROYECTOS/proyecto
+_sigecom/frontend/node_modules/vite/dist/node/chunks/dep-B0GuR2De.js:11060:2)[3
+9m
+[2m3:13:35 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m3:13:35 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m4:29:24 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/dashboard/logistica/LogisticaDashboard.jsx, /src/index.css[22m
+[2m4:29:24 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/dashboard/logistica/components/EntradaView.jsx, /src/index.css[22m
+[2m4:29:24 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/modal/logistica/NuevaLogisticaModal.jsx[22m
+[2m4:29:24 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/dashboard/logistica/components/SalidaView.jsx, /src/index.css[22m
+[2m4:30:37 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/modal/logistica/NuevaLogisticaModal.jsx[22m
+^C

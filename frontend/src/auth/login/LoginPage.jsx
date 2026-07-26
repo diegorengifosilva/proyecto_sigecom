@@ -1,6 +1,6 @@
 // src/auth/users/login/LoginPage.jsx
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
 import api from "@/services/api"; // ✅ Usa la configuración centralizada
@@ -9,6 +9,39 @@ import fondo from "@/assets/Fondo.jpg";
 
 export default function LoginPage() {
   const navigate = useNavigate();
+
+  useEffect(() => {
+    document.title = "Iniciar Sesión | SIGECOM 5.0";
+    const img = new Image();
+    img.src = logo;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const size = 32;
+      canvas.width = size;
+      canvas.height = size;
+      
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        const scale = Math.min(size / img.width, size / img.height);
+        const w = img.width * scale;
+        const h = img.height * scale;
+        
+        const x = (size - w) / 2;
+        const y = (size - h) / 2;
+        
+        ctx.clearRect(0, 0, size, size);
+        ctx.drawImage(img, x, y, w, h);
+        
+        let link = document.querySelector("link[rel~='icon']");
+        if (!link) {
+          link = document.createElement('link');
+          link.rel = 'icon';
+          document.head.appendChild(link);
+        }
+        link.href = canvas.toDataURL('image/png');
+      }
+    };
+  }, []);
 
   const [form, setForm] = useState({
     usuario: "",
@@ -34,7 +67,7 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const response = await api.post("/users/login/", form);
+      const response = await api.post("users/login/", form);
       const { access, refresh, user } = response.data;
 
       if (!access || !refresh) {
@@ -44,14 +77,14 @@ export default function LoginPage() {
       // ✅ Guarda tokens primero
       localStorage.setItem("access_token", access);
       localStorage.setItem("refresh_token", refresh);
-      localStorage.setItem("usuario", JSON.stringify(user));
+      localStorage.setItem("auth_user", JSON.stringify(user));
 
       // ✅ Asegura que Axios los use inmediatamente
       api.defaults.headers.common["Authorization"] = `Bearer ${access}`;
 
       // ✅ Pequeño retardo para asegurar sincronización antes de navegar
       // ✅ Recarga forzada del contexto tras guardar tokens
-      window.location.replace("/dashboard/aprobacion-cotizacion");
+      window.location.replace("/sigecom/comercial");
 
     } catch (error) {
       console.error("Error en login:", error);

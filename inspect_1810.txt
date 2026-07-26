@@ -1,0 +1,77 @@
+Created At: 2026-05-27T19:17:28Z
+Completed At: 2026-05-27T19:17:28Z
+File Path: `file:///c:/Users/VC-23031/PROYECTOS/SIGECOM_5/frontend/src/dashboard/comercial/CotizacionPremiumDetail.jsx`
+Total Lines: 5789
+Total Bytes: 279575
+Showing lines 5136 to 5271
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+5136: 
+5137:   const proveedoresOptions = (proveedores || []).map(p => ({
+5138:     id: String(p.id_marca).padStart(2, '0'),
+5139:     nombre: p.nombre
+5140:   }));
+5141: 
+5142:   if (editingItemId === itemId) {
+5143:     return (
+5144:       <tr ref={setNodeRef} style={style} className="bg-indigo-50/50">
+5145:         <td className="px-2 text-center align-middle">
+5146:           <Icon name="grip-vertical" className="h-3.5 w-3.5 text-gray-200 mx-auto" />
+5147:         </td>
+5148:         {/* Código / Marca */}
+5149:         <td className="px-3 py-1">
+5150:           <div className="flex flex-col gap-1 items-center justify-center text-center relative">
+5151:             <select
+5152:               className="w-full text-[10.5px] border border-gray-300 rounded px-1 py-0.5 uppercase font-bold text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-center"
+5153:               value={editForm.proveedor || ""}
+5154:               onChange={e => {
+5155:                 const code = e.target.value;
+5156:                 const brandId = parseInt(code, 10) || null;
+5157:                 setEditForm(prev => ({
+5158:                   ...prev,
+5159:                   proveedor: code,
+5160:                   id_marca: brandId
+5161:                 }));
+5162:               }}
+5163:             >
+5164:               <option value="" className="text-center">-- Marca --</option>
+5165:               {proveedoresOptions.map(p => (
+5166:                 <option key={p.id} value={p.id} className="text-center">{p.nombre}</option>
+
+<truncated 3755 bytes>
+      <td className="px-3 py-1">
+5237:           <input
+5238:             type="number"
+5239:             step="0.1"
+5240:             className="w-full text-[11px] border border-gray-300 text-center rounded px-1 py-0.5 font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500 text-center"
+5241:             value={editForm.porcentaje_utilidad === undefined || editForm.porcentaje_utilidad === null ? '' : editForm.porcentaje_utilidad}
+5242:             onChange={e => handleRowChange('porcentaje_utilidad', e.target.value, 'edit')}
+5243:             onKeyDown={e => {
+5244:               if (e.key === 'Enter') {
+5245:                 e.preventDefault();
+5246:                 saveEditItem();
+5247:               }
+5248:             }}
+5249:           />
+5250:         </td>
+5251:         {/* Precio Unit. */}
+5252:         <td className="px-3 py-1 text-center text-[11.5px] font-semibold text-gray-500">
+5253:           {formatMoney(Number(editForm.precio_venta || 0))}
+5254:         </td>
+5255:         {/* Venta Total */}
+5256:         <td className="px-3 py-1 text-center text-[11.5px] font-black text-gray-900">
+5257:           {formatMoney(Number(editForm.venta_total || 0))}
+5258:         </td>
+5259:         {/* Actions */}
+5260:         <td className="px-3 py-1">
+5261:           <div className="flex justify-center gap-1">
+5262:             <button
+5263:               onClick={saveEditItem}
+5264:               className="p-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded shadow-sm transition-colors"
+5265:               title="Guardar (Enter)"
+5266:             >
+5267:               <Icon name="check" className="h-3 w-3" />
+5268:             </button>
+5269:             <button
+5270:               onClick={cancelEditItem}
+5271:               className="p-1 bg-gray-200 hover:bg-gray-300 text-gray-600 rounded transition-colors"
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.

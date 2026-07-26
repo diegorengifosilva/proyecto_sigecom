@@ -28,7 +28,7 @@ export default function GlobalSearchModal({ open, onClose }) {
     {
       label: "Aprobación Cotización",
       description: "Aprobar solicitudes",
-      to: "/dashboard/aprobacion-cotizacion",
+      to: "/sigecom/comercial",
     },
   ];
 
@@ -109,10 +109,9 @@ export default function GlobalSearchModal({ open, onClose }) {
             <div
               key={item.label}
               className={`px-5 py-3 cursor-pointer flex flex-col gap-0.5 transition
-                ${
-                  i === selected
-                    ? "bg-teal-50 ring-1 ring-teal-400/30"
-                    : "hover:bg-slate-50"
+                ${i === selected
+                  ? "bg-teal-50 ring-1 ring-teal-400/30"
+                  : "hover:bg-slate-50"
                 }
               `}
               onMouseEnter={() => setSelected(i)}

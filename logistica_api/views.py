@@ -1,5 +1,5 @@
 
-# â”€â”€â”€ LibrerÃ­as estÃ¡ndar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€â"€ LibrerÃ­as estÃ¡ndar â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 import os
 import io
 import re
@@ -13,19 +13,19 @@ from decimal import Decimal, InvalidOperation
 from html import unescape
 from openpyxl import Workbook
 
-# â”€â”€â”€ LibrerÃ­as de terceros â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€â"€ LibrerÃ­as de terceros â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 from reportlab.pdfgen import canvas
 
 from . import serializers
 logger = logging.getLogger(__name__)
 
-# â”€â”€â”€ Django core â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€â"€ Django core â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 from django.conf import settings
 from django.http import JsonResponse, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import ensure_csrf_cookie, csrf_exempt
 from django.utils import timezone
-from django.db.models import Sum, Count, Q, F, Max, DecimalField, ExpressionWrapper
+from django.db.models import Sum, Count, Q, F, Max, DecimalField, ExpressionWrapper, Value
 from django.db.models.functions import TruncDate, Coalesce
 from django.db.models.functions import ExtractMonth
 
@@ -38,7 +38,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
-# â”€â”€â”€ Django REST Framework â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€â"€ Django REST Framework â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 from rest_framework.decorators import api_view, parser_classes, permission_classes, action, authentication_classes
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
@@ -89,15 +89,16 @@ from django.conf import settings
 from datetime import date, datetime, timedelta
 from django.utils.timezone import now
 from .models import (
-    AlmacenNew,
     LogisticaDashboard,
     LogisticaDashboardDetalle,
     VcMovOrdenSoli,
     AlmTabUmed,
     DashboardCotizacion,
+    vc_tab_clientes,
     vc_tab_estado,
     vc_mov_cotizaciones,
     cont_cias,
+    vc_tab_clientes_d,
     CotiSuministros,
     CotiServicios,
     CotiMensajes,
@@ -115,6 +116,10 @@ from .models import (
     sis_alm_tab_grupo,
     sis_alm_tab_articulos,
     sis_alm_tab_ccosto,
+    AlmacenNew,
+    Grupo,
+    DocumentoAlmacen,
+    CostoAlmacen,
 )
 
 from users.models import (
@@ -122,11 +127,10 @@ from users.models import (
     Area,
     Cargo,
     )
-from core.models import Cliente, Representante
-
 from .serializers import (
     DashboardCotizacionTablaSerializer,
     OrdenOCSerializer,
+    ClientesSerializer,
     EstadoSerializer,
     CotizacionesSerializer,
     ContCiasSerializer,
@@ -146,10 +150,14 @@ from .serializers import (
     HoffmanSerializer,
     AlmArticulosSerializer,
     AlmacenSerializer,
+    AlmacenNewSerializer,
     GrupoAnaliticoSerializer,
     ArticuloSerializer,
     AlmTabUmedSerializer,
     CcostoSerializer,
+    GrupoSerializer,
+    DocumentoAlmacenSerializer,
+    CostoAlmacenSerializer,
 )
 
 from users.serializers import (
@@ -161,6 +169,15 @@ from users.serializers import (
 from django.db.models.functions import Cast
 from django.db.models import CharField
 
+from .movimiento_helpers import (
+    build_movimiento_detalle_response,
+    moneda_to_db,
+    moneda_from_db,
+    MONEDA_LABEL,
+    resolver_um_id_item,
+    resolver_producto_id_item,
+)
+from core.models import Producto, UnidadMedida
 
 PLANTILLAS_DIR = os.path.join(os.path.dirname(__file__), "plantillas")
 
@@ -403,6 +420,239 @@ def reporte_kardex_pdf(request):
         return HttpResponse("Error generando PDF", status=500)
 
 #=========================#
+# APROBACION COTIZACIONES #
+#=========================#
+# ——— Dashboard Cotizaciones (versión moderna) —————————————————————
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def cotizaciones_dashboard_view(request):
+    """
+    Dashboard + Tabla para cotizaciones con filtros flexibles.
+    Estilo moderno equivalente al dashboard de CAJA CHICA.
+    """
+    try:
+        from datetime import date
+        from unidecode import unidecode
+        from django.db.models import Func, F, Value, TextField
+        from django.db.models.functions import Lower
+        import re
+
+        # ============================================================
+        # 1) Parámetros principales
+        # ============================================================
+        anno = request.GET.get("anno", "%")
+        mes = request.GET.get("mes", "%")
+
+        cliente = request.GET.get("cliente", "%")
+        estado = request.GET.get("estado", "%")
+        area = request.GET.get("area", "%")
+        envio = request.GET.get("envio", "%")
+
+        CAMPOS_BUSQUEDA = {
+            "num_reg": "num_reg",
+            "cotin": "numero",
+            "cotif": "fecha",
+            "cliente_nombre": "cliente_nombre",
+            "refef": "referencia",
+            "nombr": "nombr",
+            "nombc": "nombc",
+            "nombt": "nombt",
+            "tot_c": "tot_c",
+            "tot_d": "tot_d",
+            "prob": "prob",
+            "regus": "regus",
+        }
+
+        # Búsqueda flexible
+        campo = request.GET.get("campo")
+        valor = request.GET.get("valor")
+
+        fecha_inicio = request.GET.get("fechaInicio")
+        fecha_fin = request.GET.get("fechaFin")
+
+        # ============================================================
+        # 2) Query base
+        # ============================================================
+        qs = DashboardCotizacion.objects.all()
+        
+        if anno != "%":
+            qs = qs.filter(fecha__year=anno)
+
+        if mes != "%":
+            qs = qs.filter(fecha__month=mes)
+
+        if cliente != "%":
+            qs = qs.filter(cliente_codigo=cliente)
+
+        if estado != "%":
+            estados = [e for e in estado.split(",") if e]
+
+            if len(estados) == 1:
+                qs = qs.filter(estado_codigo=estados[0])
+            else:
+                qs = qs.filter(estado_codigo__in=estados)
+
+        if area != "%":
+            qs = qs.filter(area_codigo=area)
+
+        if envio != "%":
+            qs = qs.filter(envio=envio)
+
+        # Rango de fechas
+        if fecha_inicio:
+            qs = qs.filter(fecha__gte=fecha_inicio)
+        if fecha_fin:
+            qs = qs.filter(fecha__lte=fecha_fin)
+
+        # ============================================================
+        # 3) Normalización de búsqueda flexible
+        # ============================================================
+        def normalizar(texto):
+            if not texto:
+                return None
+            t = unidecode(texto.lower().strip())
+            return re.sub(r"\s+", " ", t)
+
+        class Replace(Func):
+            function = "REPLACE"
+            arity = 3
+
+        if campo and valor not in (None, "", " "):
+            campo_real = CAMPOS_BUSQUEDA.get(campo)
+
+            if campo_real:
+                valor_norm = normalizar(valor)
+
+                qs = qs.annotate(
+                    campo_clean=Replace(
+                        Replace(
+                            Lower(F(campo_real)),
+                            Value("  ", output_field=TextField()),
+                            Value(" ", output_field=TextField()),
+                            output_field=TextField()
+                        ),
+                        Value("  ", output_field=TextField()),
+                        Value(" ", output_field=TextField()),
+                        output_field=TextField()
+                    )
+                ).filter(campo_clean__icontains=valor_norm)
+
+        # ============================================================
+        # 4) Dashboard Stats mejorado
+        # ============================================================
+        total = qs.count()
+
+        estados_db = vc_tab_estado.objects.filter(activo=True).values_list("nombre", flat=True)
+        estado_map = {e: 0 for e in estados_db}
+
+        meses = [0] * 12
+        monto_total_soles = 0
+        monto_total_dolares = 0
+        este_mes = 0
+
+        hoy = date.today()
+
+        # Diccionario para stats por cliente
+        clientes_stats = {}
+
+        for c in qs:
+            # ===== Estados =====
+            estado_nombre = c.estado_nombre or "Pendiente"
+            estado_map[estado_nombre] = estado_map.get(estado_nombre, 0) + 1
+
+            # ===== Monto por moneda =====
+            if hasattr(c, "tmone"):
+                if c.tmone == "S":
+                    monto_total_soles += float(c.tot_c or 0)
+                elif c.tmone == "D":
+                    monto_total_dolares += float(c.tot_c or 0)
+            else:
+                monto_total_soles += float(c.tot_c or 0)
+
+            # ===== Conteo por mes =====
+            if c.fecha:
+                fec_obj = c.fecha
+                if isinstance(fec_obj, str):
+                    from django.utils.dateparse import parse_date
+                    fec_obj = parse_date(fec_obj)
+                
+                if fec_obj and hasattr(fec_obj, 'month'):
+                    idx = fec_obj.month - 1
+                    meses[idx] += 1
+                    if fec_obj.month == hoy.month:
+                        este_mes += 1
+
+            # ===== Stats por cliente =====
+            codigo = c.cliente_codigo  # cÃ³digo del cliente
+            nombre = c.cliente_nombre or "-"
+            
+            if codigo not in clientes_stats:
+                clientes_stats[codigo] = {
+                    "cliente_codigo": codigo,
+                    "nombre": nombre,
+                    "cantidad": 0,
+                    "totalSoles": 0,
+                    "totalDolares": 0,
+                }
+
+            clientes_stats[codigo]["cantidad"] += 1
+            if hasattr(c, "tmone"):
+                if c.tmone == "S":
+                    clientes_stats[codigo]["totalSoles"] += float(c.tot_c or 0)
+                elif c.tmone == "D":
+                    clientes_stats[codigo]["totalDolares"] += float(c.tot_c or 0)
+            else:
+                clientes_stats[codigo]["totalSoles"] += float(c.tot_c or 0)
+
+        # Calcular porcentaje de uso por cliente
+        for cliente in clientes_stats.values():
+            cliente["porcentaje"] = round((cliente["cantidad"] / total) * 100, 2) if total else 0
+
+        # Convertir a lista para enviar al frontend
+        clientes_list = list(clientes_stats.values())
+
+        # ===== Dashboard final =====
+        dashboard_data = {
+            "total": total,
+            "esteMes": este_mes,
+            "montoTotalSoles": round(monto_total_soles, 2),
+            "montoTotalDolares": round(monto_total_dolares, 2),
+            "promedioSoles": round(monto_total_soles / total, 2) if total else 0,
+            "promedioDolares": round(monto_total_dolares / total, 2) if total else 0,
+            "estados": estado_map,
+            "porMes": meses,
+            "clientes": clientes_list,  # âœ… aquÃ­ agregamos los stats de clientes
+        }
+
+        # ============================================================
+        # 5) Tabla de registros
+        # ============================================================
+        tabla_data = DashboardCotizacionTablaSerializer(
+            qs.order_by(
+                F("envio").asc(nulls_last=True),
+                F("fecha").desc(),
+                F("num_reg").desc(),
+            ),
+            many=True
+        ).data
+
+        # ============================================================
+        # 6) Respuesta final
+        # ============================================================
+        return Response({
+            "dashboard": dashboard_data,
+            "tabla": tabla_data,
+            "anno": anno
+        })
+
+    except Exception:
+        import traceback
+        print(traceback.format_exc())
+        return Response({"error": "Error interno en el servidor."}, status=500)
+
+from django.db.models.functions import Cast
+from django.db.models import CharField
+#=========================#
 # LOGISTICA #
 #=========================#
 @api_view(['GET'])
@@ -444,20 +694,22 @@ def logistica_dashboard_view(request):
         # ======================================================
         # 2) Query base
         # ======================================================
-        from django.db.models import F, Q, CharField
-        from django.db.models.functions import Cast
-        qs = LogisticaDashboard.objects.annotate(
-            dor=F('cor__nombre'),
+        qs = LogisticaDashboard.objects.select_related('cor', 'alm')
+        qs = qs.annotate(
             sol_str=Cast('sol', CharField()),
             dol_str=Cast('dol', CharField()),
-            nom_alm=F('alm__nombre')
+            dor=Coalesce(F('cor__nombre'), Value('', output_field=CharField())),
+            nom_alm=Coalesce(F('alm__nombre'), Value('', output_field=CharField())),
         )
 
         if anno != "%" and anno:
-            qs = qs.filter(fec__year=anno)
+            try:
+                qs = qs.filter(fec__year=int(anno))
+            except (ValueError, TypeError):
+                pass
 
         if razon_social != "%":
-            qs = qs.filter(dor__icontains=razon_social)
+            qs = qs.filter(cor__nombre=razon_social)
 
         if operacion != "%":
             qs = qs.filter(ope=operacion)
@@ -465,7 +717,6 @@ def logistica_dashboard_view(request):
         if orden_compra != "%":
             qs = qs.filter(oco=orden_compra)
 
-        # tipo_movimiento en bd_nueva es mov
         if tipo_movimiento != "%":
             qs = qs.filter(mov=tipo_movimiento)
 
@@ -476,13 +727,10 @@ def logistica_dashboard_view(request):
             qs = qs.filter(ngu=nro_guia)
 
         if obs_doc != "%":
-            qs = qs.filter(nom2__icontains=obs_doc)
-
-        if codigo != "%":
-            pass # cod no está en cabecera
+            qs = qs.filter(nom2=obs_doc)
 
         if responsable != "%":
-            qs = qs.filter(nom1__icontains=responsable)
+            qs = qs.filter(nom1=responsable)
 
         if numero_doc != "%":
             qs = qs.filter(nfa=numero_doc)
@@ -497,14 +745,17 @@ def logistica_dashboard_view(request):
             qs = qs.filter(alm=almacen)
 
         if mes != "%" and mes:
-            qs = qs.filter(fec__month=mes.zfill(2))
+            try:
+                qs = qs.filter(fec__month=int(mes))
+            except (ValueError, TypeError):
+                pass
 
         if proveedor != "%":
-            qs = qs.filter(cor_id=proveedor)
+            qs = qs.filter(cor=proveedor)
 
         if estado != "%":
             if estado == "ANULADO":
-                qs = qs.filter(est="2") # Asumiendo 2 o 0 es anulado
+                qs = qs.filter(est="2")
             elif estado == "ACTIVO":
                 qs = qs.exclude(est="2")
 
@@ -516,7 +767,8 @@ def logistica_dashboard_view(request):
                 Q(nfa__icontains=general) |
                 Q(ngu__icontains=general) |
                 Q(dor__icontains=general) |
-                Q(alm__icontains=general) |
+                Q(nom_alm__icontains=general) |
+                Q(mov__icontains=general) |
                 Q(tmo__icontains=general) |
                 Q(sol_str__icontains=general) |
                 Q(dol_str__icontains=general) |
@@ -524,10 +776,10 @@ def logistica_dashboard_view(request):
                 Q(ope__icontains=general) |
                 Q(nom1__icontains=general) |
                 Q(nom2__icontains=general) |
-                Q(est__icontains=general) |
-                Q(mov__icontains=general)
+                Q(est__icontains=general)
             )
 
+            
         # ======================================================
         # 3) Dashboard Stats
         # ======================================================
@@ -543,6 +795,7 @@ def logistica_dashboard_view(request):
         proveedores_stats = {}
 
         for r in qs:
+
             # Conteo por mes
             if r.fec:
                 fec_obj = r.fec
@@ -561,21 +814,21 @@ def logistica_dashboard_view(request):
             total_dolares += float(r.dol or 0)
 
             # Stats proveedor
-            codigo_prov = str(r.cor_id) if r.cor_id else "-"
-            nombre_prov = r.dor or "SIN NOMBRE"
+            codigo = r.cor_id or "-"
+            nombre = r.dor or "SIN NOMBRE"
 
-            if codigo_prov not in proveedores_stats:
-                proveedores_stats[codigo_prov] = {
-                    "codigo": codigo_prov,
-                    "nombre": nombre_prov,
+            if codigo not in proveedores_stats:
+                proveedores_stats[codigo] = {
+                    "codigo": codigo,
+                    "nombre": nombre,
                     "cantidad": 0,
                     "soles": 0,
                     "dolares": 0,
                 }
 
-            proveedores_stats[codigo_prov]["cantidad"] += 1
-            proveedores_stats[codigo_prov]["soles"] += float(r.sol or 0)
-            proveedores_stats[codigo_prov]["dolares"] += float(r.dol or 0)
+            proveedores_stats[codigo]["cantidad"] += 1
+            proveedores_stats[codigo]["soles"] += float(r.sol or 0)
+            proveedores_stats[codigo]["dolares"] += float(r.dol or 0)
 
         # porcentajes
         for p in proveedores_stats.values():
@@ -596,38 +849,27 @@ def logistica_dashboard_view(request):
         # 4) Tabla
         # ======================================================
         tabla = list(
-            qs.order_by("-fec", "-num_reg").values(
-                "num_reg",
-                "fec",
-                "oco",
-                "nfa",
-                "ngu",
-                "cor_id", # cor changed to cor_id
-                "dor",
-                "alm",
-                "nom_alm",
-                "tmo",
-                "tc",
-                "sol",
-                "dol",
-                "reg",
-                "nom1",
-                "nom2",
-                "ope",
-                "est",
-                "mov"
-            )
-        )
-        
-        # Format table for frontend compatibility
-        for row in tabla:
-            row["cor"] = row.pop("cor_id", None)
-            row["nom_alm"] = row.get("nom_alm", "")
-            row["tc"] = float(row.get("tc") or 0)
-            # Reconstruct missing fields with defaults so frontend doesn't crash
-            row["tip"] = ""
-            row["obs"] = row.get("nom2", "")
-            row["anulado"] = "S" if row.get("est") == "2" else "N"
+    qs.order_by("-fec", "-num_reg").values(
+        "num_reg",
+        "fec",
+        "oco",
+        "nfa",
+        "ngu",
+        "cor_id",
+        "dor",
+        "nom_alm",
+        "alm_id",
+        "tmo",
+        "sol",
+        "dol",
+        "reg",
+        "ope",
+        "nom1",
+        "nom2",
+        "est",
+        "mov",
+    )[:500]
+)
 
         # ======================================================
         # 5) Respuesta
@@ -657,184 +899,25 @@ def logistica_dashboard_view(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def logistica_modal_view(request, num_reg):
-    """
-    Retorna los detalles completos de un movimiento logÃ­stico
-    usando num_reg como clave principal.
-    """
-
+    """Detalle completo de un movimiento (entrada o salida)."""
     try:
-        # ==========================
-        # 1ï¸âƒ£ CABECERA
-        # ==========================
-        from django.db.models import F
-        cabecera = LogisticaDashboard.objects.annotate(dor=F('cor__nombre')).filter(num_reg=num_reg).first()
-
-        if not cabecera:
+        data = build_movimiento_detalle_response(num_reg)
+        if not data:
             return Response(
-                {"error": f"No se encontrÃ³ el movimiento con nÃºmero {num_reg}"},
-                status=404
+                {"error": f"No se encontró el movimiento con número {num_reg}"},
+                status=404,
             )
-
-        # ==========================
-        # 2ï¸âƒ£ DETALLE
-        # ==========================
-        detalles = LogisticaDashboardDetalle.objects.filter(num_reg=num_reg)
-
-        total_soles = 0
-        total_dolares = 0
-        items = []
-
-        for d in detalles:
-            total_soles += float(d.sol or 0)
-            total_dolares += float(d.dol or 0)
-
-            items.append({
-                "num_reg": d.num_reg,
-                "codigo": d.cod,
-                "nombre": d.nom,
-                "unidad": d.um,
-                "cantidad": d.can,
-                "valor_unitario": float(d.val or 0),
-                "total": float(d.tot or 0),
-                "soles": float(d.sol or 0),
-                "dolares": float(d.dol or 0),
-                "observacion": d.obs,
-                "operacion": cabecera.ope,
-            })
-
-        # ==========================
-        # 3ï¸âƒ£ RESPONSE FINAL
-        # ==========================
-        response_data = {
-            "cabecera": {
-                "numero": cabecera.num_reg,
-                "fecha": cabecera.fec,
-                "operacion": cabecera.ope,
-                "referencia": cabecera.mov,
-                "numero_doc": cabecera.nfa,
-                "orden_compra": cabecera.oco,
-                "almacen": cabecera.alm_id,
-                "proveedor_codigo": cabecera.cor_id,
-                "responsable": cabecera.nom1,
-                "obs_doc": cabecera.nom2,
-                "moneda": cabecera.tmo,
-                "tipo_cambio": float(cabecera.tc or 0),
-                "usuario": cabecera.reg,
-                "observacion": cabecera.nom2,
-                "nro_guia": cabecera.ngu,
-                "estado": cabecera.est,
-                "anulado": "S" if cabecera.est == "2" else "N",
-                "tipo_movimiento": "",
-                "razon_social": getattr(cabecera, 'dor', "SIN NOMBRE"),
-
-
-            },
-            "items": items,
-            "resumen": {
-                "totalItems": len(items),
-                "totalSoles": round(total_soles, 2),
-                "totalDolares": round(total_dolares, 2),
-            }
-        }
-
-        return Response(response_data)
-
+        return Response(data)
     except Exception as e:
         import traceback
-        print("Error en logistica_modal_view:", traceback.format_exc())
+        logger.error("Error en logistica_modal_view: %s", traceback.format_exc())
         return Response({"error": str(e)}, status=500)
-    
 
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def logistica_modal_view_sal(request, num_reg):
-    """
-    Retorna los detalles completos de un movimiento logÃ­stico
-    usando num_reg como clave principal.
-    """
-
-    try:
-        # ==========================
-        # 1ï¸âƒ£ CABECERA
-        # ==========================
-        cabecera = LogisticaDashboard.objects.filter(num_reg=num_reg).first()
-
-        if not cabecera:
-            return Response(
-                {"error": f"No se encontrÃ³ el movimiento con nÃºmero {num_reg}"},
-                status=404
-            )
-
-        # ==========================
-        # 2ï¸âƒ£ DETALLE
-        # ==========================
-        detalles = LogisticaDashboardDetalle.objects.filter(num_reg=num_reg)
-
-        total_soles = 0
-        total_dolares = 0
-        items = []
-
-        for d in detalles:
-            total_soles += float(d.sol or 0)
-            total_dolares += float(d.dol or 0)
-
-            items.append({
-                "num_reg": d.num_reg,
-                "codigo": d.cod,
-                "nombre": d.nom,
-                "unidad": d.um,
-                "cantidad": d.can,
-                "valor_unitario": float(d.val or 0),
-                "total": float(d.tot or 0),
-                "soles": float(d.sol or 0),
-                "dolares": float(d.dol or 0),
-                "observacion": d.obs,
-                "operacion": d.ope,
-            })
-
-        # ==========================
-        # 3ï¸âƒ£ RESPONSE FINAL
-        # ==========================
-        response_data = {
-            "cabecera": {
-                "numero": cabecera.num_reg,
-                "fecha": cabecera.fec,
-                "operacion": cabecera.ope,
-                "referencia": cabecera.mov,
-                "numero_doc": cabecera.nfa,
-                "orden_compra": cabecera.oco,
-                "almacen": cabecera.alm_id,
-                "proveedor_codigo": cabecera.cor,
-                "responsable": cabecera.nom1,
-                "obs_doc": cabecera.nom2,
-                "moneda": cabecera.tmo,
-                "tipo_cambio": float(cabecera.tc or 0),
-                "usuario": cabecera.reg,
-                "observacion": cabecera.obs,
-                "nro_guia": cabecera.ngu,
-                "estado": cabecera.est,
-                "anulado": cabecera.anulado,
-                "tipo_movimiento": cabecera.tip,
-                "razon_social": cabecera.dor,
-
-
-            },
-            "items": items,
-            "resumen": {
-                "totalItems": len(items),
-                "totalSoles": round(total_soles, 2),
-                "totalDolares": round(total_dolares, 2),
-            }
-        }
-
-        return Response(response_data)
-
-    except Exception as e:
-        import traceback
-        print("Error en logistica_modal_view_sal:", traceback.format_exc())
-        return Response({"error": str(e)}, status=500)
-    
+    return logistica_modal_view(request, num_reg)
 
 from django.db.models import Q, Max
 from django.db.models.functions import Trim
@@ -842,37 +925,86 @@ from django.db.models.functions import Trim
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def logistica_productos_view(request):
-    q = request.GET.get("q", "")
+    q = (request.GET.get("q", "") or "").strip()
+    almacen_id = request.GET.get("almacen_id")
+    operacion = request.GET.get("operacion", "E")
 
-    # âœ… Normalizamos campos con TRIM
-    productos = LogisticaDashboardDetalle.objects.annotate(
-        cod_trim=Trim('cod'),
-        nom_trim=Trim('nom'),
-    )
+    productos = Producto.objects.select_related("id_medida").filter(activo=1)
 
     if q:
         productos = productos.filter(
-            Q(cod_trim__icontains=q) | Q(nom_trim__icontains=q)
+            Q(codigo__icontains=q)
+            | Q(nombre__icontains=q)
+            | Q(ocodigo__icontains=q)
         )
 
-    # âœ… Distinct por cÃ³digo+nombre ya recortados
-    productos = (
-        productos
-        .values("cod_trim", "nom_trim")
-        .annotate(um=Max("um"))
-        .order_by("cod_trim")[:100]
-    )
+    productos = productos.order_by("codigo")[:100]
 
-    data = [
-        {
-            "codigo": p["cod_trim"] or "",
-            "nombre": p["nom_trim"] or "",
-            "unidad": (p["um"] or "").strip(),
-        }
-        for p in productos
-        if p["cod_trim"]
-    ]
+    from django.db.models import Sum
+    data = []
+    for p in productos:
+        stock_val = 0
+        if almacen_id and str(almacen_id).strip() not in ("", "%"):
+            try:
+                entradas = LogisticaDashboardDetalle.objects.filter(
+                    cod=str(p.id_producto),
+                    num_reg__in=LogisticaDashboard.objects.filter(alm_id=almacen_id, ope='E').exclude(est='2').values_list('num_reg', flat=True)
+                ).aggregate(total=Sum('can'))['total'] or 0
+
+                salidas = LogisticaDashboardDetalle.objects.filter(
+                    cod=str(p.id_producto),
+                    num_reg__in=LogisticaDashboard.objects.filter(alm_id=almacen_id, ope='S').exclude(est='2').values_list('num_reg', flat=True)
+                ).aggregate(total=Sum('can'))['total'] or 0
+
+                stock_val = float(entradas - salidas)
+            except Exception:
+                stock_val = 0
+        else:
+            stock_val = float(p.cantidad or 0)
+
+        # Si es Salida y la cantidad es 0 (o menor), no se lista si es 0
+        if operacion == "S" and stock_val <= 0:
+            continue
+
+        data.append({
+            "id_producto": p.id_producto,
+            "codigo": p.codigo or "",
+            "nombre": p.nombre or "",
+            "descripcion": p.nombre or "",
+            "unidad": p.id_medida.codigo if p.id_medida else "",
+            "id_unidad_medida": p.id_medida_id,
+            "unidad_nombre": p.id_medida.nombre if p.id_medida else "",
+            "valor_soles": float(p.precio_soles or 0),
+            "valor_dolares": float(p.precio_dolares or 0),
+            "stock": stock_val,
+        })
     return Response(data)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def logistica_stock_view(request):
+    producto_id = request.GET.get("producto_id")
+    almacen_id = request.GET.get("almacen_id")
+    if not producto_id or not almacen_id or str(almacen_id).strip() in ("", "%"):
+        return Response({"cantidad": 0})
+
+    from django.db.models import Sum
+    try:
+        entradas = LogisticaDashboardDetalle.objects.filter(
+            cod=str(producto_id),
+            num_reg__in=LogisticaDashboard.objects.filter(alm_id=almacen_id, ope='E').exclude(est='2').values_list('num_reg', flat=True)
+        ).aggregate(total=Sum('can'))['total'] or 0
+
+        salidas = LogisticaDashboardDetalle.objects.filter(
+            cod=str(producto_id),
+            num_reg__in=LogisticaDashboard.objects.filter(alm_id=almacen_id, ope='S').exclude(est='2').values_list('num_reg', flat=True)
+        ).aggregate(total=Sum('can'))['total'] or 0
+
+        cantidad = float(entradas - salidas)
+    except Exception:
+        cantidad = 0
+
+    return Response({"cantidad": cantidad})
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -1029,162 +1161,429 @@ from django.db.models import Max
 from .models import TipoCambio, LogisticaDashboard, LogisticaDashboardDetalle
 from datetime import datetime
 
+def _parse_fk_id(raw):
+    if raw in (None, "", []):
+        return None
+    try:
+        return int(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _opt_str(val, default=""):
+    if val is None:
+        return default
+    s = str(val).strip()
+    return s if s else default
+
+
+def _obs_on_update(data, current):
+    """Mantiene la observación de cabecera si el cliente no envía un valor nuevo."""
+    obs_in = data.get("obs_doc")
+    if obs_in is None:
+        obs_in = data.get("observacion")
+    if obs_in is None:
+        return _opt_str(current)
+    if str(obs_in).strip():
+        return _opt_str(obs_in)
+    return _opt_str(current)
+
+
+def _obs_item_on_save(item, index, existing_obs_by_idx=None, existing_obs_by_id=None):
+    obs_in = item.get("obs")
+    if obs_in is None:
+        obs_in = item.get("observacion")
+    if obs_in is not None and str(obs_in).strip():
+        return _opt_str(obs_in)
+    det_id = item.get("id_detalle")
+    if det_id and existing_obs_by_id and det_id in existing_obs_by_id:
+        return _opt_str(existing_obs_by_id[det_id])
+    if existing_obs_by_idx and index in existing_obs_by_idx:
+        return _opt_str(existing_obs_by_idx[index])
+    return ""
+
+
+def _calcular_totales_items(items, moneda, tc):
+    moneda_db = moneda_to_db(moneda)
+    total_soles = 0
+    total_dolares = 0
+    for item in items:
+        total = float(item.get("total") or 0)
+        if moneda_db == "S":
+            total_soles += total
+            total_dolares += total / tc if tc > 0 else 0
+        elif moneda_db == "D":
+            total_dolares += total
+            total_soles += total * tc
+    return round(total_soles, 2), round(total_dolares, 2)
+
+def _calcular_linea_item(item, moneda_db, tc):
+    total = float(item.get("total") or 0)
+    if moneda_db == "S":
+        soles = total
+        dolares = total / tc if tc > 0 else 0
+    elif moneda_db == "D":
+        dolares = total
+        soles = total * tc
+    else:
+        soles = dolares = 0
+    return round(total, 2), round(soles, 2), round(dolares, 2)
+
+
+def _insertar_detalles(num_reg, items, moneda, tc, existing_obs_by_idx=None, existing_obs_by_id=None, existing_um_by_idx=None, existing_um_by_id=None):
+    moneda_db = moneda_to_db(moneda)
+    for index, item in enumerate(items, start=1):
+        total, soles, dolares = _calcular_linea_item(item, moneda_db, tc)
+
+        prod_id = item.get("id_producto") or item.get("producto_id")
+        descripcion = item.get("descripcion") or item.get("nombre") or ""
+        um_val = resolver_um_id_item(
+            item, index, existing_um_by_idx, existing_um_by_id
+        )
+        if not um_val:
+            codigo = item.get("codigo") or prod_id or index
+            raise ValidationError(
+                f"Unidad de medida no válida para el ítem {codigo}. "
+                "Seleccione un producto del catálogo o una UM registrada."
+            )
+
+        prod_id_int = resolver_producto_id_item(item)
+        if not prod_id_int or not Producto.objects.filter(id_producto=prod_id_int).exists():
+            codigo = item.get("codigo") or prod_id or index
+            raise ValidationError(
+                f"Producto no válido para el ítem {codigo}. "
+                "Seleccione un producto del catálogo."
+            )
+
+        LogisticaDashboardDetalle.objects.create(
+            num_reg=num_reg,
+            num=str(index),
+            cod=str(prod_id_int),
+            nom=_opt_str(descripcion[:100] if descripcion else ""),
+            um=str(int(um_val)),
+            can=int(float(item.get("cant") or item.get("cantidad") or 0)),
+            val=float(item.get("valor") or item.get("valor_unitario") or 0),
+            tot=total,
+            sol=soles,
+            dol=dolares,
+            obs=_obs_item_on_save(item, index, existing_obs_by_idx, existing_obs_by_id),
+        )
+
+
+def _actualizar_detalles(num_reg, items, moneda, tc):
+    """Actualiza líneas in-place para no romper FKs de productos históricos."""
+    moneda_db = moneda_to_db(moneda)
+    existing_by_id = {
+        d.id: d
+        for d in LogisticaDashboardDetalle.objects.filter(num_reg=num_reg).order_by("id")
+    }
+    existing_obs_by_idx = {
+        i: (d.obs or "") for i, d in enumerate(existing_by_id.values(), start=1)
+    }
+    existing_obs_by_id = {d.id: (d.obs or "") for d in existing_by_id.values()}
+    existing_um_by_idx = {
+        i: (d.um or "") for i, d in enumerate(existing_by_id.values(), start=1)
+    }
+    existing_um_by_id = {d.id: (d.um or "") for d in existing_by_id.values()}
+    seen_ids = set()
+    nuevos = []
+
+    for index, item in enumerate(items, start=1):
+        total, soles, dolares = _calcular_linea_item(item, moneda_db, tc)
+        descripcion = item.get("descripcion") or item.get("nombre") or ""
+        det_id = _parse_fk_id(item.get("id_detalle"))
+        existing = existing_by_id.get(det_id) if det_id else None
+
+        um_val = resolver_um_id_item(
+            item, index, existing_um_by_idx, existing_um_by_id
+        )
+        if not um_val and existing and existing.um:
+            um_val = str(int(existing.um)) if str(existing.um).isdigit() else existing.um
+        if not um_val:
+            codigo = item.get("codigo") or item.get("id_producto") or index
+            raise ValidationError(
+                f"Unidad de medida no válida para el ítem {codigo}."
+            )
+
+        if existing:
+            prod_id_int = resolver_producto_id_item(item, existing.cod)
+            if not prod_id_int:
+                prod_id_int = _parse_fk_id(existing.cod)
+            existing.num = str(index)
+            existing.cod = str(prod_id_int)
+            existing.nom = _opt_str(descripcion[:100] if descripcion else existing.nom or "")
+            existing.um = str(int(um_val))
+            existing.can = int(float(item.get("cant") or item.get("cantidad") or 0))
+            existing.val = float(item.get("valor") or item.get("valor_unitario") or 0)
+            existing.tot = total
+            existing.sol = soles
+            existing.dol = dolares
+            existing.obs = _obs_item_on_save(
+                item, index, existing_obs_by_idx, existing_obs_by_id
+            )
+            existing.save()
+            seen_ids.add(existing.id)
+            continue
+
+        prod_id_int = resolver_producto_id_item(item)
+        if not prod_id_int or not Producto.objects.filter(id_producto=prod_id_int).exists():
+            codigo = item.get("codigo") or item.get("id_producto") or index
+            raise ValidationError(
+                f"Producto no válido para el ítem {codigo}. "
+                "Seleccione un producto del catálogo."
+            )
+
+        nuevos.append({
+            "num": str(index),
+            "cod": str(prod_id_int),
+            "nom": _opt_str(descripcion[:100] if descripcion else ""),
+            "um": str(int(um_val)),
+            "can": int(float(item.get("cant") or item.get("cantidad") or 0)),
+            "val": float(item.get("valor") or item.get("valor_unitario") or 0),
+            "tot": total,
+            "sol": soles,
+            "dol": dolares,
+            "obs": _obs_item_on_save(item, index, existing_obs_by_idx, existing_obs_by_id),
+        })
+
+    if not items:
+        LogisticaDashboardDetalle.objects.filter(num_reg=num_reg).delete()
+        return
+
+    if seen_ids:
+        LogisticaDashboardDetalle.objects.filter(num_reg=num_reg).exclude(id__in=seen_ids).delete()
+    else:
+        LogisticaDashboardDetalle.objects.filter(num_reg=num_reg).delete()
+
+    for row in nuevos:
+        LogisticaDashboardDetalle.objects.create(num_reg=num_reg, **row)
+
+
+def _resolver_tc(fecha, tc_enviado):
+    tc = float(tc_enviado or 0)
+    if tc <= 0:
+        try:
+            tcambio = TipoCambio.objects.filter(fec=fecha, activo='1').order_by('-hor').first()
+            if tcambio:
+                tc = float(tcambio.com or 0)
+        except Exception:
+            pass
+    return tc
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def logistica_tipo_cambio_view(request):
+    fecha_str = request.GET.get("fecha")
+    if not fecha_str:
+        return Response({"error": "Fecha requerida"}, status=400)
+    try:
+        fecha = datetime.strptime(fecha_str, "%Y-%m-%d").date()
+    except ValueError:
+        return Response({"error": "Fecha inválida"}, status=400)
+    tc = _resolver_tc(fecha, request.GET.get("tc"))
+    return Response({"fecha": fecha_str, "tipo_cambio": tc})
+
+def check_stock_disponible(prod_id, alm_id, quantity, num_reg=None, item_codigo=None):
+    from django.db.models import Sum
+    entradas = LogisticaDashboardDetalle.objects.filter(
+        cod=str(prod_id),
+        num_reg__in=LogisticaDashboard.objects.filter(alm_id=alm_id, ope='E').exclude(est='2').values_list('num_reg', flat=True)
+    ).aggregate(total=Sum('can'))['total'] or 0
+
+    salidas_qs = LogisticaDashboard.objects.filter(alm_id=alm_id, ope='S').exclude(est='2')
+    if num_reg:
+        salidas_qs = salidas_qs.exclude(num_reg=num_reg)
+
+    salidas = LogisticaDashboardDetalle.objects.filter(
+        cod=str(prod_id),
+        num_reg__in=salidas_qs.values_list('num_reg', flat=True)
+    ).aggregate(total=Sum('can'))['total'] or 0
+
+    stock_disponible = float(entradas - salidas)
+    if stock_disponible < float(quantity):
+        codigo_str = item_codigo or str(prod_id)
+        raise ValidationError(
+            f"Stock insuficiente para el producto {codigo_str}. "
+            f"Disponible: {stock_disponible}, Requerido: {quantity}."
+        )
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @transaction.atomic
 def logistica_movimiento(request):
     try:
         data = request.data
-        print("ðŸ”µ REQUEST:", data)
 
-        # ==========================
-        # VALIDACIONES INICIALES
-        # ==========================
         ope = data.get("ope")
         if ope not in ["E", "S"]:
-            return Response({"error": "OperaciÃ³n invÃ¡lida"}, status=400)
+            return Response({"error": "Operación inválida"}, status=400)
 
         items = data.get("items", [])
         if not items:
             return Response({"error": "No hay items para insertar"}, status=400)
 
-        moneda = data.get("moneda")
-
-        # ==========================
-        # FECHA / MES / AÃ‘O
-        # ==========================
         fecha_str = data.get("fecha")
         if not fecha_str:
             return Response({"error": "Fecha requerida"}, status=400)
 
         fecha = datetime.strptime(fecha_str, "%Y-%m-%d").date()
-        mes = str(fecha.month).zfill(2)
-        anno = str(fecha.year)
+        moneda = moneda_to_db(data.get("moneda", "S"))
+        tc = _resolver_tc(fecha, data.get("tc"))
 
-        # ==========================
-        # TIPO DE CAMBIO
-        # ==========================
-        tc = float(data.get("tc") or 0)
+        if moneda == "D" and tc <= 0:
+            return Response({"error": "Tipo de cambio inválido para moneda Dólares"}, status=400)
 
-        # ðŸ”¥ Si no viene TC, buscar en cont_tcambio
-        if tc <= 0:
-            tcambio = (
-                TipoCambio.objects
-                .filter(fec=fecha, activo='1')
-                .order_by('-hor')
-                .first()
-            )
+        total_soles, total_dolares = _calcular_totales_items(items, moneda, tc)
 
-            if tcambio:
-                tc = float(tcambio.com or 0)
-                print(f"ðŸ’± TC obtenido de BD: {tc}")
-            else:
-                return Response(
-                    {"error": f"No existe tipo de cambio para la fecha {fecha}"},
-                    status=400
-                )
+        alm_id = _parse_fk_id(data.get("almacen"))
+        cor_id = _parse_fk_id(data.get("cor_id") or data.get("cliente_id"))
 
-        # ValidaciÃ³n final
-        if moneda == "Dolares" and tc <= 0:
-            return Response({"error": "Tipo de cambio invÃ¡lido"}, status=400)
+        # Validar stock si es salida
+        if ope == "S":
+            for item in items:
+                prod_id_int = resolver_producto_id_item(item)
+                if prod_id_int:
+                    cant = int(float(item.get("cant") or item.get("cantidad") or 0))
+                    codigo = item.get("codigo") or str(prod_id_int)
+                    check_stock_disponible(prod_id_int, alm_id, cant, item_codigo=codigo)
 
-        # ==========================
-        # CALCULAR TOTALES CABECERA
-        # ==========================
-        total_soles = 0
-        total_dolares = 0
+        usuario_id = data.get("usuario_id") or data.get("responsable_id")
+        if not usuario_id:
+            usuario_id = getattr(request.user, "id_usuario", None)
+        reg = str(usuario_id) if usuario_id not in (None, "", []) else None
 
-        for item in items:
-            total = float(item.get("total") or 0)
-
-            if moneda == "Soles":
-                total_soles += total
-                total_dolares += total / tc if tc > 0 else 0
-
-            elif moneda == "Dolares":
-                total_dolares += total
-                total_soles += total * tc
-
-        # ==========================
-        # CREAR CABECERA
-        # ==========================
         cabecera = LogisticaDashboard.objects.create(
             ope=ope,
-            fec=fecha,  # âœ… corregido
-            oco=data.get("orden_compra"),
-            nfa=data.get("numero_doc"),
-            ngu=data.get("nro_guia"),
-            cor=data.get("numero_doc"),
-            dor=data.get("razon_social"),
-            alm=data.get("almacen"),
+            fec=fecha,
+            oco=_opt_str(data.get("orden_compra")),
+            nfa=_opt_str(data.get("numero_doc")),
+            ngu=_opt_str(data.get("nro_guia")),
+            cor_id=cor_id,
+            alm_id=alm_id,
             tmo=moneda,
             tc=tc,
-            mes=mes,
-            anno=anno,
-            reg=data.get("reg"),
-            obs=data.get("obs_doc"),
-            nom1=data.get("responsable"),
-            nom2=data.get("nom2"),
-            sol=round(total_soles, 2),
-            dol=round(total_dolares, 2),
-            tip=data.get("tipo_movimiento"),
-            mov=data.get("referencia"),
+            reg=reg,
+            nom2=_opt_str(data.get("obs_doc") or data.get("observacion")),
+            sol=total_soles,
+            dol=total_dolares,
+            mov=_opt_str(data.get("referencia")),
             est="0",
         )
 
-        num_reg = cabecera.num_reg
-        print(f"âœ… CABECERA CREADA: {num_reg}")
-
-        # ==========================
-        # INSERTAR DETALLE
-        # ==========================
-        print("ðŸŸ¡ INSERTANDO DETALLE...")
-
-        for index, item in enumerate(items, start=1):
-            total = float(item.get("total") or 0)
-
-            if moneda == "Soles":
-                soles = total
-                dolares = total / tc if tc > 0 else 0
-
-            elif moneda == "Dolares":
-                dolares = total
-                soles = total * tc
-
-            else:
-                soles = 0
-                dolares = 0
-
-            print(f"ðŸ‘‰ ITEM {index}: total={total}, S/={soles}, $={dolares}")
-
-            LogisticaDashboardDetalle.objects.create(
-                num_reg=num_reg,
-                num=index,
-                ope=ope,
-                cod=item.get("codigo"),
-                nom=item.get("descripcion"),
-                um=item.get("um"),
-                can=float(item.get("cant") or 0),
-                val=float(item.get("valor") or 0),
-                tot=round(total, 2),
-                sol=round(soles, 2),
-                dol=round(dolares, 2),
-                obs=item.get("orden_compra"),
-            )
-
-        print("âœ… TODO INSERTADO CORRECTAMENTE")
+        _insertar_detalles(cabecera.num_reg, items, moneda, tc)
 
         return Response({
             "message": "Movimiento registrado correctamente",
-            "num_reg": num_reg,
+            "num_reg": cabecera.num_reg,
             "ope": ope,
-            "total_soles": round(total_soles, 2),
-            "total_dolares": round(total_dolares, 2),
+            "total_soles": total_soles,
+            "total_dolares": total_dolares,
         })
 
+    except ValidationError as e:
+        return Response({"error": str(e.message if hasattr(e, "message") else e)}, status=400)
     except Exception as e:
         import traceback
-        print("❌ ERROR:", traceback.format_exc())
+        logger.error("Error en logistica_movimiento POST: %s", traceback.format_exc())
+        return Response({"error": str(e)}, status=500)
+
+
+@api_view(['PUT', 'PATCH'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def logistica_movimiento_update(request, num_reg):
+    try:
+        cabecera = LogisticaDashboard.objects.filter(num_reg=num_reg).first()
+        if not cabecera:
+            return Response({"error": f"Movimiento {num_reg} no encontrado"}, status=404)
+
+        if cabecera.est == "2":
+            return Response({"error": "No se puede editar un movimiento anulado"}, status=400)
+
+        data = request.data
+        items = data.get("items", [])
+        if not items:
+            return Response({"error": "No hay items"}, status=400)
+
+        fecha_str = data.get("fecha")
+        if not fecha_str:
+            return Response({"error": "Fecha requerida"}, status=400)
+
+        fecha = datetime.strptime(fecha_str, "%Y-%m-%d").date()
+        moneda = moneda_to_db(data.get("moneda", "S"))
+        tc = _resolver_tc(fecha, data.get("tc"))
+
+        if moneda == "D" and tc <= 0:
+            return Response({"error": "Tipo de cambio inválido para moneda Dólares"}, status=400)
+
+        total_soles, total_dolares = _calcular_totales_items(items, moneda, tc)
+
+        alm_id = _parse_fk_id(data.get("almacen"))
+        cor_id = _parse_fk_id(data.get("cor_id") or data.get("cliente_id"))
+
+        # Validar stock si es salida
+        if cabecera.ope == "S":
+            for item in items:
+                prod_id_int = resolver_producto_id_item(item)
+                if not prod_id_int:
+                    det_id = _parse_fk_id(item.get("id_detalle"))
+                    existing = LogisticaDashboardDetalle.objects.filter(id=det_id).first() if det_id else None
+                    if existing:
+                        prod_id_int = _parse_fk_id(existing.cod)
+                if prod_id_int:
+                    cant = int(float(item.get("cant") or item.get("cantidad") or 0))
+                    codigo = item.get("codigo") or str(prod_id_int)
+                    check_stock_disponible(prod_id_int, alm_id, cant, num_reg=num_reg, item_codigo=codigo)
+
+        usuario_id = data.get("usuario_id") or data.get("responsable_id")
+        reg = str(usuario_id) if usuario_id not in (None, "", []) else cabecera.reg
+
+        cabecera.fec  = fecha
+        cabecera.oco  = _opt_str(data.get("orden_compra"))
+        cabecera.nfa  = _opt_str(data.get("numero_doc"))
+        cabecera.ngu  = _opt_str(data.get("nro_guia"))
+        cabecera.cor_id = cor_id
+        cabecera.alm_id = alm_id
+        cabecera.tmo  = moneda
+        cabecera.tc   = tc
+        cabecera.reg  = reg
+        cabecera.nom2 = _obs_on_update(data, cabecera.nom2)
+        cabecera.sol  = total_soles
+        cabecera.dol  = total_dolares
+        cabecera.mov  = _opt_str(data.get("referencia"))
+        cabecera.save()
+
+        _actualizar_detalles(num_reg, items, moneda, tc)
+
+        return Response({
+            "message": "Movimiento actualizado correctamente",
+            "num_reg": num_reg,
+            "total_soles": total_soles,
+            "total_dolares": total_dolares,
+        })
+
+    except ValidationError as e:
+        return Response({"error": str(e.message if hasattr(e, "message") else e)}, status=400)
+    except Exception as e:
+        import traceback
+        logger.error("Error en logistica_movimiento_update: %s", traceback.format_exc())
+        return Response({"error": str(e)}, status=500)
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def logistica_movimiento_anular(request, num_reg):
+    try:
+        cabecera = LogisticaDashboard.objects.filter(num_reg=num_reg).first()
+        if not cabecera:
+            return Response({"error": f"Movimiento {num_reg} no encontrado"}, status=404)
+        if cabecera.est == "2":
+            return Response({"error": "El movimiento ya está anulado"}, status=400)
+        cabecera.est = "2"
+        cabecera.save()
+        return Response({"message": "Movimiento anulado correctamente", "num_reg": num_reg})
+    except Exception as e:
         return Response({"error": str(e)}, status=500)
 
 from openpyxl import Workbook
@@ -1459,6 +1858,262 @@ def detalle_orden_compra(request, reg):
         )
 
 
+
+
+@api_view(["GET", "POST", "PUT"])
+@permission_classes([IsAuthenticated])
+def listar_suministros(request, num_reg):
+    try:
+        # ======================
+        # ðŸ"„ LISTAR
+        # ======================
+        if request.method == "GET":
+            suministros = CotiSuministros.objects.filter(
+                num_reg=num_reg
+            ).order_by("num")
+
+            serializer = CotiSuministrosSerializer(suministros, many=True)
+            return Response(serializer.data)
+
+        # ======================
+        # âž• CREAR
+        # ======================
+        if request.method == "POST":
+            data = request.data.copy()
+            data["num_reg"] = num_reg
+
+            serializer = CotiSuministrosSerializer(data=data)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=201)
+
+            return Response(serializer.errors, status=400)
+
+        # ======================
+        # âœï¸ ACTUALIZAR
+        # ======================
+        if request.method == "PUT":
+            item_id = request.data.get("id")
+
+            try:
+                item_id = int(item_id)
+            except (TypeError, ValueError):
+                return Response({"error": "ID invÃ¡lido"}, status=400)
+
+            suministro = CotiSuministros.objects.get(
+                id=item_id,
+                num_reg=num_reg
+            )
+
+            data = request.data.copy()
+            data.pop("id", None)
+            data.pop("num_reg", None)
+
+            serializer = CotiSuministrosSerializer(
+                suministro,
+                data=data,
+                partial=True
+            )
+
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+
+            return Response(serializer.errors, status=400)
+
+    except CotiSuministros.DoesNotExist:
+        return Response({"error": "Suministro no encontrado"}, status=404)
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
+
+def clean_text(text):
+    """Limpia espacios, tabulaciones, saltos de lÃ­nea y decodifica HTML."""
+    if not text:
+        return ""
+    # Decodifica entidades HTML
+    text = unescape(text)
+    # Reemplaza cualquier secuencia de espacios o saltos de lÃ­nea por un solo espacio
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def listar_servicios(request, num_reg):
+    try:
+        # 1) OBTENER TODOS LOS SERVICIOS (nig = 0)
+        servicios_qs = CotiServicios.objects.filter(
+            num_reg=num_reg,
+            nig=0
+        ).order_by("num")
+
+        resultado = []
+
+        tipo_map = {
+            "4": "MANO DE OBRA",
+            "5": "GASTOS DE SERVICIOS",
+            "6": "OTROS",
+        }
+
+        for servicio in servicios_qs:
+            servicio_data = CotiServiciosSerializer(servicio).data
+            titulo_general = clean_text(servicio_data.get("nog"))
+
+            pref_servicio = servicio.cog[:2]
+
+            # 2) FILAS DEL SERVICIO (subgrupos + items)
+            rows = CotiServicios.objects.filter(
+                num_reg=num_reg,
+                cog__startswith=pref_servicio,
+                nig__gt=0
+            ).order_by("num")
+
+            subgrupos = []
+
+            # 3) CREAR SUBGRUPOS (nig = 1)
+            for row in rows.filter(nig=1):
+                tipo_digito = row.cog[3]  # 4,5,6
+                subgrupo = {
+                    "titulo": clean_text(row.nog),       # ðŸ"¹ tÃ­tulo real de DB
+                    "tipoCodigo": f"0{tipo_digito}",     # "04", "05", "06"
+                    "tipoNombre": tipo_map.get(tipo_digito, "DESCONOCIDO"),
+                    "items": []
+                }
+                subgrupos.append(subgrupo)
+
+            # 4) ASIGNAR ITEMS (nig = 2)
+            for row in rows.filter(nig=2):
+                # Buscar el subgrupo correspondiente segÃºn los primeros 4 dÃ­gitos del cog
+                prefijo = row.cog[:4]
+                for sg in subgrupos:
+                    if sg["tipoCodigo"] == f"0{row.cog[3]}":
+                        item = CotiServiciosSerializer(row).data
+                        for f in ["des", "cod", "nog", "pro"]:
+                            item[f] = clean_text(item.get(f))
+                        sg["items"].append(item)
+                        break
+
+            resultado.append({
+                "tituloGeneral": titulo_general,
+                "cantidad": str(servicio.can or "1"),   # ðŸ"¹ can (nig = 0)
+                "detalle": servicio.tog or "",           # ðŸ"¹ tog (HTML)
+                "subgrupos": subgrupos
+            })
+
+        return Response(resultado)
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def listar_mensajes(request, num_reg):
+    """
+    Lista todos los mensajes asociados a un num_reg.
+    """
+    try:
+        mensajes = CotiMensajes.objects.filter(
+            num_reg=num_reg,
+            act="1"  # Solo activos
+        ).order_by("dat")  # Orden cronolÃ³gico, mÃ¡s antiguos primero
+
+        serializer = CotiMensajesSerializer(mensajes, many=True)
+        return Response(serializer.data)
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def listar_seguimientos(request, num_reg):
+    """
+    Lista todos los seguimientos asociados a un num_reg.
+    """
+    try:
+        seguimientos = CotiSeguimiento.objects.filter(
+            num_reg=num_reg,
+            act="1"  # Solo activos
+        ).order_by("dat")  # Orden cronolÃ³gico, mÃ¡s antiguos primero
+
+        serializer = CotiSeguimientoSerializer(seguimientos, many=True)
+        return Response(serializer.data)
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
+
+@api_view(["GET"])
+def totales_descuento_view(request, num_reg):
+    cot = DashboardCotizacion.objects.get(num_reg=num_reg)
+
+    total = cot.tot_c or 0
+    descuento_monto = cot.des_m or 0  # <-- descuento guardado
+
+    total_suministros = (
+        CotiSuministros.objects
+        .filter(num_reg=num_reg, nig=0)
+        .aggregate(
+            total=Sum(F("tot") * F("can"))
+        )["total"] or 0
+    )
+
+    total_servicios = (
+        CotiServicios.objects
+        .filter(num_reg=num_reg, nig=0)
+        .aggregate(
+            total=Sum(F("tot") * F("can"))
+        )["total"] or 0
+    )
+
+    return Response({
+        "total": total,
+        "suministros": total_suministros,
+        "servicios": total_servicios,
+        "tot_c": total,             # total base
+        "des_m": descuento_monto,   # descuento guardado
+    })
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def recalcular_totales_cotizacion(request, num_reg):
+    """
+    Recalcula el total de la cotizaciÃ³n basado en suministros y servicios.
+    Retorna el total actualizado.
+    """
+    try:
+        cotizacion = DashboardCotizacion.objects.get(num_reg=num_reg)
+
+        # Totales suministros
+        total_suministros = (
+            CotiSuministros.objects
+            .filter(num_reg=num_reg, nig=0)
+            .aggregate(total=Sum(F("tot") * F("can")))["total"] or 0
+        )
+
+        # Totales servicios
+        total_servicios = (
+            CotiServicios.objects
+            .filter(num_reg=num_reg, nig=0)
+            .aggregate(total=Sum(F("tot") * F("can")))["total"] or 0
+        )
+
+        total_general = total_suministros + total_servicios
+
+        # Guardar total
+        cotizacion.tot_c = total_general
+        cotizacion.save(update_fields=["tot_c"])
+
+        return Response({
+            "tot_c": total_general,
+            "suministros": total_suministros,
+            "servicios": total_servicios,
+        })
+
+    except DashboardCotizacion.DoesNotExist:
+        return Response({"error": "CotizaciÃ³n no encontrada"}, status=404)
+
+#========================================================================================
+
+
 #========================================================================================
 
 ##===========##
@@ -1469,7 +2124,7 @@ def detalle_orden_compra(request, reg):
 def buscar_encargados_por_empresa(request, empresa):
     q = request.GET.get("q", "").strip()
 
-    encargados = Representante.objects.filter(
+    encargados = vc_tab_clientes_d.objects.filter(
         empresa=empresa,
         activo=True
     ).filter(
@@ -1613,7 +2268,7 @@ def asignar_regus(request, num_reg):
 def generar_codigo_view(request, numero):
     """
     Retorna el cÃ³digo (cotin) asociado a la cotizaciÃ³n.
-    Si la cotizaciÃ³n no existe â†’ 404
+    Si la cotizaciÃ³n no existe â†' 404
     """
     try:
         cot = DashboardCotizacion.objects.filter(numero=numero).first()
@@ -1638,6 +2293,87 @@ def generar_codigo_view(request, numero):
 ## DATOS DE BD_VC ##
 ##================##
 
+# vc_tab_clientes
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def lista_clientes(request):
+    q = (request.GET.get("q", "") or "").strip()
+    activo_param = (request.GET.get("activo", "1") or "").strip()  # default = activos
+    tipo_param = (request.GET.get("tipo", "") or "").strip()
+
+    clientes = vc_tab_clientes.objects.all()
+
+    # Filtro activo/inactivo:
+    if activo_param not in ("", "%", "todos", "ALL", "all", "Todos"):
+        if str(activo_param).lower() in ("1", "true", "t", "activo"):
+            clientes = clientes.filter(activo=True)
+        elif str(activo_param).lower() in ("0", "false", "f", "inactivo"):
+            clientes = clientes.filter(activo=False)
+
+    # Filtro por tipo:
+    if tipo_param:
+        clientes = clientes.filter(tipo=tipo_param)
+
+    if q:
+        clientes = clientes.filter(
+            Q(codigo__icontains=q)
+            | Q(nombre__icontains=q)
+            | Q(iniciales__icontains=q)
+            | Q(ruc__icontains=q)
+            | Q(tipo__icontains=q)
+            | Q(pro__icontains=q)
+        )
+
+    clientes = clientes.order_by("nombre")[:100]
+    serializer = ClientesSerializer(clientes, many=True)
+    return Response(serializer.data)
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def crear_cliente(request):
+    data = request.data.copy()
+    
+    # Autogenerar correlativo si no envian codigo
+    if not data.get('codigo'):
+        max_cod = 0
+        todos = vc_tab_clientes.objects.values_list('codigo', flat=True)
+        for c in todos:
+            if c and str(c).isdigit():
+                val = int(c)
+                if val > max_cod:
+                    max_cod = val
+        data['codigo'] = str(max_cod + 1).zfill(5)
+
+    serializer = ClientesSerializer(data=data)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(["PUT", "PATCH"])
+@permission_classes([IsAuthenticated])
+def actualizar_cliente(request, codigo):
+    try:
+        cliente = vc_tab_clientes.objects.get(codigo=codigo)
+    except vc_tab_clientes.DoesNotExist:
+        return Response({"detail": "No encontrado"}, status=status.HTTP_404_NOT_FOUND)
+    
+    serializer = ClientesSerializer(cliente, data=request.data, partial=(request.method == "PATCH"))
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def eliminar_cliente(request, codigo):
+    try:
+        cliente = vc_tab_clientes.objects.get(codigo=codigo)
+        cliente.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+    except vc_tab_clientes.DoesNotExist:
+        return Response({"detail": "No encontrado"}, status=status.HTTP_404_NOT_FOUND)
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def exportar_excel_proveedores(request):
@@ -1645,7 +2381,7 @@ def exportar_excel_proveedores(request):
     activo_param = (request.GET.get("activo", "todos") or "").strip()
     tipo_param = (request.GET.get("tipo", "") or "").strip()
 
-    clientes = Cliente.objects.all()
+    clientes = vc_tab_clientes.objects.all()
 
     # Filtros igual que lista_clientes
     if activo_param not in ("", "%", "todos", "ALL", "all", "Todos"):
@@ -1941,7 +2677,7 @@ def listar_usuario(request):
 
 
 ##============##
-## AÃ‘O ACTUAL ##
+## AÃ'O ACTUAL ##
 ##============##
 @api_view(["GET"])
 def anno_actual(request):
@@ -1982,9 +2718,98 @@ def html_to_text(html):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def lista_almacenes_new(request):
-    almacenes = AlmacenNew.objects.filter(activo="1").order_by("idalmacen")
-    data = [{"idalmacen": a.idalmacen, "nombre": a.nombre} for a in almacenes]
-    return Response(data)
+    q = (request.GET.get("q", "") or "").strip()
+    almacenes = AlmacenNew.objects.all()
+    if q:
+        almacenes = almacenes.filter(
+            Q(nombre__icontains=q) | Q(direccion__icontains=q)
+        )
+    almacenes = almacenes.order_by("nombre")[:100]
+    return Response([
+        {
+            "idalmacen": a.idalmacen,
+            "nombre": a.nombre,
+            "direccion": a.direccion or "",
+            "activo": a.activo,
+            "usuario_id_usuario": getattr(a, "usuario_id_usuario_id", None) or getattr(a, "usuario_id_usuario", None),
+        }
+        for a in almacenes
+    ])
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def crear_almacen_new(request):
+    data = request.data.copy()
+    if not data.get("usuario_id_usuario"):
+        data["usuario_id_usuario"] = getattr(request.user, "id_usuario", 1)
+    if not data.get("activo"):
+        data["activo"] = "1"
+    serializer = AlmacenNewSerializer(data=data)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(["PUT", "PATCH"])
+@permission_classes([IsAuthenticated])
+def actualizar_almacen_new(request, idalmacen):
+    try:
+        almacen = AlmacenNew.objects.get(idalmacen=idalmacen)
+    except AlmacenNew.DoesNotExist:
+        return Response({"detail": "No encontrado"}, status=status.HTTP_404_NOT_FOUND)
+    
+    serializer = AlmacenNewSerializer(almacen, data=request.data, partial=(request.method == "PATCH"))
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def eliminar_almacen_new(request, idalmacen):
+    try:
+        almacen = AlmacenNew.objects.get(idalmacen=idalmacen)
+        almacen.delete()
+        return Response({"detail": "Eliminado correctamente"}, status=200)
+    except AlmacenNew.DoesNotExist:
+        return Response({"error": "No encontrado"}, status=404)
+    except Exception as e:
+        # Logical deactivate if delete fails due to database constraints
+        try:
+            almacen = AlmacenNew.objects.get(idalmacen=idalmacen)
+            almacen.activo = "0"
+            almacen.save()
+            return Response({"detail": "No se puede eliminar de la base de datos (tiene movimientos asociados), se ha desactivado lógicamente"}, status=200)
+        except Exception:
+            return Response({"error": str(e)}, status=400)
+
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def buscar_usuarios_logistica(request):
+    q = (request.GET.get("q", "") or "").strip()
+    limit = min(int(request.GET.get("limit", 200) or 200), 500)
+    usuarios = Usuario.objects.filter(activo=1)
+    if q:
+        usuarios = usuarios.filter(
+            Q(nombre_completo__icontains=q)
+            | Q(usuario__icontains=q)
+            | Q(dni__icontains=q)
+        )
+    usuarios = usuarios.order_by("nombre_completo")[:limit]
+    return Response([
+        {
+            "id_usuario": u.id_usuario,
+            "usuario": u.usuario,
+            "nombre": u.nombre_completo,
+        }
+        for u in usuarios
+    ])
+
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -3104,3 +3929,179 @@ def exportar_excel_barras(request):
     response["Content-Disposition"] = 'attachment; filename="reporte_barras.xlsx"'
     wb.save(response)
     return response
+
+
+# ============================================================
+# VISTAS CRUD PARA GRUPO (tabla 'grupo')
+# ============================================================
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def lista_grupos(request):
+    if request.method == "GET":
+        q = (request.GET.get("q", "") or "").strip()
+        activo = request.GET.get("activo", "todos")
+        grupos = Grupo.objects.all()
+        if activo != "todos":
+            grupos = grupos.filter(activo=activo)
+        if q:
+            grupos = grupos.filter(Q(descripcion__icontains=q) | Q(idgrupo__icontains=q))
+        grupos = grupos.order_by("descripcion")[:100]
+        serializer = GrupoSerializer(grupos, many=True)
+        return Response(serializer.data)
+        
+    elif request.method == "POST":
+        serializer = GrupoSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(["PUT", "PATCH"])
+@permission_classes([IsAuthenticated])
+def actualizar_grupo(request, idgrupo):
+    try:
+        grupo = Grupo.objects.get(pk=idgrupo)
+    except Grupo.DoesNotExist:
+        return Response({"detail": "No encontrado"}, status=status.HTTP_404_NOT_FOUND)
+    
+    serializer = GrupoSerializer(grupo, data=request.data, partial=(request.method == "PATCH"))
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def eliminar_grupo(request, idgrupo):
+    try:
+        grupo = Grupo.objects.get(pk=idgrupo)
+        grupo.delete()
+        return Response({"detail": "Eliminado correctamente"}, status=200)
+    except Grupo.DoesNotExist:
+        return Response({"error": "No encontrado"}, status=404)
+    except Exception as e:
+        try:
+            grupo = Grupo.objects.get(pk=idgrupo)
+            grupo.activo = "0"
+            grupo.save()
+            return Response({"detail": "No se puede eliminar de la base de datos, se ha desactivado lógicamente"}, status=200)
+        except Exception:
+            return Response({"error": str(e)}, status=400)
+
+
+# ============================================================
+# VISTAS CRUD PARA DOCUMENTO ALMACEN (tabla 'documento_almacen')
+# ============================================================
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def lista_documentos_almacen_new(request):
+    if request.method == "GET":
+        q = (request.GET.get("q", "") or "").strip()
+        activo = request.GET.get("activo", "todos")
+        docs = DocumentoAlmacen.objects.all()
+        if activo != "todos":
+            docs = docs.filter(activo=activo)
+        if q:
+            docs = docs.filter(Q(descripcion__icontains=q) | Q(iddocumento_almacen__icontains=q))
+        docs = docs.order_by("descripcion")[:100]
+        serializer = DocumentoAlmacenSerializer(docs, many=True)
+        return Response(serializer.data)
+        
+    elif request.method == "POST":
+        serializer = DocumentoAlmacenSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(["PUT", "PATCH"])
+@permission_classes([IsAuthenticated])
+def actualizar_documento_almacen_new(request, iddocumento_almacen):
+    try:
+        doc = DocumentoAlmacen.objects.get(pk=iddocumento_almacen)
+    except DocumentoAlmacen.DoesNotExist:
+        return Response({"detail": "No encontrado"}, status=status.HTTP_404_NOT_FOUND)
+    
+    serializer = DocumentoAlmacenSerializer(doc, data=request.data, partial=(request.method == "PATCH"))
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def eliminar_documento_almacen_new(request, iddocumento_almacen):
+    try:
+        doc = DocumentoAlmacen.objects.get(pk=iddocumento_almacen)
+        doc.delete()
+        return Response({"detail": "Eliminado correctamente"}, status=200)
+    except DocumentoAlmacen.DoesNotExist:
+        return Response({"error": "No encontrado"}, status=404)
+    except Exception as e:
+        try:
+            doc = DocumentoAlmacen.objects.get(pk=iddocumento_almacen)
+            doc.activo = "0"
+            doc.save()
+            return Response({"detail": "No se puede eliminar de la base de datos, se ha desactivado lógicamente"}, status=200)
+        except Exception:
+            return Response({"error": str(e)}, status=400)
+
+
+# ============================================================
+# VISTAS CRUD PARA COSTO ALMACEN (tabla 'costo_almacen')
+# ============================================================
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def lista_costos_almacen_new(request):
+    if request.method == "GET":
+        q = (request.GET.get("q", "") or "").strip()
+        activo = request.GET.get("activo", "todos")
+        costos = CostoAlmacen.objects.all()
+        if activo != "todos":
+            costos = costos.filter(activo=activo)
+        if q:
+            costos = costos.filter(Q(descripcion__icontains=q) | Q(codigo__icontains=q))
+        costos = costos.order_by("codigo")[:100]
+        serializer = CostoAlmacenSerializer(costos, many=True)
+        return Response(serializer.data)
+        
+    elif request.method == "POST":
+        serializer = CostoAlmacenSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(["PUT", "PATCH"])
+@permission_classes([IsAuthenticated])
+def actualizar_costo_almacen_new(request, idcosto_almacen):
+    try:
+        costo = CostoAlmacen.objects.get(pk=idcosto_almacen)
+    except CostoAlmacen.DoesNotExist:
+        return Response({"detail": "No encontrado"}, status=status.HTTP_404_NOT_FOUND)
+    
+    serializer = CostoAlmacenSerializer(costo, data=request.data, partial=(request.method == "PATCH"))
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def eliminar_costo_almacen_new(request, idcosto_almacen):
+    try:
+        costo = CostoAlmacen.objects.get(pk=idcosto_almacen)
+        costo.delete()
+        return Response({"detail": "Eliminado correctamente"}, status=200)
+    except CostoAlmacen.DoesNotExist:
+        return Response({"error": "No encontrado"}, status=404)
+    except Exception as e:
+        try:
+            costo = CostoAlmacen.objects.get(pk=idcosto_almacen)
+            costo.activo = "0"
+            costo.save()
+            return Response({"detail": "No se puede eliminar de la base de datos, se ha desactivado lógicamente"}, status=200)
+        except Exception:
+            return Response({"error": str(e)}, status=400)
+
+

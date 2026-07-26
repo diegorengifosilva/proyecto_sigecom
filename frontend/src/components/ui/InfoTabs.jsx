@@ -2000,7 +2000,7 @@ export default function InfoTabs({
   };
 
   const formatMoney = (v = 0) =>
-    Number(v).toLocaleString("es-PE", {
+    Number(v).toLocaleString("en-US", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
@@ -2054,14 +2054,14 @@ export default function InfoTabs({
       >
 
         <TabsList
-          className={`grid ${gridCols} gap-2 mb-6 bg-gradient-to-r from-white via-slate-50/70 to-white border border-slate-200 rounded-2xl p-2 shadow-sm`}
+          className="flex overflow-x-auto no-scrollbar gap-2 mb-6 bg-gradient-to-r from-white via-slate-50/70 to-white border border-slate-200 rounded-2xl p-2 shadow-sm shrink-0 max-w-full"
         >
           {/* REPETIR ESTA ESTRUCTURA PARA CADA TABS-TRIGGER */}
           {activeTabs.includes("datos") && (
             <TabsTrigger
               value="datos"
               className="
-                group
+                group shrink-0
                 flex items-center justify-center gap-2
                 h-10 sm:h-11
                 px-4 sm:px-6
@@ -2092,7 +2092,7 @@ export default function InfoTabs({
             <TabsTrigger
               value="suministros"
               className="
-                group
+                group shrink-0
                 flex items-center justify-center gap-2
                 h-10 sm:h-11
                 px-4 sm:px-6
@@ -2123,7 +2123,7 @@ export default function InfoTabs({
             <TabsTrigger
               value="servicios"
               className="
-                group
+                group shrink-0
                 flex items-center justify-center gap-2
                 h-10 sm:h-11
                 px-4 sm:px-6
@@ -2154,7 +2154,7 @@ export default function InfoTabs({
             <TabsTrigger
               value="gestion"
               className="
-                group
+                group shrink-0
                 flex items-center justify-center gap-2
                 h-10 sm:h-11
                 px-4 sm:px-6
@@ -2185,7 +2185,7 @@ export default function InfoTabs({
             <TabsTrigger
               value="oportunidades"
               className="
-                group
+                group shrink-0
                 flex items-center justify-center gap-2
                 h-10 sm:h-11
                 px-4 sm:px-6
@@ -2217,7 +2217,7 @@ export default function InfoTabs({
             title="Resumen y Reportes"
             align="end"
             customTrigger={
-              <button className="flex items-center justify-center gap-3 h-10 sm:h-11 px-4 sm:px-6 text-[11px] font-black uppercase tracking-[0.12em] rounded-xl bg-green-50/70 text-green-800 border border-green-100/70 shadow-sm shadow-green-100/30 ml-auto backdrop-blur transition-all hover:bg-green-100/80 group outline-none">
+              <button className="flex items-center justify-center gap-3 h-10 sm:h-11 px-4 sm:px-6 text-[11px] font-black uppercase tracking-[0.12em] rounded-xl bg-green-50/70 text-green-800 border border-green-100/70 shadow-sm shadow-green-100/30 ml-auto backdrop-blur transition-all hover:bg-green-100/80 group outline-none shrink-0">
                 <span className="text-green-700 font-black tracking-normal">Total:</span>
                 <span className="text-[15px]">
                   $ {formatMoney(totalesLocales.total)}
@@ -2347,7 +2347,7 @@ export default function InfoTabs({
                 {/* FILA 1 */}
                 <div className="grid grid-cols-12 gap-3">
                   {/* IDENTIFICACIÓN */}
-                  <div className="col-span-12 xl:col-span-5 bg-white border border-gray-100 rounded-2xl shadow-sm p-4 space-y-3">
+                  <div className="col-span-12 xl:col-span-5 bg-white border border-gray-100 rounded-2xl shadow-sm p-4 space-y-3 relative z-10 focus-within:z-30">
 
                     <div className="flex items-center justify-between border-b pb-1">
                       <p className="text-[10px] font-black text-teal-600 uppercase tracking-wider">
@@ -2365,13 +2365,13 @@ export default function InfoTabs({
 
                     <div className="grid grid-cols-2 gap-2">
                       <InputField id="fecha" inline size="sm" label="Fecha:*" type="date" value={data.fecha || ""} onChange={(e) => handleFieldChange("fecha", e.target.value)} readOnly={isReadOnly} />
-                      <SelectField id="prob" inline size="sm" label="Probabilidad:*" value={data.prob || ""} onChange={(e) => handleFieldChange("prob", e.target.value)} options={probOptions} disabled={isReadOnly} />
+                      <SelectField id="prob" inline size="sm" label="Probabilidad:*" value={(data.prob !== undefined && data.prob !== null) ? String(data.prob) : ""} onChange={(e) => handleFieldChange("prob", e.target.value)} options={probOptions} disabled={isReadOnly} />
                     </div>
 
                   </div>
 
                   {/* CLIENTE */}
-                  <div className="col-span-12 xl:col-span-3 bg-white border border-gray-100 rounded-2xl shadow-sm p-4 space-y-3">
+                  <div className="col-span-12 xl:col-span-3 bg-white border border-gray-100 rounded-2xl shadow-sm p-4 space-y-3 relative z-10 focus-within:z-30">
                     <div className="border-b pb-1">
                       <p className="text-[10px] font-black text-teal-600 uppercase tracking-wider">Cliente</p>
                     </div>
@@ -2436,6 +2436,7 @@ export default function InfoTabs({
                         <QuickCreateClienteModal
                           open={openQuickCreate}
                           onClose={() => setOpenQuickCreate(false)}
+                          numReg={data?.id_registro || data?.num_reg}
                           onSave={async (nuevoCliente) => {
                             // 1. Ejecutas tu mutación de guardado
                             // await saveMutation.mutateAsync(nuevoCliente);
@@ -2547,7 +2548,7 @@ export default function InfoTabs({
                   </div>
 
                   {/* CONDICIONES */}
-                  <div className="col-span-12 xl:col-span-4 bg-white border border-gray-100 rounded-2xl shadow-sm p-4 space-y-3">
+                  <div className="col-span-12 xl:col-span-4 bg-white border border-gray-100 rounded-2xl shadow-sm p-4 space-y-3 relative z-10 focus-within:z-30">
                     <div className="border-b pb-1">
                       <p className="text-[10px] font-black text-teal-600 uppercase tracking-wider">
                         Condiciones comerciales
@@ -2599,8 +2600,8 @@ export default function InfoTabs({
                         inline
                         size="sm"
                         label="Forma Pago"
-                        value={data.fpago || ""}
-                        onChange={(e) => handleFieldChange("fpago", e.target.value)}
+                        value={data.forma_pago || ""}
+                        onChange={(e) => handleFieldChange("forma_pago", e.target.value)}
                         disabled={isReadOnly}
                         options={formasPagoOptions}
                       />
@@ -2634,7 +2635,7 @@ export default function InfoTabs({
                   <div className="hidden xl:block xl:col-span-2"></div>
 
                   {/* TIEMPOS */}
-                  <div className="col-span-12 xl:col-span-4 bg-white border border-gray-100 rounded-2xl shadow-sm p-4 space-y-2">
+                  <div className="col-span-12 xl:col-span-4 bg-white border border-gray-100 rounded-2xl shadow-sm p-4 space-y-2 relative z-10 focus-within:z-30">
 
                     <p className="text-[10px] font-black text-teal-600 uppercase tracking-wider">
                       Tiempos
@@ -2665,7 +2666,7 @@ export default function InfoTabs({
                   </div>
 
                   {/* FINANCIERO */}
-                  <div className="col-span-12 xl:col-span-4 bg-white border border-gray-100 rounded-2xl shadow-sm p-4 space-y-2">
+                  <div className="col-span-12 xl:col-span-4 bg-white border border-gray-100 rounded-2xl shadow-sm p-4 space-y-2 relative z-10 focus-within:z-30">
 
                     <p className="text-[10px] font-black text-teal-600 uppercase tracking-wider">
                       Financiero
@@ -2697,7 +2698,7 @@ export default function InfoTabs({
                         inline
                         size="sm"
                         label="T.C."
-                        value={data.tcamb || (esNueva ? "3.425" : "")}
+                        value={data.tcamb || (esNueva ? "3.398" : "")}
                         onChange={(e) => handleFieldChange("tcamb", e.target.value)}
                         readOnly={isReadOnly}
                       />
@@ -2735,8 +2736,8 @@ export default function InfoTabs({
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
                 {/* --- BLOQUE COMERCIAL --- */}
-                <div className="bg-white border border-gray-100 rounded-xl shadow-sm overflow-hidden transition-all hover:shadow-md">
-                  <div className="bg-gradient-to-r from-cyan-300 via-cyan-100 to-white px-4 py-2.5 flex justify-between items-center border-b border-cyan-100">
+                <div className="bg-white border border-gray-100 rounded-xl shadow-sm transition-all hover:shadow-md relative z-10 focus-within:z-30">
+                  <div className="bg-gradient-to-r from-cyan-300 via-cyan-100 to-white px-4 py-2.5 flex justify-between items-center border-b border-cyan-100 rounded-t-xl">
                     <div className="flex items-center gap-2">
                       <UserCheck className="w-4 h-4 text-cyan-700" />
                       <h4 className="text-xs font-black text-cyan-700 uppercase tracking-tight">Área Comercial</h4>
@@ -2809,8 +2810,8 @@ export default function InfoTabs({
                 </div>
 
                 {/* --- BLOQUE TÉCNICO --- */}
-                <div className="bg-white border border-gray-100 rounded-xl shadow-sm overflow-hidden transition-all hover:shadow-md">
-                  <div className="bg-gradient-to-r from-teal-300 via-teal-100 to-white px-4 py-2.5 flex justify-between items-center border-b border-teal-100">
+                <div className="bg-white border border-gray-100 rounded-xl shadow-sm transition-all hover:shadow-md relative z-10 focus-within:z-30">
+                  <div className="bg-gradient-to-r from-teal-300 via-teal-100 to-white px-4 py-2.5 flex justify-between items-center border-b border-teal-100 rounded-t-xl">
                     <div className="flex items-center gap-2">
                       <Wrench className="w-4 h-4 text-teal-700" />
                       <h4 className="text-xs font-black text-teal-700 uppercase tracking-tight">Soporte Técnico</h4>
@@ -2951,7 +2952,7 @@ export default function InfoTabs({
               </div>
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
                 <div className="overflow-x-auto">
-                  <table className="min-w-full table-fixed text-[11px] tabular-nums border-collapse">
+                  <table className="min-w-[850px] md:min-w-full table-fixed text-[11px] tabular-nums border-collapse">
 
                     {/* HEADER PRINCIPAL - Máximo Contraste */}
                     <thead className="sticky top-0 z-10 bg-white">
@@ -3232,7 +3233,7 @@ export default function InfoTabs({
           <TabsContent value="servicios" className="space-y-3">
             <CardContent className="px-1 -mt-5 pb-1 mb-3">
               <div className="overflow-x-auto rounded-md border border-slate-300 shadow-md">
-                <table className="min-w-full table-fixed text-[11px] tabular-nums border-collapse">
+                <table className="min-w-[850px] md:min-w-full table-fixed text-[11px] tabular-nums border-collapse">
 
                   {/* HEADER PRINCIPAL */}
                   <thead className="sticky top-0 z-20">

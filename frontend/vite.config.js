@@ -20,6 +20,9 @@ export default defineConfig(({ mode }) => {
       VitePWA({
         registerType: 'autoUpdate',
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
+        workbox: {
+          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024
+        },
         manifest: {
           name: 'V&C Cotizaciones ERP',
           short_name: 'V&C ERP',
@@ -74,6 +77,6 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
-    base: mode === 'production' ? './' : '/',
+    base: './',
   };
 });

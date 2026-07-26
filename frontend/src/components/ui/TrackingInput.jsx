@@ -19,8 +19,6 @@ const TrackingInput = memo(({
   value, 
   onChange, 
   onAddNote, 
-  selectedType, 
-  onTypeChange, 
   isAlert, 
   onAlertChange 
 }) => {
@@ -28,12 +26,6 @@ const TrackingInput = memo(({
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const textareaRef = useRef(null);
 
-  const COMMANDS = [
-    { key: 'L', cmd: '/llamada', icon: 'phone' },
-    { key: 'C', cmd: '/correo', icon: 'mail' },
-    { key: 'M', cmd: '/mensaje', icon: 'send' },
-    { key: 'N', cmd: '/nota', icon: 'message-square' }
-  ];
 
   useEffect(() => {
     if (value !== localValue) {
@@ -50,25 +42,7 @@ const TrackingInput = memo(({
 
   const handleKeyDown = (e) => {
     if (e.key === 'Tab' || e.key === ' ') {
-      const words = localValue.split(' ');
-      const inputCmd = words[0].toLowerCase();
-
-      if (inputCmd.startsWith('/') && inputCmd.length >= 2) {
-        const match = COMMANDS.find(c => c.cmd.startsWith(inputCmd));
-        
-        if (match && inputCmd !== match.cmd) {
-          e.preventDefault();
-          const restOfText = localValue.substring(words[0].length);
-          const newValue = match.cmd + ' ' + restOfText.trimStart();
-          setLocalValue(newValue);
-          onTypeChange(match.key);
-          return;
-        }
-        
-        if (match && inputCmd === match.cmd) {
-          onTypeChange(match.key);
-        }
-      }
+      // Logic for commands removed
     }
 
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -79,78 +53,37 @@ const TrackingInput = memo(({
 
   const handleChange = (val) => {
     setLocalValue(val);
-
-    const firstWord = val.split(' ')[0].toLowerCase();
-    const exactMatch = COMMANDS.find(c => c.cmd === firstWord);
-    
-    if (exactMatch) {
-      onTypeChange(exactMatch.key);
-    } else if (!val.startsWith('/')) {
-      onTypeChange('N');
-    }
+    if (typeof onChange === 'function') onChange(val);
   };
 
-  const handleTypeClick = (type) => {
-    const target = COMMANDS.find(c => c.key === type);
-    onTypeChange(type);
-    
-    let newValue = localValue;
-    if (!localValue.trim() || localValue.startsWith('/')) {
-      const words = localValue.split(' ');
-      const rest = words.slice(1).join(' ');
-      newValue = target.cmd + ' ' + rest;
-      setLocalValue(newValue);
-      onChange(newValue);
-    }
-    
-    if (textareaRef.current) {
-      textareaRef.current.focus();
-    }
-  };
 
   return (
-    <div className="p-3 bg-white border-t border-gray-100">
-      <div className="relative bg-gray-50 border border-gray-200 rounded-xl shadow-sm focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-400 transition-all p-1.5">
+    <div className="bg-white border-t border-slate-100">
+      <div className="relative">
         
         {isAlert && (
-          <div className="absolute -top-3 left-3 px-2 py-0.5 bg-amber-500 text-white text-[9px] font-black rounded-full flex items-center gap-1 shadow-sm animate-in fade-in zoom-in">
+          <div className="absolute -top-3 left-4 z-20 px-2 py-0.5 bg-indigo-600 text-white text-[8px] font-black rounded-full flex items-center gap-1 shadow-md animate-in fade-in slide-in-from-bottom-1">
             <Bell className="h-2.5 w-2.5 fill-current" />
-            AGENDADO: {isAlert.toLocaleString('es-PE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-            <button onClick={() => onAlertChange(null)} className="ml-1 hover:text-amber-200">
+            RECORDATORIO: {isAlert.toLocaleString('es-PE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+            <button onClick={() => onAlertChange(null)} className="ml-1 hover:text-indigo-200">
               <X className="h-2.5 w-2.5" />
             </button>
           </div>
         )}
 
-        <textarea
-          ref={textareaRef}
-          value={localValue}
-          onChange={(e) => handleChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Escribe /ll, /cor, /me... y presiona Espacio o Tab"
-          className="w-full bg-transparent border-none focus:ring-0 text-[11px] text-gray-700 resize-none py-1 px-2 min-h-[40px] max-h-[100px]"
-        />
+        <div className="flex">
+          <textarea
+            ref={textareaRef}
+            value={localValue}
+            onChange={(e) => handleChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Escribe un mensaje de seguimiento..."
+            className="w-full bg-transparent border-none focus:ring-0 outline-none text-[11px] font-black text-slate-700 resize-none py-3 px-5 min-h-[40px] max-h-[150px] placeholder:text-slate-300 placeholder:font-black uppercase tracking-tight"
+          />
+        </div>
         
-        <div className="flex items-center justify-between border-t border-gray-100 pt-1.5 px-1">
-          <div className="flex items-center gap-1.5">
-            <div className="flex bg-gray-200/50 p-0.5 rounded-lg border border-gray-200">
-              {COMMANDS.map((t) => (
-                <button
-                  key={t.key}
-                  type="button"
-                  onClick={() => handleTypeClick(t.key)}
-                  className={`flex items-center px-2 py-1 rounded-md text-[9px] font-black transition-all ${
-                    selectedType === t.key 
-                    ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-black/5' 
-                    : 'text-gray-400 hover:text-gray-600'
-                  }`}
-                >
-                  <Icon name={t.icon} className="h-2.5 w-2.5 mr-1" />
-                  {selectedType === t.key && t.cmd.replace('/', '').toUpperCase()}
-                </button>
-              ))}
-            </div>
-
+        <div className="flex items-center justify-between py-2 px-5 bg-slate-50/50 border-t border-slate-100/50">
+          <div className="flex items-center gap-2">
             <ActionMenu 
                 title="Programar Agenda"
                 align="start"
@@ -161,24 +94,33 @@ const TrackingInput = memo(({
                 customTrigger={
                     <button 
                         type="button"
-                        className={`p-1.5 rounded-lg border transition-all ${
-                            isAlert ? 'bg-amber-100 text-amber-600 border-amber-200' : 'bg-white text-gray-300 border-gray-200 hover:border-amber-300'
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[9px] font-black uppercase transition-all ${
+                            isAlert ? 'bg-indigo-50 text-indigo-600 border-indigo-200' : 'bg-white text-slate-400 border-slate-200 hover:border-indigo-300 hover:text-indigo-500'
                         }`}
                         onClick={() => {
                             if(!isAlert) onAlertChange(new Date()); 
                             setIsMenuOpen(true);
                         }}
                     >
-                        <Icon name="bell" className={`h-3.5 w-3.5 ${isAlert ? 'fill-current' : ''}`} />
+                        <Icon name="bell" className={`h-3 w-3 ${isAlert ? 'fill-current' : ''}`} />
+                        {isAlert ? 'Agendado' : 'Agendar'}
                     </button>
                 }
             >
+                {/* Contenido del Menu - Mantener igual */}
                 <div className="p-3 bg-white">
                     <div className="flex gap-4 items-stretch">
-                        
                         <div 
                             className="border-r border-slate-100 pr-4"
                             onClick={(e) => e.stopPropagation()} 
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setIsMenuOpen(false);
+                                    textareaRef.current?.focus();
+                                }
+                            }}
                         >
                             <DatePicker
                                 selected={isAlert instanceof Date ? isAlert : new Date()}
@@ -206,6 +148,7 @@ const TrackingInput = memo(({
                             e.preventDefault();
                             e.stopPropagation();
                             setIsMenuOpen(false);
+                            textareaRef.current?.focus();
                             }
                         }}
                         >
@@ -226,11 +169,6 @@ const TrackingInput = memo(({
                                 updatedDate.setMinutes(parseInt(minutes, 10));
                                 onAlertChange(updatedDate);
                                 }}
-                                onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                    setIsMenuOpen(false);
-                                }
-                                }}
                             />
                             </div>
 
@@ -246,9 +184,9 @@ const TrackingInput = memo(({
                             </div>
                             </div>
                             
-                            <div className="flex flex-col gap-1 items-center opacity-40">
-                            <span className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter text-center">
-                                Esc para salir • Enter para guardar
+                            <div className="flex flex-col gap-1 items-center">
+                            <span className="text-[8px] font-black text-indigo-600 uppercase tracking-widest text-center animate-pulse">
+                                Presiona Enter para Confirmar
                             </span>
                             </div>
                         </div>
@@ -262,11 +200,12 @@ const TrackingInput = memo(({
             type="button"
             onClick={handleSend}
             disabled={!localValue.trim()}
-            className={`h-7 w-7 rounded-lg flex items-center justify-center transition-all ${
-              localValue.trim() ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-400'
+            className={`h-8 px-4 rounded-xl flex items-center gap-2 transition-all font-black text-[10px] uppercase tracking-wider ${
+              localValue.trim() ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 active:scale-95' : 'bg-slate-100 text-slate-300 cursor-not-allowed'
             }`}
           >
-            <Icon name="arrow-up" className="h-4 w-4" />
+            Enviar
+            <Icon name="arrow-up" className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>

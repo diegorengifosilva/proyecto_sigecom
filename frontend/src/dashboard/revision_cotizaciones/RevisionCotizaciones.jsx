@@ -26,7 +26,7 @@ const fetchCotizacionesAprobacion = async ({ queryKey }) => {
   const token = localStorage.getItem("access_token");
 
   const { data } = await api.get(
-    "cotizaciones/aprobacion_cotizacion",
+    "cotizaciones/lista_cotizaciones/",
     {
       headers: { Authorization: `Bearer ${token}` },
       params,

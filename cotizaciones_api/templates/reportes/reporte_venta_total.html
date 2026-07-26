@@ -1,5 +1,6 @@
 {% load static %}
 {% load humanize %}
+{% load currency %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -94,7 +95,7 @@
         tbody tr:nth-child(even) { background: #f9fafb; }
 
         /* Alineaciones y Formatos */
-        .text-right { text-align: right; font-variant-numeric: tabular-nums; }
+        .text-right { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
         .text-center { text-align: center; }
         .font-bold { font-weight: 700; }
         .bg-envio { background: #f0fdfa; } /* Un toque verde suave para columnas de envío */
@@ -160,20 +161,20 @@
                 <td class="text-center">{{ forloop.counter }}</td>
                 <td style="font-size: 10px; max-width: 300px;">{{ item.des }}</td>
                 <td class="text-center">{{ item.can|floatformat:0 }}</td>
-                <td class="text-center">{{ item.puc|floatformat:2|intcomma }}</td>
-                <td class="text-center">{{ item.toc|floatformat:2|intcomma }}</td>
+                <td class="text-center">{{ item.puc|format_custom:moneda }}</td>
+                <td class="text-center">{{ item.toc|format_custom:moneda }}</td>
                 <td class="text-center">{{ item.por_env|floatformat:2 }}%</td>
-                <td class="text-center">{{ item.env_u|floatformat:2|intcomma }}</td>
+                <td class="text-center">{{ item.env_u|format_custom:moneda }}</td>
                 <td class="text-center font-bold" style="background-color: #fafafa;">
-                    {{ item.cce|floatformat:2|intcomma }}
+                    {{ item.cce|format_custom:moneda }}
                 </td>
                 
                 <td class="text-center">{{ item.util_porc|floatformat:0 }}%</td>
-                <td class="text-center">{{ item.tou|floatformat:2|intcomma }}</td>
+                <td class="text-center">{{ item.tou|format_custom:moneda }}</td>
                 
-                <td class="text-center">{{ item.val|floatformat:2|intcomma }}</td>
+                <td class="text-center">{{ item.val|format_custom:moneda }}</td>
                 <td class="text-center font-bold" style="color: #0f766e; background-color: #f0fdfa;">
-                    {{ item.tot|floatformat:2|intcomma }}
+                    {{ item.tot|format_custom:moneda }}
                 </td>
             </tr>
             {% endfor %}
@@ -203,6 +204,13 @@ document.getElementById("btnExportarExcel").addEventListener("click", function()
     link.click();
 });
 </script>
-
+<script>
+  window.focus();
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      window.parent.postMessage({ type: 'close-report-modal' }, '*');
+    }
+  });
+</script>
 </body>
 </html>

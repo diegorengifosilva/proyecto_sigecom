@@ -46,13 +46,27 @@ class UsuarioSerializer(serializers.ModelSerializer):
             'activo'
         ]
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        nombre = data.get("nombre_completo") or ""
+        if nombre.strip().upper() == "PEDRO EDUARDO BONILLA CORNEJO":
+            data["nombre_completo"] = "Eduardo Bonilla Cornejo"
+        elif nombre.strip().upper() == "ANA CLAUDIA CARBONEL GOMERO":
+            data["nombre_completo"] = "Claudia Carbonel Gomero"
+        return data
+
 # Token Perzonalizado para login
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
         token['user_id'] = user.usuario
-        token['nombre'] = user.nombre_completo or ''
+        nombre = (user.nombre_completo or '').strip()
+        if nombre.upper() == "PEDRO EDUARDO BONILLA CORNEJO":
+            nombre = "Eduardo Bonilla Cornejo"
+        elif nombre.upper() == "ANA CLAUDIA CARBONEL GOMERO":
+            nombre = "Claudia Carbonel Gomero"
+        token['nombre'] = nombre
         # Usamos los IDs de las relaciones para el token
         token['id_area'] = user.id_area.id_area if user.id_area else None
         token['id_cargo'] = user.id_cargo.id_cargo if user.id_cargo else None
@@ -61,10 +75,14 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 # Area
 class AreasSerializer(serializers.ModelSerializer):
     std = serializers.CharField(allow_null=True, required=False, allow_blank=True)
+    codigo = serializers.SerializerMethodField()
 
     class Meta:
         model = Area
         fields = "__all__"
+
+    def get_codigo(self, obj):
+        return obj.id_area
 
 # Cargo
 class CargosSerializer(serializers.ModelSerializer):

@@ -21,7 +21,7 @@ export default function NotasModal({ open, onClose, onAceptar }) {
     const fetchNotas = async () => {
       setLoading(true);
       try {
-        const res = await api.get("/cotizaciones/notas/");
+        const res = await api.get("/core/notas/");
         // Mantenemos la lógica de mostrar solo activos: '1'
         setNotasDB(res.data.filter((n) => n.activo === "1"));
       } catch (err) {
@@ -52,7 +52,7 @@ export default function NotasModal({ open, onClose, onAceptar }) {
     const textosSeleccionados = notasDB
       .filter((n) => seleccionados.has(n.codigo))
       .map((n) => n.nombre);
-    
+
     // Le pasamos los textos al padre
     if (onAceptar) onAceptar(textosSeleccionados);
     onClose();
@@ -68,7 +68,7 @@ export default function NotasModal({ open, onClose, onAceptar }) {
     <Dialog open={open} onOpenChange={onClose}>
       {/* max-w-2xl para que sea más angosto y parezca submodal */}
       <DialogContent className="max-w-3xl h-[80vh] p-0 overflow-hidden flex flex-col bg-white border border-slate-200 shadow-2xl rounded-2xl animate-in fade-in zoom-in duration-200">
-        
+
         {/* HEADER MODERNO */}
         <div className="bg-slate-50 px-5 py-3.5 border-b border-slate-100 shrink-0 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -107,11 +107,11 @@ export default function NotasModal({ open, onClose, onAceptar }) {
         <div className="flex-1 overflow-y-auto p-3 bg-slate-50/50">
           {loading ? (
             <div className="text-center py-12 text-slate-400 text-xs font-bold uppercase tracking-widest animate-pulse">
-                Cargando notas...
+              Cargando notas...
             </div>
           ) : error ? (
             <div className="flex flex-col items-center gap-3 text-center py-12 px-6 border border-dashed border-red-200 bg-red-50 rounded-xl">
-              <AlertTriangle className="text-red-500" size={32}/>
+              <AlertTriangle className="text-red-500" size={32} />
               <p className="text-xs font-bold text-red-900 leading-relaxed">{error}</p>
             </div>
           ) : notasFiltradas.length === 0 ? (
@@ -124,28 +124,26 @@ export default function NotasModal({ open, onClose, onAceptar }) {
                 <div
                   key={nota.codigo || index}
                   onClick={() => toggleSeleccion(nota.codigo)}
-                  className={`flex items-start gap-4 p-4 rounded-xl border transition-all cursor-pointer group ${
-                    seleccionados.has(nota.codigo)
+                  className={`flex items-start gap-4 p-4 rounded-xl border transition-all cursor-pointer group ${seleccionados.has(nota.codigo)
                       ? "bg-sky-50 border-sky-200 shadow-sm"
                       : "bg-white border-transparent hover:border-slate-100 hover:bg-slate-50 hover:shadow-inner"
-                  }`}
+                    }`}
                 >
                   {/* CHECKBOX MODERNO */}
-                  <div className={`mt-0.5 shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
-                    seleccionados.has(nota.codigo)
+                  <div className={`mt-0.5 shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${seleccionados.has(nota.codigo)
                       ? "bg-sky-600 border-sky-600"
                       : "border-slate-200 group-hover:border-sky-300"
-                  }`}>
-                    {seleccionados.has(nota.codigo) && <Check size={12} className="text-white" strokeWidth={3}/>}
+                    }`}>
+                    {seleccionados.has(nota.codigo) && <Check size={12} className="text-white" strokeWidth={3} />}
                   </div>
-                  
+
                   {/* TEXTO */}
                   <div className="flex-1 leading-relaxed">
-                    <p className={`text-xs ${ seleccionados.has(nota.codigo) ? "text-sky-950 font-medium" : "text-slate-600"}`}>
-                        {nota.nombre}
+                    <p className={`text-xs ${seleccionados.has(nota.codigo) ? "text-sky-950 font-medium" : "text-slate-600"}`}>
+                      {nota.nombre}
                     </p>
                   </div>
-                  
+
                   {/* CÓDIGO (opcional, como en tu imagen) */}
                   <div className="shrink-0 text-[9px] font-mono text-slate-300 bg-slate-100 px-1 py-0.5 rounded">
                     {nota.codigo || 'S/C'}
@@ -159,7 +157,7 @@ export default function NotasModal({ open, onClose, onAceptar }) {
         {/* FOOTER DE GESTIÓN */}
         <div className="bg-white border-t border-slate-100 px-6 py-3.5 flex justify-between items-center shrink-0">
           <div className="flex items-center gap-2 text-[10px] text-slate-500 font-medium">
-             <TextCursorInput size={14} className="text-sky-500"/> Se insertarán las notas seleccionadas en el editor
+            <TextCursorInput size={14} className="text-sky-500" /> Se insertarán las notas seleccionadas en el editor
           </div>
           <div className="flex gap-3">
             <Button
@@ -169,15 +167,14 @@ export default function NotasModal({ open, onClose, onAceptar }) {
             >
               Cancelar
             </Button>
-            
+
             <Button
               onClick={handleAceptar}
               disabled={seleccionados.size === 0}
-              className={`text-[11px] font-black uppercase tracking-widest px-8 rounded-xl h-9 transition-all ${
-                seleccionados.size > 0 
-                ? "bg-sky-600 text-white hover:bg-sky-700 shadow"
-                : "bg-slate-100 text-slate-400 cursor-not-allowed"
-              }`}
+              className={`text-[11px] font-black uppercase tracking-widest px-8 rounded-xl h-9 transition-all ${seleccionados.size > 0
+                  ? "bg-sky-600 text-white hover:bg-sky-700 shadow"
+                  : "bg-slate-100 text-slate-400 cursor-not-allowed"
+                }`}
             >
               Insertar {seleccionados.size > 0 ? `(${seleccionados.size})` : ""}
             </Button>

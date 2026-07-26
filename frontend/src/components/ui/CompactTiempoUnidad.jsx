@@ -9,8 +9,10 @@ export const CompactTiempoUnidad = ({ label, value, onValueChange, unitValue, on
         {/* Valor Numérico */}
         <input
           type="number"
-          value={value || "0"}
-          onChange={onValueChange}
+          defaultValue={value || "0"}
+          key={value}
+          onBlur={onValueChange}
+          onKeyDown={(e) => e.key === 'Enter' && e.target.blur()}
           readOnly={isReadOnly}
           className="bg-transparent border-none p-0 h-auto w-8 font-black text-[10px] text-gray-900 focus:ring-0 outline-none"
         />

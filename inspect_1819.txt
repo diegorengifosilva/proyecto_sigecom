@@ -1,0 +1,106 @@
+Created At: 2026-05-27T19:17:43Z
+Completed At: 2026-05-27T19:17:44Z
+File Path: `file:///c:/Users/VC-23031/PROYECTOS/SIGECOM_5/frontend/src/dashboard/comercial/CotizacionPremiumDetail.jsx`
+Total Lines: 5789
+Total Bytes: 279575
+Showing lines 5080 to 5350
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+5080:               {sug.descripcion}
+5081:             </span>
+5082:             <div className="flex items-center justify-between text-[9px] text-gray-400 mt-0.5 font-bold uppercase">
+5083:               <span>Unid: {sug.unidad || "UNI"}</span>
+5084:               <span className="text-gray-600 font-black">
+5085:                 Costo: {formatMoney(sug.costoPrecio)}
+5086:               </span>
+5087:             </div>
+5088:           </div>
+5089:         );
+5090:       })}
+5091:     </div>
+5092:   );
+5093: };
+5094: 
+5095: const SortableItemRow = ({
+5096:   item,
+5097:   isReadOnly,
+5098:   editingItemId,
+5099:   editForm,
+5100:   setEditForm,
+5101:   startEditItem,
+5102:   handleEliminarItem,
+5103:   saveEditItem,
+5104:   cancelEditItem,
+5105:   formatMoney,
+5106:   proveedores = [],
+5107:   tcamb = 1,
+5108:   handleRowChange,
+5109:   handleEditRowLookup,
+5110:   normalizarProductoDB,
+5111:   recalculateRowValues,
+5112:   tipoMoneda,
+5113: }) => {
+5114:   const {
+5115:     attributes,
+5116:     listeners,
+5117:     setNodeRef,
+5118:     transform,
+5119:     transition,
+5120:     isDragging,
+5121:   } = useSortable({
+5122:     id: `item-${item.id_suministro}`,
+5123:     data: {
+5124:       type: 'item',
+5125:       id_suministro: item.id_suministro
+5126:     }
+5127:   });
+5128: 
+5129:   const style = {
+5130:     transform: transform ? CSS.Transform.toString(transform) : undefined,
+5131:     transition,
+5132:     opacity: isDragging ? 0.5 : 1,
+5133:   };
+5134: 
+5135:   const itemId = item.id_suministro;
+5136: 
+5137:   const pro
+<truncated 8835 bytes>
+ tracking-tighter">{item.marca_nombre}</span>
+5313:           )}
+5314:         </div>
+5315:       </td>
+5316:       {/* Descripción / Observación */}
+5317:       <td className="px-3 py-1 text-center">
+5318:         <div className="flex flex-col items-center justify-center text-center">
+5319:           <span className="text-[12px] text-gray-600 font-semibold leading-tight line-clamp-2" title={item.descripcion}>
+5320:             {item.descripcion}
+5321:           </span>
+5322:           {item.observacion && (
+5323:             <span className="text-[9.5px] text-gray-400 italic mt-0.5">{item.observacion}</span>
+5324:           )}
+5325:         </div>
+5326:       </td>
+5327:       {/* Cantidad */}
+5328:       <td className="px-3 py-1 text-[12px] text-gray-900 text-center font-bold">{item.cantidad}</td>
+5329:       {/* Costo Unitario */}
+5330:       <td className="px-3 py-1 text-[12px] text-gray-500 font-medium text-center">
+5331:         {formatMoney(item.costo_precio)}
+5332:       </td>
+5333:       {/* % Utilidad */}
+5334:       <td className="px-3 py-1 text-[12px] text-gray-500 font-medium text-center">
+5335:         {Number(item.porcentaje_utilidad || 0).toFixed(1)}%
+5336:       </td>
+5337:       {/* Precio Unitario */}
+5338:       <td className="px-3 py-1 text-[12px] text-gray-500 font-medium text-center">
+5339:         {formatMoney(item.precio_venta)}
+5340:       </td>
+5341:       {/* Venta Total */}
+5342:       <td className="px-3 py-1 text-[12px] font-black text-gray-900 text-center">
+5343:         {formatMoney(item.venta_total)}
+5344:       </td>
+5345:       {/* Acciones */}
+5346:       <td className="px-3 py-1 align-middle">
+5347:         <div className="flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+5348:           {!isReadOnly && (
+5349:             <>
+5350:               <button
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.

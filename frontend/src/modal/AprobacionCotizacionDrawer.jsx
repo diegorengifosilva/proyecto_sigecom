@@ -258,7 +258,7 @@ export default function AprobacionCotizacionDrawer({ open, onClose, cotizacion, 
     setError("");
 
     try {
-      const res = await api.get(`cotizaciones/modal/${num_reg}/`);
+      const res = await api.get(`cotizaciones/cotizacion_detalle/${num_reg}/`);
 
       setData(res.data);
 
@@ -1190,7 +1190,7 @@ export default function AprobacionCotizacionDrawer({ open, onClose, cotizacion, 
     if (!num_reg) return;
 
     try {
-      const res = await api.get(`cotizacion/${num_reg}/servicios/`);
+      const res = await api.get(`cotizaciones/lista_servicios/${num_reg}/`);
 
       const lista = Array.isArray(res.data) ? res.data : [];
 
@@ -1590,7 +1590,7 @@ export default function AprobacionCotizacionDrawer({ open, onClose, cotizacion, 
   const condicionesGenerales = useMutation({
     mutationFn: (texto) =>
       api.post(
-        `cotizaciones/${numReg}/condiciones-generales/`,
+        `cotizaciones/condiciones-generales/${numReg}/`,
         { condiciones: texto }
       ),
 
@@ -1616,7 +1616,7 @@ export default function AprobacionCotizacionDrawer({ open, onClose, cotizacion, 
     queryKey: ["condiciones-generales", numReg],
     queryFn: async () => {
       const res = await api.get(
-        `cotizaciones/${numReg}/condiciones-generales/`
+        `cotizaciones/condiciones-generales/${numReg}/`
       );
       return res.data.condiciones;
     },
@@ -1800,7 +1800,7 @@ export default function AprobacionCotizacionDrawer({ open, onClose, cotizacion, 
 
   const handleNuevaVersion = useMutation({
     mutationFn: () =>
-      api.post(`cotizaciones/${cotizacionVista}/nueva-version/`),
+      api.post(`cotizaciones/nueva-version/${cotizacionVista}/`),
 
     onSuccess: (res) => {
       const { num_reg, cotin } = res.data;
@@ -1849,7 +1849,7 @@ export default function AprobacionCotizacionDrawer({ open, onClose, cotizacion, 
       try {
         // Lanzamos ambas peticiones en paralelo
         const [resCotizacion, resOportunidad] = await Promise.all([
-          api.get(`cotizaciones/modal/${cotizacionVista}/`),
+          api.get(`cotizaciones/cotizacion_detalle/${cotizacionVista}/`),
           api.get(`oportunidades/modal/${cotizacionVista}/`).catch(err => {
             console.warn("⚠️ No se encontró registro de oportunidad para este ID, usando datos vacíos.");
             return { data: {} }; // Si falla la op, devolvemos objeto vacío para no romper el flujo
@@ -1920,7 +1920,7 @@ export default function AprobacionCotizacionDrawer({ open, onClose, cotizacion, 
 
   const enviarCotizacionAprobacion = useMutation({
     mutationFn: () =>
-      api.patch(`cotizaciones/${numReg}/enviar-aprobacion/`, {
+      api.patch(`cotizaciones//enviar-aprobacion/${numReg}/`, {
         estado_codigo: 3,
       }),
 
@@ -2142,7 +2142,7 @@ export default function AprobacionCotizacionDrawer({ open, onClose, cotizacion, 
 
       // Pago / Moneda / Totales (Pestaña DATOS)
       tot_c: Number(data.tot_c || 0),
-      fpago: data.fpago || "",
+      forma_pago: data.forma_pago || "",
       lugar: data.lugar || "",
       tmone: data.tmone || "D", // Dólares por defecto
       tcamb: Number(data.tcamb || 0),
@@ -2222,7 +2222,7 @@ export default function AprobacionCotizacionDrawer({ open, onClose, cotizacion, 
   const CAMPOS_OBLIGATORIOS = [
     { key: "fecha", label: "Fecha" },
     { key: "referencia", label: "Referencia" },
-    { key: "cliente_codigo", label: "Para (Cliente)" },
+    { key: "id_cliente", label: "Para (Cliente)" },
     { key: "prob", label: "Probabilidad" },
     { key: "cotit", label: "Tipo Cotización" },
     { key: "area_codigo", label: "Área" },
@@ -2551,426 +2551,426 @@ export default function AprobacionCotizacionDrawer({ open, onClose, cotizacion, 
             ref={isPage ? undefined : (el) => el?.focus()}
           >
 
-        {/* ENCABEZADO EJECUTIVO ERP */}
-        <div className="relative bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between shrink-0">
-          {/* IZQUIERDA */}
-          <div className="flex items-center gap-4">
-            {/* Avatar inteligente cliente */}
-            <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl lg:rounded-2xl bg-teal-600 flex items-center justify-center text-white font-black text-sm lg:text-base shadow-lg shadow-teal-100">
-              {data?.cliente_nombre?.charAt(0) || "C"}
-            </div>
-            {/* CONTEXTO DOCUMENTO */}
-            <div>
-              {/* Breadcrumb ERP */}
-              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none">
-                Gestión Comercial / {esOportunidad ? "Oportunidades" : "Cotizaciones"}
-              </p>
+            {/* ENCABEZADO EJECUTIVO ERP */}
+            <div className="relative bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between shrink-0">
+              {/* IZQUIERDA */}
+              <div className="flex items-center gap-4">
+                {/* Avatar inteligente cliente */}
+                <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl lg:rounded-2xl bg-teal-600 flex items-center justify-center text-white font-black text-sm lg:text-base shadow-lg shadow-teal-100">
+                  {data?.cliente_nombre?.charAt(0) || "C"}
+                </div>
+                {/* CONTEXTO DOCUMENTO */}
+                <div>
+                  {/* Breadcrumb ERP */}
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none">
+                    Gestión Comercial / {esOportunidad ? "Oportunidades" : "Cotizaciones"}
+                  </p>
 
-              {/* Número documento */}
-              <div className="flex items-center gap-2">
+                  {/* Número documento */}
+                  <div className="flex items-center gap-2">
 
-                <h2 className="text-sm lg:text-xl font-black tracking-tight text-slate-800 uppercase leading-none">
-                  {esOportunidad ? "Oportunidad" : "Cotización"} {data?.numero || ""}
-                </h2>
+                    <h2 className="text-sm lg:text-xl font-black tracking-tight text-slate-800 uppercase leading-none">
+                      {esOportunidad ? "Oportunidad" : "Cotización"} {data?.numero || ""}
+                    </h2>
 
-                {/* Registro interno */}
-                <span className="hidden sm:inline-block px-1.5 py-0.5 bg-slate-100 text-slate-600 text-[9px] lg:text-[11px] font-bold rounded-md border border-slate-200">
-                  {data?.num_reg || ""}
-                </span>
+                    {/* Registro interno */}
+                    <span className="hidden sm:inline-block px-1.5 py-0.5 bg-slate-100 text-slate-600 text-[9px] lg:text-[11px] font-bold rounded-md border border-slate-200">
+                      {data?.num_reg || ""}
+                    </span>
+
+                  </div>
+
+                  {/* Cliente */}
+                  <p className="text-[10px] lg:text-xs font-bold text-slate-500 uppercase mt-0.5 truncate max-w-[200px] lg:max-w-none">
+                    {data?.cliente_nombre || "Seleccione un cliente"}
+                  </p>
+
+                </div>
+              </div>
+
+              {/* DERECHA → PANEL EJECUTIVO */}
+              <div className="flex gap-4 lg:gap-8 items-center">
+                {/* Área / Tipo */}
+                <div className="hidden sm:block text-right border-r border-slate-100 pr-4">
+                  <p className="text-[8px] lg:text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
+                    Área / Tipo
+                  </p>
+                  <p className="text-[10px] lg:text-xs font-black text-teal-600 uppercase mt-1">
+                    {data?.area_nombre || "General"} • {data?.tipo_nombre || "Venta"}
+                  </p>
+                </div>
+
+                {/* Probabilidad */}
+                <div className="hidden lg:block text-right">
+                  <p className="text-[8px] lg:text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
+                    Probabilidad
+                  </p>
+
+                  <p className="text-[10px] lg:text-xs font-black text-indigo-600 mt-1">
+                    {['Baja', 'Media', 'Alta', 'Muy Alta'][data?.prob ?? 0]}
+                  </p>
+                </div>
 
               </div>
 
-              {/* Cliente */}
-              <p className="text-[10px] lg:text-xs font-bold text-slate-500 uppercase mt-0.5 truncate max-w-[200px] lg:max-w-none">
-                {data?.cliente_nombre || "Seleccione un cliente"}
-              </p>
-
-            </div>
-          </div>
-
-          {/* DERECHA → PANEL EJECUTIVO */}
-          <div className="flex gap-4 lg:gap-8 items-center">
-            {/* Área / Tipo */}
-            <div className="hidden sm:block text-right border-r border-slate-100 pr-4">
-              <p className="text-[8px] lg:text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
-                Área / Tipo
-              </p>
-              <p className="text-[10px] lg:text-xs font-black text-teal-600 uppercase mt-1">
-                {data?.area_nombre || "General"} • {data?.tipo_nombre || "Venta"}
-              </p>
             </div>
 
-            {/* Probabilidad */}
-            <div className="hidden lg:block text-right">
-              <p className="text-[8px] lg:text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
-                Probabilidad
-              </p>
+            {/* CONTENIDO SCROLLABLE */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar">
+              {/* ESTADOS */}
+              {loading ? (
+                <div className="flex items-center justify-center py-20">
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="w-10 h-10 border-4 border-cyan-200 border-t-cyan-600 rounded-full animate-spin" />
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest animate-pulse">Cargando datos...</span>
+                  </div>
+                </div>
+              ) : !data ? (
+                <p className="text-gray-500 text-center py-4">No se encontró la cotización.</p>
+              ) : (
+                <>
+                  {/* TABS DINÁMICOS */}
+                  <InfoTabs
+                    data={data}
+                    setData={setData}
+                    suministros={Array.isArray(suministros) ? suministros : []} // siempre un array
+                    servicios={Array.isArray(servicios) ? servicios : []}
+                    esOportunidad={esOportunidad}
+                    modo={modo}
+                    esNueva={esNueva}
+                    esVer={esVer}
+                    openEncargados={openEncargados}
+                    setOpenEncargados={setOpenEncargados}
+                    activeTab={tabActiva}
+                    onChangeTab={setTabActiva}
+                    totalesLocales={totalesLocales}
+                    openClienteModal={() => setOpenClienteModal(true)}
+                    // SUMINISTROS
+                    openGrupoModal={openGrupoModal}
+                    setOpenGrupoModal={setOpenGrupoModal}
+                    gruposSuministros={gruposSuministros}
+                    setGruposSuministros={setGruposSuministros}
+                    openItemModal={openItemModal}
+                    setOpenItemModal={setOpenItemModal}
+                    openRegistroItem={openRegistroItem}
+                    setOpenRegistroItem={setOpenRegistroItem}
+                    grupoActivo={grupoActivo}
+                    setGrupoActivo={setGrupoActivo}
+                    handleRefreshSuministros={handleRefreshSuministros}
+                    loadingSuministros={loadingSuministros}
+                    setLoadingSuministros={setLoadingSuministros}
+                    onDuplicarGrupo={handleDuplicarGrupo}
+                    openImportarXLS1={openImportarXLS1}
+                    setOpenImportarXLS1={setOpenImportarXLS1}
+                    setOpenImportarXLS2={setOpenImportarXLS2}
+                    // SERVICIOS
+                    gruposServicios={gruposServicios}
+                    setGruposServicios={setGruposServicios}
+                    setServicioActivo={setServicioActivo}
+                    openServicioModal={openServicioModal}
+                    setOpenServicioModal={setOpenServicioModal}
+                    selectedServicioId={selectedServicioId}
+                    setSelectedServicioId={setSelectedServicioId}
+                    handleDuplicarServicio={handleDuplicarServicio}
+                    selectedSubgrupoId={selectedSubgrupoId}
+                    setSelectedSubgrupoId={setSelectedSubgrupoId}
+                    openSubgrupoModal={openSubgrupoModal}
+                    setOpenSubgrupoModal={setOpenSubgrupoModal}
+                    setSubgrupoActivo={setSubgrupoActivo}
+                    selectedTipoCodigo={selectedTipoCodigo}
+                    setSelectedTipoCodigo={setSelectedTipoCodigo}
+                    onAgregarItemServicio={abrirModalRegistroPorTipo}
+                    openRegistroMO={openRegistroMO}
+                    setOpenRegistroMO={setOpenRegistroMO}
+                    openRegistroGS={openRegistroGS}
+                    setOpenRegistroGS={setOpenRegistroGS}
+                    openRegistroOtros={openRegistroOtros}
+                    setOpenRegistroOtros={setOpenRegistroOtros}
+                    itemActivo={itemActivo}
+                    setItemActivo={setItemActivo}
+                    // GESTION
+                    descuentosForm={descuentosForm}
+                    openContactos={openContactos}
+                    setOpenContactos={setOpenContactos}
+                    openCondiciones={openCondiciones}
+                    setOpenCondiciones={setOpenCondiciones}
+                    openGenerarCodigo={openGenerarCodigo}
+                    setOpenGenerarCodigo={setOpenGenerarCodigo}
+                    onAbrirCotizacionPDF={handleAbrirCotizacionPDF}
+                    openDescuentos={openDescuentos}
+                    setOpenDescuentos={setOpenDescuentos}
+                    openEnviarCoti={openEnviarCoti}
+                    setOpenEnviarCoti={setOpenEnviarCoti}
+                    openProbabilidad={openProbabilidad}
+                    setOpenProbabilidad={setOpenProbabilidad}
+                    openMensajes={openMensajes}
+                    setOpenMensajes={setOpenMensajes}
+                    mensajes={mensajes}
+                    openSeg={openSeg}
+                    setOpenSeg={setOpenSeg}
+                    openCopia={openCopia}
+                    setOpenCopia={setOpenCopia}
+                    openNuevaVersion={openNuevaVersion}
+                    setOpenNuevaVersion={setOpenNuevaVersion}
+                    openRetornar={openRetornar}
+                    setOpenRetornar={setOpenRetornar}
+                    openEliminar={openEliminar}
+                    setOpenEliminar={setOpenEliminar}
+                    openEnviarAprobacion={openEnviarAprobacion}
+                    setOpenEnviarAprobacion={setOpenEnviarAprobacion}
+                    openAdjuntos={openAdjuntos}
+                    setOpenAdjuntos={setOpenAdjuntos}
+                    openEstadoCoti={openEstadoCoti}
+                    setOpenEstadoCoti={setOpenEstadoCoti}
+                    openAsignar={openAsignar}
+                    setOpenAsignar={setOpenAsignar}
+                    onReporteSuministros={handleReporteSuministros}
+                    onExportSuministrosExcel={handleExportSuministrosExcel}
+                    onReporteServicios={handleReporteServicios}
+                    onReporteDetallado={handleReporteDetallado}
+                    onExportDetalladoExcel={handleExportDetalladoExcel}
+                    onReporteResumen={handleReporteResumen}
+                    onReporteVentaTotal={handleReporteVentaTotal}
+                    onReporteVentaParcial={handleReporteVentaParcial}
+                    tabsToShow={tabsToShow}
+                  />
 
-              <p className="text-[10px] lg:text-xs font-black text-indigo-600 mt-1">
-                {['Baja', 'Media', 'Alta', 'Muy Alta'][data?.prob ?? 0]}
-              </p>
+                  {/* SUBMODALES */}
+                  <ClienteModal
+                    open={openClienteModal}
+                    onClose={() => setOpenClienteModal(false)}
+                    onGuardar={(nuevoCliente) => {
+                      // Lógica para actualizar tu lista local o recargar
+                      setOpenClienteModal(false);
+                    }}
+                  />
+
+                  {/* SUMINISTROS */}
+                  <AgregarGrupoSuministroModal
+                    open={openGrupoModal}
+                    onClose={() => setOpenGrupoModal(false)}
+                    onConfirm={handleAgregarGrupoSuministro}
+                    grupo={grupoActivo}
+                    tipoVenta={data?.tven}
+                  />
+
+                  <RegistroItemModal
+                    open={openItemModal}
+                    onClose={() => setOpenItemModal(false)}
+                    onConfirm={handleAgregarItem}
+                    item={itemActivo}
+                    num_reg={numReg}
+                    tipoVenta={data?.tven}
+                    costoEnvioGrupo={
+                      data?.tven === "T"
+                        ? (gruposSuministros?.[grupoActivo]?.env_tot || 0)
+                        : (gruposSuministros?.[grupoActivo]?.env_par || 0)
+                    }
+                    sumaVentaGrupo={
+                      (gruposSuministros?.[grupoActivo]?.items || []).reduce(
+                        (acc, item) => acc + Number(item.toc || 0),
+                        0
+                      )
+                    }
+                    env_tot={data?.env_tot || 0}
+                    env_par={data?.env_par || 0}
+                  />
+
+                  <RegistroItemBuscadorModal
+                    open={openRegistroItem}
+                    onClose={() => {
+                      setOpenRegistroItem(false);
+                      setGrupoActivo(null);
+                    }}
+                    item={itemActivo}
+                    num_reg={numReg}
+                    onSelect={(formItem) => {
+                      handleAgregarItem(formItem);
+                    }}
+                  />
+
+                  <ImportarXLS1Modal
+                    open={openImportarXLS1}
+                    onClose={() => setOpenImportarXLS1(false)}
+                    onSelectFile={handleImportarDesdeXLS}
+                  />
+
+                  <ImportarXLS2Modal
+                    open={openImportarXLS2}
+                    onClose={() => setOpenImportarXLS2(false)}
+                    onSelectFile={handleImportarDesdeXLS}
+                  />
+
+                  {/* SERVICIOS */}
+                  <ServicioModal
+                    open={openServicioModal}
+                    onClose={() => {
+                      setOpenServicioModal(false);
+                      setServicioActivo(null); // 🧹 limpieza sana
+                    }}
+                    onAceptar={handleAgregarServicio}
+                    servicio={servicioActivo}
+                  />
+
+                  <AgregarSubgrupoGastoModal
+                    open={openSubgrupoModal}
+                    subgrupo={subgrupoActivo}
+                    onClose={() => {
+                      setOpenSubgrupoModal(false);
+                      setSubgrupoActivo(null);
+                    }}
+                    onConfirm={(form) => {
+                      handleAgregarSubgrupo(form, form.servicioId || selectedServicioId);
+                    }}
+                  />
+
+                  <RegistroItemManoObraModal
+                    open={openRegistroMO}
+                    onClose={() => setOpenRegistroMO(false)}
+                    onConfirm={handleAgregarItemServicio}
+                    item={itemActivo}
+                    areaCotizacion={data?.area_codigo}
+                  />
+
+                  <RegistroItemGastosServicioModal
+                    open={openRegistroGS}
+                    onClose={() => setOpenRegistroGS(false)}
+                    onConfirm={handleAgregarItemServicio}
+                    item={itemActivo}
+                  />
+
+                  <RegistroItemOtrosModal
+                    open={openRegistroOtros}
+                    onClose={() => setOpenRegistroOtros(false)}
+                    onConfirm={handleAgregarItemServicio}
+                    item={itemActivo}
+                  />
+
+                  {/* GESTION */}
+                  <CondicionesModal
+                    open={openCondiciones}
+                    onClose={() => setOpenCondiciones(false)}
+                    condicionesIniciales={condicionesQuery.data}
+                    onAceptar={(nuevoTexto) => {
+                      setCondicionesHtml(nuevoTexto);
+                      condicionesGenerales.mutate(nuevoTexto);
+                      setOpenCondiciones(false);
+                    }}
+                    tipoVenta={data?.tven}
+                  />
+
+                  <GenerarCodigoModal
+                    open={openGenerarCodigo}
+                    onClose={() => setOpenGenerarCodigo(false)}
+                    numReg={data?.num_reg || cotizacion?.num_reg}
+                    codigoExistente={data?.numero}
+                    onGuardado={() => generarCodigo.mutateAsync()}
+                  />
+
+                  <AsignarCotiModal
+                    open={openAsignar}
+                    onClose={() => setOpenAsignar(false)}
+                    onConfirm={(payload) => handleAsignarUsuario.mutate({ numReg, payload })}
+                    setOpenContactos={setOpenContactos}
+                    referencia={data?.referencia}
+                  />
+
+                  <DescuentosModal
+                    open={openDescuentos}
+                    setOpen={setOpenDescuentos}
+                    formValues={descuentosForm}
+                    setFormValues={setDescuentosForm}
+                    onClose={() => setOpenDescuentos(false)}
+                    onGuardar={handleGuardarDescuento}
+                    onReset={() => handleResetDescuento.mutate()}
+                    num_reg={numReg}
+                    tot_c={data?.tot_c}
+                    des_m={data?.des_m}
+                  />
+
+                  <EnviarCotiModal
+                    open={openEnviarCoti}
+                    onClose={() => setOpenEnviarCoti(false)}
+                    num_reg={numReg}
+                    onAceptar={() => cerrarCotizacion.mutate()}
+                    loading={loadingEnviar}
+                  />
+
+                  <EnviarCotiAprobacionModal
+                    open={openEnviarAprobacion}
+                    onClose={() => setOpenEnviarAprobacion(false)}
+                    onAceptar={() => enviarCotizacionAprobacion.mutate()}
+                    loading={loadingEnviar}
+                  />
+
+                  <RetornarCotizacionModal
+                    open={openRetornar}
+                    onClose={() => setOpenRetornar(false)}
+                    onAceptar={() => retornarCotizacion.mutate()}
+                    envio={data?.envio}
+                  />
+
+                  <ProbabilidadModal
+                    open={openProbabilidad}
+                    onClose={() => setOpenProbabilidad(false)}
+                    probActual={data?.prob}
+                    num_reg={numReg}
+                  />
+
+                  <MensajesModal
+                    open={openMensajes}
+                    onClose={() => {
+                      setOpenMensajes(false);
+                      cargarMensajes(); // 🔥 refresca el contador
+                    }}
+                    num_reg={numReg}
+                    mensajes={mensajes}
+                  />
+
+                  <AdjuntosModal
+                    open={openAdjuntos}
+                    onClose={() => setOpenAdjuntos(false)}
+                    num_reg={numReg}
+                  />
+
+                  <SeguimientoModal
+                    open={openSeg}
+                    onClose={() => setOpenSeg(false)}
+                    num_reg={numReg}
+                  />
+
+                  <CopiaCotizacionModal
+                    open={openCopia}
+                    onClose={() => setOpenCopia(false)}
+                    onAceptar={() => handleCopiarCotizacion.mutate()}
+                  />
+
+                  <NuevaVersionModal
+                    open={openNuevaVersion}
+                    onClose={() => setOpenNuevaVersion(false)}
+                    num_reg={numReg}
+                    onAceptar={() => handleNuevaVersion.mutate()}
+                  />
+
+                  <EliminarCotizacionModal
+                    open={openEliminar}
+                    onClose={() => setOpenEliminar(false)}
+                    onCerrarTodo={cerrarTodo}
+                    onAceptar={() => eliminarCotizacion.mutate()}
+                    loading={loading}
+                    cotin={data?.numero}
+                  />
+
+                  <EstadoCotizacionModal
+                    open={openEstadoCoti}
+                    onClose={() => setOpenEstadoCoti(false)}
+                    num_reg={numReg}
+                  />
+
+                </>
+              )}
             </div>
-
-          </div>
-
-        </div>
-
-        {/* CONTENIDO SCROLLABLE */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar">
-        {/* ESTADOS */}
-        {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="flex flex-col items-center gap-3">
-              <div className="w-10 h-10 border-4 border-cyan-200 border-t-cyan-600 rounded-full animate-spin" />
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest animate-pulse">Cargando datos...</span>
-            </div>
-          </div>
-        ) : !data ? (
-          <p className="text-gray-500 text-center py-4">No se encontró la cotización.</p>
-        ) : (
-          <>
-            {/* TABS DINÁMICOS */}
-            <InfoTabs
-              data={data}
-              setData={setData}
-              suministros={Array.isArray(suministros) ? suministros : []} // siempre un array
-              servicios={Array.isArray(servicios) ? servicios : []}
-              esOportunidad={esOportunidad}
-              modo={modo}
-              esNueva={esNueva}
-              esVer={esVer}
-              openEncargados={openEncargados}
-              setOpenEncargados={setOpenEncargados}
-              activeTab={tabActiva}
-              onChangeTab={setTabActiva}
-              totalesLocales={totalesLocales}
-              openClienteModal={() => setOpenClienteModal(true)}
-              // SUMINISTROS
-              openGrupoModal={openGrupoModal}
-              setOpenGrupoModal={setOpenGrupoModal}
-              gruposSuministros={gruposSuministros}
-              setGruposSuministros={setGruposSuministros}
-              openItemModal={openItemModal}
-              setOpenItemModal={setOpenItemModal}
-              openRegistroItem={openRegistroItem}
-              setOpenRegistroItem={setOpenRegistroItem}
-              grupoActivo={grupoActivo}
-              setGrupoActivo={setGrupoActivo}
-              handleRefreshSuministros={handleRefreshSuministros}
-              loadingSuministros={loadingSuministros}
-              setLoadingSuministros={setLoadingSuministros}
-              onDuplicarGrupo={handleDuplicarGrupo}
-              openImportarXLS1={openImportarXLS1}
-              setOpenImportarXLS1={setOpenImportarXLS1}
-              setOpenImportarXLS2={setOpenImportarXLS2}
-              // SERVICIOS
-              gruposServicios={gruposServicios}
-              setGruposServicios={setGruposServicios}
-              setServicioActivo={setServicioActivo}
-              openServicioModal={openServicioModal}
-              setOpenServicioModal={setOpenServicioModal}
-              selectedServicioId={selectedServicioId}
-              setSelectedServicioId={setSelectedServicioId}
-              handleDuplicarServicio={handleDuplicarServicio}
-              selectedSubgrupoId={selectedSubgrupoId}
-              setSelectedSubgrupoId={setSelectedSubgrupoId}
-              openSubgrupoModal={openSubgrupoModal}
-              setOpenSubgrupoModal={setOpenSubgrupoModal}
-              setSubgrupoActivo={setSubgrupoActivo}
-              selectedTipoCodigo={selectedTipoCodigo}
-              setSelectedTipoCodigo={setSelectedTipoCodigo}
-              onAgregarItemServicio={abrirModalRegistroPorTipo}
-              openRegistroMO={openRegistroMO}
-              setOpenRegistroMO={setOpenRegistroMO}
-              openRegistroGS={openRegistroGS}
-              setOpenRegistroGS={setOpenRegistroGS}
-              openRegistroOtros={openRegistroOtros}
-              setOpenRegistroOtros={setOpenRegistroOtros}
-              itemActivo={itemActivo}
-              setItemActivo={setItemActivo}
-              // GESTION
-              descuentosForm={descuentosForm}
-              openContactos={openContactos}
-              setOpenContactos={setOpenContactos}
-              openCondiciones={openCondiciones}
-              setOpenCondiciones={setOpenCondiciones}
-              openGenerarCodigo={openGenerarCodigo}
-              setOpenGenerarCodigo={setOpenGenerarCodigo}
-              onAbrirCotizacionPDF={handleAbrirCotizacionPDF}
-              openDescuentos={openDescuentos}
-              setOpenDescuentos={setOpenDescuentos}
-              openEnviarCoti={openEnviarCoti}
-              setOpenEnviarCoti={setOpenEnviarCoti}
-              openProbabilidad={openProbabilidad}
-              setOpenProbabilidad={setOpenProbabilidad}
-              openMensajes={openMensajes}
-              setOpenMensajes={setOpenMensajes}
-              mensajes={mensajes}
-              openSeg={openSeg}
-              setOpenSeg={setOpenSeg}
-              openCopia={openCopia}
-              setOpenCopia={setOpenCopia}
-              openNuevaVersion={openNuevaVersion}
-              setOpenNuevaVersion={setOpenNuevaVersion}
-              openRetornar={openRetornar}
-              setOpenRetornar={setOpenRetornar}
-              openEliminar={openEliminar}
-              setOpenEliminar={setOpenEliminar}
-              openEnviarAprobacion={openEnviarAprobacion}
-              setOpenEnviarAprobacion={setOpenEnviarAprobacion}
-              openAdjuntos={openAdjuntos}
-              setOpenAdjuntos={setOpenAdjuntos}
-              openEstadoCoti={openEstadoCoti}
-              setOpenEstadoCoti={setOpenEstadoCoti}
-              openAsignar={openAsignar}
-              setOpenAsignar={setOpenAsignar}
-              onReporteSuministros={handleReporteSuministros}
-              onExportSuministrosExcel={handleExportSuministrosExcel}
-              onReporteServicios={handleReporteServicios}
-              onReporteDetallado={handleReporteDetallado}
-              onExportDetalladoExcel={handleExportDetalladoExcel}
-              onReporteResumen={handleReporteResumen}
-              onReporteVentaTotal={handleReporteVentaTotal}
-              onReporteVentaParcial={handleReporteVentaParcial}
-              tabsToShow={tabsToShow}
-            />
-
-            {/* SUBMODALES */}
-            <ClienteModal
-              open={openClienteModal}
-              onClose={() => setOpenClienteModal(false)}
-              onGuardar={(nuevoCliente) => {
-                // Lógica para actualizar tu lista local o recargar
-                setOpenClienteModal(false);
-              }}
-            />
-
-            {/* SUMINISTROS */}
-            <AgregarGrupoSuministroModal
-              open={openGrupoModal}
-              onClose={() => setOpenGrupoModal(false)}
-              onConfirm={handleAgregarGrupoSuministro}
-              grupo={grupoActivo}
-              tipoVenta={data?.tven}
-            />
-
-            <RegistroItemModal
-              open={openItemModal}
-              onClose={() => setOpenItemModal(false)}
-              onConfirm={handleAgregarItem}
-              item={itemActivo}
-              num_reg={numReg}
-              tipoVenta={data?.tven}
-              costoEnvioGrupo={
-                data?.tven === "T"
-                  ? (gruposSuministros?.[grupoActivo]?.env_tot || 0)
-                  : (gruposSuministros?.[grupoActivo]?.env_par || 0)
-              }
-              sumaVentaGrupo={
-                (gruposSuministros?.[grupoActivo]?.items || []).reduce(
-                  (acc, item) => acc + Number(item.toc || 0),
-                  0
-                )
-              }
-              env_tot={data?.env_tot || 0}
-              env_par={data?.env_par || 0}
-            />
-
-            <RegistroItemBuscadorModal
-              open={openRegistroItem}
-              onClose={() => {
-                setOpenRegistroItem(false);
-                setGrupoActivo(null);
-              }}
-              item={itemActivo}
-              num_reg={numReg}
-              onSelect={(formItem) => {
-                handleAgregarItem(formItem);
-              }}
-            />
-
-            <ImportarXLS1Modal
-              open={openImportarXLS1}
-              onClose={() => setOpenImportarXLS1(false)}
-              onSelectFile={handleImportarDesdeXLS}
-            />
-
-            <ImportarXLS2Modal
-              open={openImportarXLS2}
-              onClose={() => setOpenImportarXLS2(false)}
-              onSelectFile={handleImportarDesdeXLS}
-            />
-
-            {/* SERVICIOS */}
-            <ServicioModal
-              open={openServicioModal}
-              onClose={() => {
-                setOpenServicioModal(false);
-                setServicioActivo(null); // 🧹 limpieza sana
-              }}
-              onAceptar={handleAgregarServicio}
-              servicio={servicioActivo}
-            />
-
-            <AgregarSubgrupoGastoModal
-              open={openSubgrupoModal}
-              subgrupo={subgrupoActivo}
-              onClose={() => {
-                setOpenSubgrupoModal(false);
-                setSubgrupoActivo(null);
-              }}
-              onConfirm={(form) => {
-                handleAgregarSubgrupo(form, form.servicioId || selectedServicioId);
-              }}
-            />
-
-            <RegistroItemManoObraModal
-              open={openRegistroMO}
-              onClose={() => setOpenRegistroMO(false)}
-              onConfirm={handleAgregarItemServicio}
-              item={itemActivo}
-              areaCotizacion={data?.area_codigo}
-            />
-
-            <RegistroItemGastosServicioModal
-              open={openRegistroGS}
-              onClose={() => setOpenRegistroGS(false)}
-              onConfirm={handleAgregarItemServicio}
-              item={itemActivo}
-            />
-
-            <RegistroItemOtrosModal
-              open={openRegistroOtros}
-              onClose={() => setOpenRegistroOtros(false)}
-              onConfirm={handleAgregarItemServicio}
-              item={itemActivo}
-            />
-
-            {/* GESTION */}
-            <CondicionesModal
-              open={openCondiciones}
-              onClose={() => setOpenCondiciones(false)}
-              condicionesIniciales={condicionesQuery.data}
-              onAceptar={(nuevoTexto) => {
-                setCondicionesHtml(nuevoTexto);
-                condicionesGenerales.mutate(nuevoTexto);
-                setOpenCondiciones(false);
-              }}
-              tipoVenta={data?.tven}
-            />
-
-            <GenerarCodigoModal
-              open={openGenerarCodigo}
-              onClose={() => setOpenGenerarCodigo(false)}
-              numReg={data?.num_reg || cotizacion?.num_reg}
-              codigoExistente={data?.numero}
-              onGuardado={() => generarCodigo.mutateAsync()}
-            />
-
-            <AsignarCotiModal
-              open={openAsignar}
-              onClose={() => setOpenAsignar(false)}
-              onConfirm={(payload) => handleAsignarUsuario.mutate({ numReg, payload })}
-              setOpenContactos={setOpenContactos}
-              referencia={data?.referencia}
-            />
-
-            <DescuentosModal
-              open={openDescuentos}
-              setOpen={setOpenDescuentos}
-              formValues={descuentosForm}
-              setFormValues={setDescuentosForm}
-              onClose={() => setOpenDescuentos(false)}
-              onGuardar={handleGuardarDescuento}
-              onReset={() => handleResetDescuento.mutate()}
-              num_reg={numReg}
-              tot_c={data?.tot_c}
-              des_m={data?.des_m}
-            />
-
-            <EnviarCotiModal
-              open={openEnviarCoti}
-              onClose={() => setOpenEnviarCoti(false)}
-              num_reg={numReg}
-              onAceptar={() => cerrarCotizacion.mutate()}
-              loading={loadingEnviar}
-            />
-
-            <EnviarCotiAprobacionModal
-              open={openEnviarAprobacion}
-              onClose={() => setOpenEnviarAprobacion(false)}
-              onAceptar={() => enviarCotizacionAprobacion.mutate()}
-              loading={loadingEnviar}
-            />
-
-            <RetornarCotizacionModal
-              open={openRetornar}
-              onClose={() => setOpenRetornar(false)}
-              onAceptar={() => retornarCotizacion.mutate()}
-              envio={data?.envio}
-            />
-
-            <ProbabilidadModal
-              open={openProbabilidad}
-              onClose={() => setOpenProbabilidad(false)}
-              probActual={data?.prob}
-              num_reg={numReg}
-            />
-
-            <MensajesModal
-              open={openMensajes}
-              onClose={() => {
-                setOpenMensajes(false);
-                cargarMensajes(); // 🔥 refresca el contador
-              }}
-              num_reg={numReg}
-              mensajes={mensajes}
-            />
-
-            <AdjuntosModal
-              open={openAdjuntos}
-              onClose={() => setOpenAdjuntos(false)}
-              num_reg={numReg}
-            />
-
-            <SeguimientoModal
-              open={openSeg}
-              onClose={() => setOpenSeg(false)}
-              num_reg={numReg}
-            />
-
-            <CopiaCotizacionModal
-              open={openCopia}
-              onClose={() => setOpenCopia(false)}
-              onAceptar={() => handleCopiarCotizacion.mutate()}
-            />
-
-            <NuevaVersionModal
-              open={openNuevaVersion}
-              onClose={() => setOpenNuevaVersion(false)}
-              num_reg={numReg}
-              onAceptar={() => handleNuevaVersion.mutate()}
-            />
-
-            <EliminarCotizacionModal
-              open={openEliminar}
-              onClose={() => setOpenEliminar(false)}
-              onCerrarTodo={cerrarTodo}
-              onAceptar={() => eliminarCotizacion.mutate()}
-              loading={loading}
-              cotin={data?.numero}
-            />
-
-            <EstadoCotizacionModal
-              open={openEstadoCoti}
-              onClose={() => setOpenEstadoCoti(false)}
-              num_reg={numReg}
-            />
-
-          </>
-        )}
-        </div>
-        {/* FIN del contenido scrollable */}
+            {/* FIN del contenido scrollable */}
 
             {/* ACCIONES — Footer Sticky */}
             <div className="sticky bottom-0 bg-slate-50/80 backdrop-blur-sm border-t border-slate-200 px-6 py-2 flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0 z-10">

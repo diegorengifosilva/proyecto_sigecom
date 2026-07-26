@@ -1,5 +1,6 @@
 {% load static %}
 {% load humanize %}
+{% load currency %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -11,7 +12,8 @@ body{
     font-family: "Segoe UI", Arial, Helvetica, sans-serif;
     font-size: 12px;
     color:#2b2b2b;
-    margin:20px;
+    margin:0;
+    padding:20px;
     background:#ffffff;
 }
 
@@ -49,7 +51,7 @@ h2{
 
     /* CABECERA PRINCIPAL */
     th {
-        background-color: #008080;
+        background-color: #0f766e;
         color: white;
         text-align: center;
         font-weight: bold;
@@ -67,7 +69,7 @@ h2{
 
  
 
-    .text-right { text-align: right; }
+    .text-right { text-align: right; white-space: nowrap; }
     .text-center { text-align: center; }
 
 
@@ -107,8 +109,8 @@ h2{
     font-size: 12px;
     margin-bottom: 18px;
 
-    /* BORDE EXTERNO GRUESO */
-    border: 2px solid #2f2f2f;
+    /* BORDE EXTERNO LIMPIO */
+    border: 1px solid #000307;
 }
 
 
@@ -116,7 +118,7 @@ h2{
 /* bordes internos */
 .tabla-suministros th,
 .tabla-suministros td{
-    border: 1px solid #000000;
+    border: 1px solid #000307;
     padding: 6px 8px;
 }
 
@@ -126,21 +128,22 @@ h2{
     color: #ffffff;
     font-weight: bold;
     text-align: center;
-    border-bottom: 2px solid #2f2f2f;
+    border: 1px solid #000307;
 }
 
 /* sub cabecera */
 .tabla-suministros .sub-header th{
-    background: #06adad;
-    color: #000;
+    background: #008080;
+    color: #ffffff;
     font-weight: bold;
+    border: 1px solid #000307;
 }
 
 
 
 /* hover (solo visual navegador) */
 .tabla-suministros tbody tr:hover{
-    background: #eef6ff;
+    background: #e6f4f1;
 }
 
 
@@ -155,12 +158,13 @@ h2{
 
 /* separador inferior total grupo */
 .grupo-titulo {
-    background: #0f4c5c;
+    background: #0f766e;
     color: white;
-    padding: 6px;
+    padding: 8px 10px;
     font-weight: bold;
-    border: 2px solid #2f2f2f;
+    border: 1px solid #0c5f58;
     border-bottom: none;
+    border-radius: 6px 6px 0 0;
 }
 
 /* ====== BOTON EXCEL ====== */
@@ -192,6 +196,7 @@ h2{
 </head>
 
 <body>
+<div id="report-content-wrapper">
 <div class="header">
     <div>
         <img class="logo-img" src="{% static 'logo.png' %}" alt="Logo Empresa">
@@ -199,7 +204,7 @@ h2{
 
  <div class="excel-btn">
     <button type="button" id="btnExcel">
-        <img src="{% static 'importar-xls.png' %}" alt="excel">
+        <img src="{% static 'Formatos/excel.png' %}" alt="excel">
         Exportar Excel
     </button>
 </div>
@@ -213,7 +218,7 @@ h2{
 
     <div class="grupo-titulo">
        <tr colspan="10">
-            {{ grupo.tipo }} - {{ grupo.titulo }}
+            {{ grupo.titulo }}
        </tr>
 
     </div>
@@ -245,12 +250,12 @@ h2{
                 <td>{{ it.cod }}</td>
                 <td>{{ it.des }}</td>
                 <td>{{ it.pro }}</td>
-                <td class="text-center">{{ it.can|floatformat:2 }}</td>
-                <td class="text-right">{{ it.val|floatformat:2 }}</td>
-                <td class="text-right">{{ it.tot|floatformat:2 }}</td>
-                <td class="text-right">{{ it.puc|floatformat:2 }}</td>
-                <td class="text-right">{{ it.toc|floatformat:2 }}</td>
-                <td class="text-right">{{ it.utilidad|floatformat:2 }}</td>
+                <td class="text-center">{{ it.can|floatformat:0 }}</td>
+                <td class="text-right">{{ it.val|format_custom:moneda }}</td>
+                <td class="text-right">{{ it.tot|format_custom:moneda }}</td>
+                <td class="text-right">{{ it.puc|format_custom:moneda }}</td>
+                <td class="text-right">{{ it.toc|format_custom:moneda }}</td>
+                <td class="text-right">{{ it.utilidad|format_custom:moneda }}</td>
             </tr>
         {% endfor %}
         </tbody>
@@ -259,8 +264,9 @@ h2{
 {% endfor %}
 
 </div>
+</div> <!-- /report-content-wrapper -->
 
-<!-- EXPORTAR A EXCEL -->
+<!-- Script to handle Excel export -->
 <script>
 
 document.getElementById("btnExcel").addEventListener("click", function(e){
@@ -298,13 +304,13 @@ var tableToExcel = (function () {
     border-collapse: collapse;
     width: 100%;
     font-size: 12px;
-    border: 2px solid #2f2f2f;
+    border: 1px solid #000307;
 }
 
 /* bordes internos */
 .tabla-suministros th,
 .tabla-suministros td{
-    border: 1px solid #9a9a9a;
+    border: 1px solid #000307;
     padding: 6px 8px;
 }
 
@@ -314,14 +320,15 @@ var tableToExcel = (function () {
     color: #ffffff;
     font-weight: bold;
     text-align: center;
-    border-bottom: 2px solid #2f2f2f;
+    border-bottom: 1px solid #0c5f58;
 }
 
 /* subcabecera */
 .sub-header th{
-    background: #06adad;
-    color: #000;
+    background: #14b8a6;
+    color: #ffffff;
     font-weight: bold;
+    border: 1px solid #0c5f58;
 }
 
 /* filas alternadas */
@@ -332,11 +339,11 @@ var tableToExcel = (function () {
 
 /* separador inferior total grupo */
 .grupo-titulo {
-    background: #0f4c5c;
-    color: #000;
+    background: #0f766e;
+    color: #ffffff;
     padding: 6px;
     font-weight: bold;
-    border: 2px solid #2f2f2f;
+    border: 1px solid #0c5f58;
     border-bottom: none;
 }
 
@@ -350,7 +357,7 @@ var tableToExcel = (function () {
 }
 
 .grupo-titulo tr{
-    background:#0f4c5c;
+    background:#0f766e;
     color:#ffffff;
     font-weight:bold;
     text-align:left;
@@ -408,5 +415,31 @@ var tableToExcel = (function () {
     }
 </script>
 
+
+<!-- Script to notify parent of height changes for responsive iframe modals -->
+<script>
+  function notifyParentHeight() {
+    if (window.parent && window.parent !== window) {
+      const wrapper = document.getElementById('report-content-wrapper');
+      const height = wrapper ? wrapper.offsetHeight : (document.documentElement.scrollHeight || document.body.scrollHeight);
+      window.parent.postMessage({ 
+        type: 'set-iframe-height', 
+        height: height
+      }, '*');
+    }
+  }
+  notifyParentHeight();
+  window.addEventListener('DOMContentLoaded', notifyParentHeight);
+  window.addEventListener('load', notifyParentHeight);
+  window.addEventListener('resize', notifyParentHeight);
+</script>
+<script>
+  window.focus();
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      window.parent.postMessage({ type: 'close-report-modal' }, '*');
+    }
+  });
+</script>
 </body>
 </html>

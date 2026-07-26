@@ -5,6 +5,7 @@ import InputField from "@/components/ui/InputField";
 import SelectField from "@/components/ui/SelectField";
 import { Building2, Save, Trash2 } from "lucide-react";
 import api from "../../../../services/api";
+import { generarIniciales } from "@/utils/formatters";
 
 export default function ClienteModal({ open, onClose, onGuardar, onEliminar, clienteData, clientes = [] }) {
     const [formData, setFormData] = useState({});
@@ -19,24 +20,22 @@ export default function ClienteModal({ open, onClose, onGuardar, onEliminar, cli
                 });
             } else {
                 // MODO NUEVO: Cálculo del siguiente código
-                // 1. Extraemos solo los números de los códigos actuales
                 const codigosNumericos = clientes
                     .map(c => parseInt(c.codigo))
                     .filter(n => !isNaN(n));
 
-                // 2. Buscamos el mayor y sumamos 1, o empezamos en 10001 si no hay nada
-                const proximoCodigo = codigosNumericos.length > 0 
-                    ? Math.max(...codigosNumericos) + 1 
+                const proximoCodigo = codigosNumericos.length > 0
+                    ? Math.max(...codigosNumericos) + 1
                     : 10001;
 
                 setFormData({
-                    codigo: String(proximoCodigo), // Ya no es "Auto", es el número real
+                    codigo: String(proximoCodigo),
                     nombre: "",
                     iniciales: "",
                     ruc: "",
                     dir: "",
                     tipo: "1",
-                    fpago: "",
+                    forma_pago: "",
                     fecha: new Date().toISOString().split('T')[0],
                     rub: "",
                     eva: "",
@@ -52,17 +51,22 @@ export default function ClienteModal({ open, onClose, onGuardar, onEliminar, cli
 
     const handleChange = (e) => {
         const { name, value, type, checked } = e.target;
-        
-        // Bloqueo de longitud para RUC
-        if (name === "ruc" && value.length > 11) return; 
 
-        setFormData((prev) => ({
-            ...prev,
-            // Si es el campo 'activo', ignoramos 'value' y usamos 'checked'
-            [name]: name === "activo" 
-                ? (checked ? "1" : "0") 
-                : (type === "checkbox" ? (checked ? "1" : "0") : value),
-        }));
+        // Bloqueo de longitud para RUC
+        if (name === "ruc" && value.length > 11) return;
+
+        setFormData((prev) => {
+            const nextData = {
+                ...prev,
+                [name]: name === "activo"
+                    ? (checked ? "1" : "0")
+                    : (type === "checkbox" ? (checked ? "1" : "0") : value),
+            };
+            if (name === "nombre" && (!prev.iniciales || prev.iniciales === generarIniciales(prev.nombre || ""))) {
+                nextData.iniciales = generarIniciales(value);
+            }
+            return nextData;
+        });
     };
 
     const handleSubmit = () => {
@@ -70,19 +74,19 @@ export default function ClienteModal({ open, onClose, onGuardar, onEliminar, cli
             alert("El nombre de la empresa es obligatorio");
             return;
         }
-        
+
         // VALIDACIÓN EXACTA
         if (!formData.ruc || formData.ruc.length !== 11) {
             alert("El RUC debe tener exactamente 11 dígitos");
             return;
         }
 
-    const dataParaEnviar = {
+        const dataParaEnviar = {
             ...formData,
             // Convertimos a entero para evitar el error 1366 de MySQL
-            codigo: parseInt(formData.codigo), 
+            codigo: parseInt(formData.codigo),
             // Si tienes otros campos numéricos como 'tipo', asegúralos también
-            tipo: parseInt(formData.tipo) 
+            tipo: parseInt(formData.tipo)
         };
 
         onGuardar(dataParaEnviar);
@@ -90,7 +94,7 @@ export default function ClienteModal({ open, onClose, onGuardar, onEliminar, cli
 
     return (
         <Dialog open={open} onOpenChange={onClose}>
-            <DialogContent className="max-w-3xl bg-white rounded-2xl shadow-2xl border-none p-0 overflow-hidden font-sans">   
+            <DialogContent className="max-w-3xl bg-white rounded-2xl shadow-2xl border-none p-0 overflow-hidden font-sans">
                 {/* HEADER */}
                 <div className="bg-slate-50/80 px-6 py-4 border-b border-slate-100">
                     <div className="flex items-center gap-3">
@@ -207,8 +211,8 @@ export default function ClienteModal({ open, onClose, onGuardar, onEliminar, cli
                         <div className="grid grid-cols-2 gap-4">
                             <InputField
                                 label="Forma Pago:"
-                                name="fpago"
-                                value={formData.fpago || ""}
+                                name="forma_pago"
+                                value={formData.forma_pago || ""}
                                 onChange={handleChange}
                                 inline size="sm"
                             />
@@ -227,12 +231,12 @@ export default function ClienteModal({ open, onClose, onGuardar, onEliminar, cli
                                 Estado Activo:
                             </label>
                             <label className="relative inline-flex items-center cursor-pointer">
-                                <input 
-                                    type="checkbox" 
+                                <input
+                                    type="checkbox"
                                     name="activo"
                                     checked={formData.activo === "1"}
                                     onChange={handleChange}
-                                    className="sr-only peer" 
+                                    className="sr-only peer"
                                 />
                                 <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
                                 <span className={`ml-2 text-[10px] font-black uppercase ${formData.activo === "1" ? 'text-emerald-600' : 'text-slate-400'}`}>
@@ -245,7 +249,7 @@ export default function ClienteModal({ open, onClose, onGuardar, onEliminar, cli
 
                 {/* FOOTER */}
                 <div className="px-6 py-4 bg-slate-50/80 border-t border-slate-100 flex justify-end gap-3">
-                    
+
                     {/* BOTÓN ELIMINAR: Solo se muestra si estamos editando */}
                     {clienteData && (
                         <Button

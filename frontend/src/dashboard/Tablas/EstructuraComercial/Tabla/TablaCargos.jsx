@@ -64,37 +64,34 @@ export default function TablaCargos() {
   );
 
   return (
-    <div className="flex flex-col h-full p-6">
-      {/* TOOLBAR */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-5 mb-4 px-1">
-        <div className="flex items-center gap-3">
-          <div className="relative w-full md:w-64">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <Input
-              placeholder="Buscar cargo..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 bg-slate-50 border-slate-200 focus:bg-white transition-all h-9 text-sm rounded-md shadow-sm"
-            />
-          </div>
-
-          <Button
-            onClick={handleNew}
-            className="bg-cyan-600 hover:bg-cyan-700 text-white h-9 px-4 text-xs font-bold uppercase tracking-wider rounded-lg transition-all shadow-lg shadow-cyan-100 flex gap-2 items-center"
-          >
-            <Plus size={16} strokeWidth={3} />
-            Nuevo Cargo
-          </Button>
+    <div className="h-full flex flex-col space-y-4">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-slate-100 pb-3">
+        <div>
+          <h1 className="text-lg font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+            <Search size={18} className="text-cyan-600" />
+            Cargos de Personal
+          </h1>
+          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Mapeo de roles y puestos organizacionales</p>
         </div>
+        <Button
+          onClick={handleNew}
+          className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 h-9 text-xs font-bold uppercase tracking-wider rounded-xl shadow-lg shadow-cyan-100 flex items-center gap-1.5 self-start sm:self-auto"
+        >
+          <Plus size={14} strokeWidth={3} />
+          Nuevo Cargo
+        </Button>
+      </div>
 
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" className="h-9 w-9 p-0 rounded-lg">
-            <ChartSpline className="w-4 h-4 text-slate-500" />
-          </Button>
-          <Button variant="ghost" size="sm" className="h-9 w-9 p-0 rounded-lg">
-            <MoreHorizontal className="w-4 h-4 text-slate-500" />
-          </Button>
-        </div>
+      {/* Search */}
+      <div className="relative max-w-sm">
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+        <Input 
+          placeholder="Buscar por código o descripción..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="pl-8 bg-white border-slate-200 text-xs h-8.5 rounded-lg shadow-sm"
+        />
       </div>
 
       {/* TABLA */}

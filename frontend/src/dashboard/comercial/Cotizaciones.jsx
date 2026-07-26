@@ -32,7 +32,7 @@ const fetchCotizacionesAprobacion = async ({ queryKey }) => {
   const nombUsuario = usuarioRes.data?.usuario;
 
   const { data } = await api.get(
-    "cotizaciones/aprobacion_cotizacion",
+    "cotizaciones/lista_cotizaciones/",
     {
       headers: { Authorization: `Bearer ${token}` },
       params: {

@@ -184,51 +184,38 @@ body{
 </style>
 </head>
 
-<body>
-
-    <div class="header">
+<div class="header">
     <div>
         <img class="logo-img" src="{% static 'logo.png' %}" alt="Logo Empresa">
     </div>
 
- <div class="excel-btn">
-    <button type="button" id="btnExcel_servicios">
-        <img src="{% static 'importar-xls.png' %}" alt="excel">
-        Exportar Excel
-    </button>
+    <div class="excel-btn">
+        <button type="button" id="btnExcel_servicios">
+            <img src="{% static 'importar-xls.png' %}" alt="excel">
+            Exportar Excel
+        </button>
+    </div>
 </div>
-</div>
-
-
 
 <h2>REPORTE SERVICIOS</h2>
 
 <div id="tabla_servicios">
 {% for grupo in grupos.values %}
  
-       <div class="grupo-titulo">
-        <td colspan="11" style="
-                background:#0f595c;
-                color:#ffffff;
-                font-weight:bold;
-                font-size:14px;
-                text-align:left;
-                padding:8px;
-                border:2px solid #2f2f2f;
-            ">
-            {{ grupo.titulo }}
-        </td>
+    <div class="grupo-titulo">
+        {{ grupo.titulo }}
     </div>
+    
     <table>
-             <thead>
+        <thead>
             <tr>
                 <th rowspan="2">Ítem</th>
                 <th rowspan="2">Código</th>
                 <th rowspan="2">Descripción</th>
-                <th rowspan="2">Área</th>
+                <th rowspan="2">Área / Personal</th>
                 <th rowspan="2">Cant.</th>
                 <th rowspan="2">Días</th>
-                <th colspan="2">Cliente Final</th>
+                <th colspan="2">Cliente Final (Venta)</th>
                 <th colspan="2">Precio Costo</th>
                 <th rowspan="2">Utilidad</th>
             </tr>
@@ -248,33 +235,36 @@ body{
             {% for it in sub.items %}
                 <tr>
                     <td class="text-center">{{ it.item }}</td>
-                    <td>{{ it.cod }}</td>
-                    <td>{{ it.des }}</td>
+                    <td>{{ it.cod|default:"-" }}</td>
+                    <td>{{ it.des|default:"" }}</td>
                     <td class="text-center">{{ it.pro }}</td>
-                    <td class="text-center">{{ it.can|floatformat:2 }}</td>
+                    <td class="text-center">{{ it.can|floatformat:0 }}</td>
                     <td class="text-center">{{ it.dias|floatformat:0 }}</td>
-                    <td class="text-right">{{ it.val|floatformat:2 }}</td>
-                    <td class="text-right">{{ it.tot|floatformat:2 }}</td>
+                    
                     <td class="text-right">{{ it.puc|floatformat:2 }}</td>
                     <td class="text-right">{{ it.toc|floatformat:2 }}</td>
+                    
+                    <td class="text-right">{{ it.val|floatformat:2 }}</td>
+                    <td class="text-right">{{ it.tot|floatformat:2 }}</td>
+                    
                     <td class="text-right">{{ it.utilidad|floatformat:2 }}</td>
                 </tr>
             {% endfor %}
 
             <tr class="total-row">
                 <td colspan="7" class="text-right">Total {{ sub.tipo }}:</td>
-                <td class="text-right">{{ sub.sub_total_tot|floatformat:2 }}</td>
-                <td class="text-right"> </td>
                 <td class="text-right">{{ sub.sub_total_toc|floatformat:2 }}</td>
+                <td class="text-right"> </td>
+                <td class="text-right">{{ sub.sub_total_tot|floatformat:2 }}</td>
                 <td class="text-right">{{ sub.sub_total_utilidad|floatformat:2 }}</td>
             </tr>
         {% endfor %}
 
         <tr class="total-row">
             <td colspan="7" class="text-right">Total Servicio:</td>
-            <td class="text-right">{{ grupo.total_tot|floatformat:2 }}</td>
-            <td class="text-right"> </td>
             <td class="text-right">{{ grupo.total_toc|floatformat:2 }}</td>
+            <td class="text-right"> </td>
+            <td class="text-right">{{ grupo.total_tot|floatformat:2 }}</td>
             <td class="text-right">{{ grupo.total_utilidad|floatformat:2 }}</td>
         </tr>
         </tbody>
@@ -443,6 +433,23 @@ var ctx = { worksheet: sheetName, table: prepararTablaParaExcel(tableId) };
             setTimeout(() => window.close(), 700);
         };
     }
+</script>
+
+<!-- Script to notify parent of height changes for responsive iframe modals -->
+<script>
+  function notifyParentHeight() {
+    if (window.parent && window.parent !== window) {
+      const height = document.documentElement.scrollHeight || document.body.scrollHeight || document.documentElement.offsetHeight;
+      window.parent.postMessage({ 
+        type: 'set-iframe-height', 
+        height: height
+      }, '*');
+    }
+  }
+  notifyParentHeight();
+  window.addEventListener('DOMContentLoaded', notifyParentHeight);
+  window.addEventListener('load', notifyParentHeight);
+  window.addEventListener('resize', notifyParentHeight);
 </script>
 </body>
 </html>

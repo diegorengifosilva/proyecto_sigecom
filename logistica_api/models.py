@@ -25,9 +25,7 @@ class TipoCambio(models.Model):
 
 #========================================================================================
 
-##============================##
-## APROBACIÓN DE COTIZACIONES ##
-##============================##
+
 class DashboardCotizacion(models.Model):
     # ── DATOS PRINCIPALES ─────────────────────────────
     numero = models.CharField(max_length=70, db_column="cotin", blank=True, null=True)
@@ -113,10 +111,10 @@ class DashboardCotizacion(models.Model):
     @property
     def cliente_nombre(self):
         try:
-            from logistica_api.models import Representante
+            from logistica_api.models import vc_tab_clientes_d
             if not self.cliente_codigo:
                 return self.nombr or ""
-            cliente = Representante.objects.get(codigo=self.cliente_codigo)
+            cliente = vc_tab_clientes_d.objects.get(codigo=self.cliente_codigo)
             return cliente.representante or self.nombr or ""
         except Exception:
             return self.nombr or ""
@@ -288,6 +286,59 @@ class CotiSeguimiento(models.Model):
 ##=============================##
 ## LOGISTICA ##
 ##=============================##
+class vc_tab_clientes(models.Model):
+    codigo = models.CharField(max_length=20, primary_key=True)
+    nombre = models.CharField(max_length=70, blank=True, null=True)
+    iniciales = models.CharField(max_length=20, blank=True, null=True)
+    ruc = models.CharField(max_length=11, blank=True, null=True)
+    dir = models.CharField(max_length=200, blank=True, null=True)
+    tipo = models.CharField(max_length=2, blank=True, null=True)
+    fpago = models.CharField(max_length=100, blank=True, null=True)
+    web = models.CharField(max_length=200, blank=True, null=True)
+    rleg = models.CharField(max_length=100, blank=True, null=True)
+    ubic = models.CharField(max_length=100, blank=True, null=True)
+    logo = models.CharField(max_length=20, blank=True, null=True)
+    eva = models.CharField(max_length=100, blank=True, null=True)
+    pro = models.CharField(max_length=100, blank=True, null=True)  # Actividad
+    det = models.CharField(max_length=100, blank=True, null=True)
+    rub = models.CharField(max_length=100, blank=True, null=True)
+    res = models.CharField(max_length=80, blank=True, null=True)
+    fecha = models.DateField(blank=True, null=True)
+
+    activo = models.BooleanField(default=True)
+
+    class Meta:
+        managed = False
+        db_table = "vc_tab_clientes"
+
+    def __str__(self):
+        return self.nombre
+
+# vc_tab_clientes_d
+class vc_tab_clientes_d(models.Model):
+    codigo = models.CharField(max_length=20, primary_key=True)  # Código del cliente o registro
+    representante = models.CharField(max_length=150, blank=True, null=True)
+    cargo = models.CharField(max_length=100, blank=True, null=True)
+    telefono = models.CharField(max_length=20, blank=True, null=True)
+    movil = models.CharField(max_length=20, blank=True, null=True)
+    email = models.CharField(max_length=100, blank=True, null=True)
+    empresa = models.CharField(max_length=150, blank=True, null=True)
+    direccion = models.CharField(max_length=150, blank=True, null=True)
+    activo = models.BooleanField(default=True)  # Indicador de activo/inactivo
+
+    class Meta:
+        managed = False
+        db_table = "vc_tab_clientes_d"
+        ordering = ["representante"]
+
+    def __str__(self):
+        return f"{self.representante} ({self.empresa})"
+    
+# vc_tab_estado
+
+##=============================##
+## LOGISTICA ##
+##=============================##
 class ClienteLogistica(models.Model):
     id_cliente = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=100)
@@ -311,7 +362,6 @@ class AlmacenNew(models.Model):
 
     def __str__(self):
         return f"{self.idalmacen} - {self.nombre}"
-
 
 class LogisticaDashboard(models.Model):
     # Campos principales mapeados a 'movimiento'
@@ -959,3 +1009,43 @@ class SisAlmTabDoc(models.Model):
     def __str__(self):
         return f"{self.cod} - {self.nom}"
 
+
+# Nuevos modelos mapeados a las tablas reales de la DB
+class Grupo(models.Model):
+    idgrupo = models.AutoField(primary_key=True)
+    descripcion = models.CharField(max_length=100)
+    activo = models.CharField(max_length=45, default="1")
+
+    class Meta:
+        managed = False
+        db_table = 'grupo'
+
+    def __str__(self):
+        return f"{self.idgrupo} - {self.descripcion}"
+
+
+class DocumentoAlmacen(models.Model):
+    iddocumento_almacen = models.AutoField(primary_key=True)
+    descripcion = models.CharField(max_length=45)
+    activo = models.CharField(max_length=45, default="1")
+
+    class Meta:
+        managed = False
+        db_table = 'documento_almacen'
+
+    def __str__(self):
+        return f"{self.iddocumento_almacen} - {self.descripcion}"
+
+
+class CostoAlmacen(models.Model):
+    idcosto_almacen = models.AutoField(primary_key=True)
+    codigo = models.CharField(max_length=45)
+    descripcion = models.CharField(max_length=100)
+    activo = models.CharField(max_length=45, default="1")
+
+    class Meta:
+        managed = False
+        db_table = 'costo_almacen'
+
+    def __str__(self):
+        return f"{self.codigo} - {self.descripcion}"

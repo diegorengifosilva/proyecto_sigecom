@@ -15,7 +15,6 @@ body{
     background:#ffffff;
 }
 
-
 /* ====== TITULOS ====== */
 h2{
     text-align:center;
@@ -45,220 +44,112 @@ h2{
     th, td {
         border: 1px solid #cbd5e1;
         padding: 6px;
+        font-size: 11px;
     }
 
-    /* CABECERA PRINCIPAL */
     th {
-        background-color: #008080;
-        color: white;
-        text-align: center;
-        font-weight: bold;
-    }
-
-/* ====== HEADER ====== */
-.header{
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    border-bottom:3px solid #0f766e;
-    padding-bottom:12px;
-    margin-bottom:18px;
-}
-
- 
-
-    .text-right { text-align: right; }
-    .text-center { text-align: center; }
-
-
-        /* ---------- HEADER ---------- */
-    .header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 25px;
-    }
-
-    .header img.logo-img {
-        width: 140px;
-        height: auto;
-    }
-
-    .excel-btn {
-        text-align: center;
+        background-color: #f8fafc;
+        color: #334155;
+        font-weight: 700;
+        text-transform: uppercase;
         font-size: 10px;
+        letter-spacing: 0.5px;
     }
 
-    .excel-btn img {
-        width: 38px;
-        display: block;
-        margin: auto;
+    /* Cabecera principal del grupo */
+    .header-grupo {
+        background-color: #0f766e !important;
+        color: white !important;
+        font-size: 12px !important;
+        padding: 8px !important;
+        text-align: left !important;
     }
 
-    .excel-btn a {
-        text-decoration: none;
-        color: #1D6F42;
-        font-weight: bold;
+    /* Alternancia de filas */
+    tbody tr:nth-child(even) {
+        background-color: #f8fafc;
     }
-  /* ===== TABLA PROFESIONAL ===== */
-.tabla-suministros{
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
-    margin-bottom: 18px;
 
-    /* BORDE EXTERNO GRUESO */
-    border: 2px solid #2f2f2f;
-}
+    tbody tr:hover {
+        background-color: #f1f5f9;
+    }
 
+    .text-right {
+        text-align: right;
+    }
 
+    .text-center {
+        text-align: center;
+    }
 
-/* bordes internos */
-.tabla-suministros th,
-.tabla-suministros td{
-    border: 1px solid #000000;
-    padding: 6px 8px;
-}
-
-/* cabecera principal */
-.tabla-suministros thead tr:first-child th{
-    background: #008080;
-    color: #ffffff;
-    font-weight: bold;
-    text-align: center;
-    border-bottom: 2px solid #2f2f2f;
-}
-
-/* sub cabecera */
-.tabla-suministros .sub-header th{
-    background: #06adad;
-    color: #000;
-    font-weight: bold;
-}
-
-
-
-/* hover (solo visual navegador) */
-.tabla-suministros tbody tr:hover{
-    background: #eef6ff;
-}
-
-
-.text-center{
-    text-align: center;
-}
-
-/* primera columna resaltada */
-.tabla-suministros td:first-child{
-    font-weight: bold;
-}
-
-/* separador inferior total grupo */
-.grupo-titulo {
-    background: #0f4c5c;
-    color: white;
-    padding: 6px;
-    font-weight: bold;
-    border: 2px solid #2f2f2f;
-    border-bottom: none;
-}
-
-/* ====== BOTON EXCEL ====== */
-.excel-btn button{
-    display:flex;
-    align-items:center;
-    gap:8px;
-    padding:8px 14px;
-    background:#1D6F42;
-    border:none;
-    border-radius:6px;
-    color:white;
-    font-weight:600;
-    cursor:pointer;
-    box-shadow:0 2px 5px rgba(0,0,0,.15);
-    transition:.2s ease;
-}
-
-.excel-btn button:hover{
-    background:#155c36;
-    transform:translateY(-1px);
-}
-
-.excel-btn img{
-    width:18px;
-}
-
+    .font-semibold {
+        font-weight: 600;
+    }
+    
+    .bg-gray-100 {
+        background-color: #f1f5f9;
+    }
 </style>
 </head>
 
 <body>
-<div class="header">
-    <div>
-        <img class="logo-img" src="{% static 'logo.png' %}" alt="Logo Empresa">
-    </div>
 
- <div class="excel-btn">
-    <button type="button" id="btnExcel">
-        <img src="{% static 'importar-xls.png' %}" alt="excel">
-        Exportar Excel
-    </button>
-</div>
-</div>
-<h2>REPORTE SUMINISTROS</h2>
+    <h2>REPORTE DE SUMINISTROS - COTIZACIÓN N° {{ id_registro }}</h2>
 
-<!-- CONTENEDOR GENERAL PARA EXPORTAR A EXCEL -->
-<div id="tabla_suministros">
-
-{% for grupo in grupos.values %}
-
-    <div class="grupo-titulo">
-       <tr colspan="10">
+    {% for key, grupo in grupos.items %}
+        <div class="grupo-titulo">
             {{ grupo.tipo }} - {{ grupo.titulo }}
-       </tr>
+        </div>
 
-    </div>
+        <table id="tabla-{{ key }}">
+            <thead>
+                <tr>
+                    <th rowspan="2" style="width: 4%;">Ítems</th>
+                    <th rowspan="2" style="width: 10%;">Código</th>
+                    <th rowspan="2" style="width: 28%;">Descripción</th>
+                    <th rowspan="2" style="width: 12%;">Proveedor</th>
+                    <th rowspan="2" style="width: 5%;" class="text-center">Cant</th>
+                    <th colspan="2" style="width: 16%;" class="text-center bg-gray-100">Costo Interno</th>
+                    <th colspan="2" style="width: 16%;" class="text-center">Precio Comercial Final</th>
+                    <th rowspan="2" style="width: 9%;" class="text-center">Utilidad Bruta</th>
+                </tr>
+                <tr>
+                    <th class="text-center bg-gray-100">Prec. Unit.</th>
+                    <th class="text-center bg-gray-100">Total</th>
+                    <th class="text-center">Prec. Unit.</th>
+                    <th class="text-center">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for it in grupo.items %}
+                <tr>
+                    <td class="text-center">{{ it.item }}</td>
+                    <td>{{ it.cod }}</td>
+                    <td>{{ it.des }}</td>
+                    <td>{{ it.pro }}</td>
+                    <td class="text-center font-semibold">{{ it.can }}</td>
+                    
+                    <td class="text-right">${{ it.val|intcomma }}</td>
+                    <td class="text-right font-semibold">${{ it.tot|intcomma }}</td>
+                    
+                    <td class="text-right">${{ it.puc|intcomma }}</td>
+                    <td class="text-right font-semibold">${{ it.toc|intcomma }}</td>
+                    
+                    <td class="text-right font-semibold" style="color: #0f766e;">${{ it.utilidad|intcomma }}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="10" class="text-center" style="color: #64748b; padding: 12px;">
+                        No hay ítems registrados en este grupo.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endfor %}
 
-    <table class="tabla-suministros">
-        <thead>
-            <tr>
-                <th rowspan="2">Ítems</th>
-                <th rowspan="2">Código</th>
-                <th rowspan="2">Descripción</th>
-                <th rowspan="2">Proveedor</th>
-                <th rowspan="2">Cant</th>
-                <th colspan="2">Cliente Final</th>
-                <th colspan="2">Precio Final</th>
-                <th rowspan="2">Utilidad</th>
-            </tr>
-            <tr class="sub-header">
-                <th>Prec. Unit.</th>
-                <th>Total</th>
-                <th>Prec. Unit.</th>
-                <th>Total</th>
-            </tr>
-        </thead>
-
-        <tbody>
-        {% for it in grupo.items %}
-            <tr>
-                <td class="text-center">{{ it.item }}</td>
-                <td>{{ it.cod }}</td>
-                <td>{{ it.des }}</td>
-                <td>{{ it.pro }}</td>
-                <td class="text-center">{{ it.can|floatformat:2 }}</td>
-                <td class="text-right">{{ it.val|floatformat:2 }}</td>
-                <td class="text-right">{{ it.tot|floatformat:2 }}</td>
-                <td class="text-right">{{ it.puc|floatformat:2 }}</td>
-                <td class="text-right">{{ it.toc|floatformat:2 }}</td>
-                <td class="text-right">{{ it.utilidad|floatformat:2 }}</td>
-            </tr>
-        {% endfor %}
-        </tbody>
-    </table>
-
-{% endfor %}
-
-</div>
+</body>
+</html>
 
 <!-- EXPORTAR A EXCEL -->
 <script>
@@ -408,5 +299,22 @@ var tableToExcel = (function () {
     }
 </script>
 
+
+<!-- Script to notify parent of height changes for responsive iframe modals -->
+<script>
+  function notifyParentHeight() {
+    if (window.parent && window.parent !== window) {
+      const height = document.documentElement.scrollHeight || document.body.scrollHeight || document.documentElement.offsetHeight;
+      window.parent.postMessage({ 
+        type: 'set-iframe-height', 
+        height: height
+      }, '*');
+    }
+  }
+  notifyParentHeight();
+  window.addEventListener('DOMContentLoaded', notifyParentHeight);
+  window.addEventListener('load', notifyParentHeight);
+  window.addEventListener('resize', notifyParentHeight);
+</script>
 </body>
 </html>

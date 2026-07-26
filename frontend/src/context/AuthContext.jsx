@@ -15,7 +15,7 @@ export const AuthProvider = ({ children }) => {
     try {
       setLoading(true);
 
-      const res = await api.get("usuarios/actual/");
+      const res = await api.get("users/usuario-actual/");
       setAuthUser(res.data);
       localStorage.setItem("auth_user", JSON.stringify(res.data));
     } catch (err) {
@@ -64,12 +64,12 @@ export const AuthProvider = ({ children }) => {
     try {
       console.log("🔹 Enviando login:", { usuario });
 
-      const res = await api.post("login_usuario/", {
+      const res = await api.post("users/login/", {
         usuario: usuario,
         contrasena: password,
       });
 
-      const { token: access, refresh, usuario: user } = res.data;
+      const { access, refresh, user } = res.data;
 
       if (!access || !user) throw new Error("Token o usuario no recibido");
 
@@ -102,8 +102,10 @@ export const AuthProvider = ({ children }) => {
      ========================================================== */
   const logout = () => {
     localStorage.clear();
+    if (api.defaults.headers.common["Authorization"]) {
+      delete api.defaults.headers.common["Authorization"];
+    }
     setAuthUser(null);
-    window.location.href = "/login";
   };
 
   /* ==========================================================
@@ -114,7 +116,7 @@ export const AuthProvider = ({ children }) => {
       const refresh = localStorage.getItem("refresh_token");
       if (!refresh) throw new Error("No hay refresh token");
 
-      const res = await api.post("token/users/refresh/", { refresh });
+      const res = await api.post("users/refresh/", { refresh });
       const { access } = res.data;
 
       localStorage.setItem("access_token", access);

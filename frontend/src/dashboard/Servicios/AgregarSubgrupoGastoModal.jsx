@@ -39,7 +39,7 @@ export default function SubgrupoModal({ open, onClose, onConfirm, subgrupo = nul
 
     const fetchTiposGasto = async () => {
       try {
-        const res = await api.get("/cotizaciones/tgasto/");
+        const res = await api.get("/core/tipo_gasto/");
         const data = Array.isArray(res.data) ? res.data : [];
         const activos = data.filter((t) => t.concepto === "1");
         setTiposGasto(activos);
@@ -74,7 +74,7 @@ export default function SubgrupoModal({ open, onClose, onConfirm, subgrupo = nul
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-md bg-white rounded-2xl shadow-2xl border-none p-0 overflow-hidden font-sans">
-        
+
         {/* HEADER MODERNO */}
         <div className="bg-slate-50/80 px-6 py-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
@@ -95,7 +95,7 @@ export default function SubgrupoModal({ open, onClose, onConfirm, subgrupo = nul
         {/* CONTENIDO FORMULARIO */}
         <div className="p-2">
           <div className="bg-slate-50/50 border border-slate-100 rounded-2xl p-4 space-y-4 shadow-inner">
-            
+
             {/* TIPO DE GASTO */}
             <SelectField
               inline

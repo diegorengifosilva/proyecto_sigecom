@@ -33,7 +33,7 @@ const MockModulePage = ({ title, icon: IconComponent = LayoutDashboard }) => {
 
       <div className="flex items-center space-x-2 text-indigo-500 font-bold text-xs uppercase tracking-widest bg-indigo-50 px-4 py-2 rounded-full border border-indigo-100">
         <AlertCircle className="h-4 w-4" />
-        <span>Próximamente: Integración con Base de Datos Antigravity</span>
+        <span>Próximamente: Integración nuevo Módulo</span>
       </div>
     </div>
   );

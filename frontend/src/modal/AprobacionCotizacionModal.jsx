@@ -259,7 +259,7 @@ export default function AprobacionCotizacionModal({ open, onClose, cotizacion, m
     setError("");
 
     try {
-      const res = await api.get(`cotizaciones/modal/${num_reg}/`);
+      const res = await api.get(`cotizaciones/cotizacion_detalle/${num_reg}/`);
 
       setData(res.data);
 
@@ -1191,7 +1191,7 @@ export default function AprobacionCotizacionModal({ open, onClose, cotizacion, m
     if (!num_reg) return;
 
     try {
-      const res = await api.get(`cotizacion/${num_reg}/servicios/`);
+      const res = await api.get(`cotizaciones/lista_servicios/${num_reg}/`);
 
       const lista = Array.isArray(res.data) ? res.data : [];
 
@@ -1591,7 +1591,7 @@ export default function AprobacionCotizacionModal({ open, onClose, cotizacion, m
   const condicionesGenerales = useMutation({
     mutationFn: (texto) =>
       api.post(
-        `cotizaciones/${numReg}/condiciones-generales/`,
+        `cotizaciones/condiciones-generales/${numReg}/`,
         { condiciones: texto }
       ),
 
@@ -1617,7 +1617,7 @@ export default function AprobacionCotizacionModal({ open, onClose, cotizacion, m
     queryKey: ["condiciones-generales", numReg],
     queryFn: async () => {
       const res = await api.get(
-        `cotizaciones/${numReg}/condiciones-generales/`
+        `cotizaciones/condiciones-generales/${numReg}/`
       );
       return res.data.condiciones;
     },
@@ -1801,7 +1801,7 @@ export default function AprobacionCotizacionModal({ open, onClose, cotizacion, m
 
   const handleNuevaVersion = useMutation({
     mutationFn: () =>
-      api.post(`cotizaciones/${cotizacionVista}/nueva-version/`),
+      api.post(`cotizaciones/nueva-version/${cotizacionVista}/`),
 
     onSuccess: (res) => {
       const { num_reg, cotin } = res.data;
@@ -1850,7 +1850,7 @@ export default function AprobacionCotizacionModal({ open, onClose, cotizacion, m
       try {
         // Lanzamos ambas peticiones en paralelo
         const [resCotizacion, resOportunidad] = await Promise.all([
-          api.get(`cotizaciones/modal/${cotizacionVista}/`),
+          api.get(`cotizaciones/cotizacion_detalle/${cotizacionVista}/`),
           api.get(`oportunidades/modal/${cotizacionVista}/`).catch(err => {
             console.warn("⚠️ No se encontró registro de oportunidad para este ID, usando datos vacíos.");
             return { data: {} }; // Si falla la op, devolvemos objeto vacío para no romper el flujo
@@ -1921,7 +1921,7 @@ export default function AprobacionCotizacionModal({ open, onClose, cotizacion, m
 
   const enviarCotizacionAprobacion = useMutation({
     mutationFn: () =>
-      api.patch(`cotizaciones/${numReg}/enviar-aprobacion/`, {
+      api.patch(`cotizaciones//enviar-aprobacion/${numReg}/`, {
         estado_codigo: 3,
       }),
 
@@ -2143,7 +2143,7 @@ export default function AprobacionCotizacionModal({ open, onClose, cotizacion, m
 
       // Pago / Moneda / Totales (Pestaña DATOS)
       tot_c: Number(data.tot_c || 0),
-      fpago: data.fpago || "",
+      forma_pago: data.forma_pago || "",
       lugar: data.lugar || "",
       tmone: data.tmone || "D", // Dólares por defecto
       tcamb: Number(data.tcamb || 0),
@@ -2223,7 +2223,7 @@ export default function AprobacionCotizacionModal({ open, onClose, cotizacion, m
   const CAMPOS_OBLIGATORIOS = [
     { key: "fecha", label: "Fecha" },
     { key: "referencia", label: "Referencia" },
-    { key: "cliente_codigo", label: "Para (Cliente)" },
+    { key: "id_cliente", label: "Para (Cliente)" },
     { key: "prob", label: "Probabilidad" },
     { key: "cotit", label: "Tipo Cotización" },
     { key: "area_codigo", label: "Área" },
@@ -2516,7 +2516,7 @@ export default function AprobacionCotizacionModal({ open, onClose, cotizacion, m
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="w-full max-w-[175vh] max-h-[90vh] overflow-y-auto bg-white rounded-2xl shadow-lg p-4">
+      <DialogContent className="w-[95vw] md:w-[92vw] lg:w-[90vw] xl:max-w-[175vh] h-fit max-h-[95vh] md:max-h-[90vh] overflow-y-auto bg-white rounded-2xl shadow-2xl p-3 sm:p-5 border-none">
 
         {/* ENCABEZADO EJECUTIVO ERP */}
         <div className="relative bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between shrink-0">

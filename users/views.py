@@ -17,7 +17,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
-from django.contrib.auth.hashers import check_password
+from django.contrib.auth.hashers import check_password, make_password
 from rest_framework.permissions import IsAuthenticated
 
 CACHE_LIST_KEY = "liquidacion_list"
@@ -103,8 +103,14 @@ def login_usuario(request):
     access["username"] = usuario.usuario
 
     # (Opcional) incluir nombre corto o cargo para validaciones rápidas en frontend
-    refresh["nombre"] = usuario.nombre_completo
-    access["nombre"] = usuario.nombre_completo
+    nombre_mod = (usuario.nombre_completo or "").strip()
+    if nombre_mod.upper() == "PEDRO EDUARDO BONILLA CORNEJO":
+        nombre_mod = "Eduardo Bonilla Cornejo"
+    elif nombre_mod.upper() == "ANA CLAUDIA CARBONEL GOMERO":
+        nombre_mod = "Claudia Carbonel Gomero"
+
+    refresh["nombre"] = nombre_mod
+    access["nombre"] = nombre_mod
 
     # Serializar datos del usuario
     user_data = UsuarioSerializer(usuario).data
@@ -154,10 +160,17 @@ def usuario_actual(request):
     return Response(user_data, status=status.HTTP_200_OK)
 
 # Area
-@api_view(["GET", "POST"])
+@api_view(["GET", "POST", "PUT", "DELETE"])
 @permission_classes([IsAuthenticated])
-def lista_areas(request):
+def lista_areas(request, id_area=None):
     if request.method == "GET":
+        if id_area:
+            try:
+                area = Area.objects.get(pk=id_area)
+                serializer = AreasSerializer(area)
+                return Response(serializer.data)
+            except Area.DoesNotExist:
+                return Response({"error": "Área no encontrada"}, status=404)
         # Quitamos el filtro de activo para ver todo el catálogo
         areas = Area.objects.all().order_by("id_area")
         serializer = AreasSerializer(areas, many=True)
@@ -169,6 +182,32 @@ def lista_areas(request):
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    elif request.method == "PUT":
+        pk = id_area or request.data.get("id_area") or request.data.get("codigo")
+        try:
+            area = Area.objects.get(pk=pk)
+            # El frontend envía 'activo' como booleano, en BD es int(11)
+            data = request.data.copy()
+            if "activo" in data:
+                data["activo"] = 1 if data["activo"] in [True, 1, "1", "true", "True"] else 0
+            serializer = AreasSerializer(area, data=data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Area.DoesNotExist:
+            return Response({"error": "Área no encontrada"}, status=status.HTTP_404_NOT_FOUND)
+
+    elif request.method == "DELETE":
+        pk = id_area or request.data.get("id_area") or request.data.get("codigo")
+        try:
+            area = Area.objects.get(pk=pk)
+            area.activo = 0
+            area.save()
+            return Response({"message": "Área desactivada correctamente"}, status=status.HTTP_200_OK)
+        except Area.DoesNotExist:
+            return Response({"error": "Área no encontrada"}, status=status.HTTP_404_NOT_FOUND)
 
 # Cargo
 @api_view(["GET", "POST", "PUT"])
@@ -201,3 +240,42 @@ def lista_cargos(request):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         except Cargo.DoesNotExist:
             return Response({"error": "Cargo no encontrado"}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def cambiar_contrasena(request):
+    """
+    Cambia la contraseña del usuario autenticado.
+    Verifica la contraseña actual antes de realizar el cambio.
+    """
+    # Decodificar el token manualmente para obtener el usuario
+    jwt_auth = JWTAuthentication()
+    header = jwt_auth.get_header(request)
+    if header is None:
+        return Response({"error": "Token no proporcionado."}, status=status.HTTP_401_UNAUTHORIZED)
+
+    raw_token = jwt_auth.get_raw_token(header)
+    validated_token = jwt_auth.get_validated_token(raw_token)
+    usuario_id = validated_token.get("user_id")
+
+    try:
+        usuario = Usuario.objects.using("default").get(usuario=usuario_id)
+    except Usuario.DoesNotExist:
+        return Response({"error": "Usuario no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+
+    contrasena_actual = request.data.get("contrasena_actual")
+    contrasena_nueva = request.data.get("contrasena_nueva")
+
+    if not contrasena_actual or not contrasena_nueva:
+        return Response({"error": "Debe proporcionar la contraseña actual y la nueva."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Validar contraseña actual
+    password_db = (usuario.contrasena or "").strip()
+    if not (password_db == contrasena_actual or check_password(contrasena_actual, password_db)):
+        return Response({"error": "La contraseña actual es incorrecta."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Actualizar la contraseña (la hasheamos)
+    usuario.contrasena = make_password(contrasena_nueva)
+    usuario.save(using="default")
+
+    return Response({"success": "Contraseña cambiada con éxito."}, status=status.HTTP_200_OK)

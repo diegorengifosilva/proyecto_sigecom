@@ -1,0 +1,254 @@
+﻿python : Watching for file changes with StatReloader
+En línea: 1 Carácter: 73
++ ... ; .\env\Scripts\Activate.ps1; python manage.py runserver 2>&1 | Out-F ...
++                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Watching for fi...th StatReloader: 
+   String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Watching for file changes with StatReloader
+
+(process:22544): GLib-GIO-WARNING **: 14:56:15.232: Unexpectedly, UWP app 
+`Microsoft.OutlookForWindows_1.2026.602.400_x64__8wekyb3d8bbwe' (AUMId 
+`Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookforWindows') 
+supports 4 extensions but has no verbs
+
+(process:22544): GLib-GIO-WARNING **: 14:56:16.507: Unexpectedly, UWP app 
+`OpenAI.Codex_26.616.10790.0_x64__2p2nqsd0c76g0' (AUMId 
+`OpenAI.Codex_2p2nqsd0c76g0!App') supports 5 extensions but has no verbs
+System check identified some issues:
+
+WARNINGS:
+<django.template.backends.django.DjangoTemplates object at 0x000001C243E29160>: 
+(templates.W003) 'currency' is used for multiple template tag modules: 
+'cotizaciones_api.templatetags.currency', 'logistica_api.templatetags.currency'
+
+System check identified 1 issue (0 silenced).
+[25/Jun/2026 15:00:39] "GET /api/ HTTP/1.1" 200 1019
+[25/Jun/2026 15:00:40,206] - Broken pipe from ('127.0.0.1', 64947)
+C:\Users\VC-\PROYECTOS\proyecto_sigecom\backend\urls.py changed, reloading.
+C:\Users\VC-\PROYECTOS\proyecto_sigecom\backend\urls.py changed, reloading.
+Performing system checks...
+
+June 25, 2026 - 14:56:18
+Django version 5.2.4, using settings 'backend.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/5.2/howto/deployment/
+Watching for file changes with StatReloader
+Watching for file changes with StatReloader
+System check identified some issues:
+
+WARNINGS:
+<django.template.backends.django.DjangoTemplates object at 0x0000016373D19160>: 
+(templates.W003) 'currency' is used for multiple template tag modules: 
+'cotizaciones_api.templatetags.currency', 'logistica_api.templatetags.currency'
+
+System check identified 1 issue (0 silenced).
+
+(process:3668): GLib-GIO-WARNING **: 15:07:38.963: Unexpectedly, UWP app 
+`Microsoft.OutlookForWindows_1.2026.602.400_x64__8wekyb3d8bbwe' (AUMId 
+`Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookforWindows') 
+supports 4 extensions but has no verbs
+
+(process:3668): GLib-GIO-WARNING **: 15:07:39.715: Unexpectedly, UWP app 
+`OpenAI.Codex_26.616.10790.0_x64__2p2nqsd0c76g0' (AUMId 
+`OpenAI.Codex_2p2nqsd0c76g0!App') supports 5 extensions but has no verbs
+[25/Jun/2026 15:20:13] "GET /api/users/ HTTP/1.1" 200 1019
+C:\Users\VC-\PROYECTOS\proyecto_sigecom\logistica_api\urls.py changed, 
+reloading.
+C:\Users\VC-\PROYECTOS\proyecto_sigecom\logistica_api\urls.py changed, 
+reloading.
+Performing system checks...
+
+June 25, 2026 - 15:07:35
+Django version 5.2.4, using settings 'backend.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/5.2/howto/deployment/
+Watching for file changes with StatReloader
+Watching for file changes with StatReloader
+Exception in thread django-main-thread:
+Traceback (most recent call last):
+  File "C:\Users\VC-\AppData\Local\Programs\Python\Python313\Lib\threading.py", 
+line 1043, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Users\VC-\AppData\Local\Programs\Python\Python313\Lib\threading.py", 
+line 994, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\VC-\PROYECTOS\proyecto_sigecom\env\Lib\site-packages\django\uti
+ls\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+    ~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\VC-\PROYECTOS\proyecto_sigecom\env\Lib\site-packages\django\cor
+e\management\commands\runserver.py", line 134, in inner_run
+    self.check(**check_kwargs)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\Users\VC-\PROYECTOS\proyecto_sigecom\env\Lib\site-packages\django\cor
+e\management\base.py", line 492, in check
+    all_issues = checks.run_checks(
+        app_configs=app_configs,
+    ...<2 lines>...
+        databases=databases,
+    )
+  File "C:\Users\VC-\PROYECTOS\proyecto_sigecom\env\Lib\site-packages\django\cor
+e\checks\registry.py", line 89, in run_checks
+    new_errors = check(app_configs=app_configs, databases=databases)
+  File "C:\Users\VC-\PROYECTOS\proyecto_sigecom\env\Lib\site-packages\django\cor
+e\checks\urls.py", line 136, in check_custom_error_handlers
+    handler = resolver.resolve_error_handler(status_code)
+  File "C:\Users\VC-\PROYECTOS\proyecto_sigecom\env\Lib\site-packages\django\url
+s\resolvers.py", line 732, in resolve_error_handler
+    callback = getattr(self.urlconf_module, "handler%s" % view_type, None)
+                       ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\VC-\PROYECTOS\proyecto_sigecom\env\Lib\site-packages\django\uti
+ls\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\VC-\PROYECTOS\proyecto_sigecom\env\Lib\site-packages\django\url
+s\resolvers.py", line 711, in urlconf_module
+    return import_module(self.urlconf_name)
+  File "C:\Users\VC-\AppData\Local\Programs\Python\Python313\Lib\importlib\__ini
+t__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\Users\VC-\PROYECTOS\proyecto_sigecom\backend\urls.py", line 18, in 
+<module>
+    path('api/', include('logistica_api.urls')),
+                 ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\VC-\PROYECTOS\proyecto_sigecom\env\Lib\site-packages\django\url
+s\conf.py", line 39, in include
+    urlconf_module = import_module(urlconf_module)
+  File "C:\Users\VC-\AppData\Local\Programs\Python\Python313\Lib\importlib\__ini
+t__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\Users\VC-\PROYECTOS\proyecto_sigecom\logistica_api\urls.py", line 4, 
+in <module>
+    from . import views
+  File "C:\Users\VC-\PROYECTOS\proyecto_sigecom\logistica_api\views.py", line 
+1022
+    total = float(item.get(�total�) or 0)
+                           ^
+SyntaxError: invalid character '�' (U+201C)
+
+(process:22308): GLib-GIO-WARNING **: 16:29:57.725: Unexpectedly, UWP app 
+`Microsoft.OutlookForWindows_1.2026.602.400_x64__8wekyb3d8bbwe' (AUMId 
+`Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookforWindows') 
+supports 4 extensions but has no verbs
+
+(process:22308): GLib-GIO-WARNING **: 16:29:59.279: Unexpectedly, UWP app 
+`OpenAI.Codex_26.616.10790.0_x64__2p2nqsd0c76g0' (AUMId 
+`OpenAI.Codex_2p2nqsd0c76g0!App') supports 5 extensions but has no verbs
+C:\Users\VC-\PROYECTOS\proyecto_sigecom\logistica_api\views.py changed, 
+reloading.
+C:\Users\VC-\PROYECTOS\proyecto_sigecom\logistica_api\views.py changed, 
+reloading.
+Performing system checks...
+
+Watching for file changes with StatReloader
+Watching for file changes with StatReloader
+Exception in thread django-main-thread:
+Traceback (most recent call last):
+  File "C:\Users\VC-\AppData\Local\Programs\Python\Python313\Lib\threading.py", 
+line 1043, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Users\VC-\AppData\Local\Programs\Python\Python313\Lib\threading.py", 
+line 994, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\VC-\PROYECTOS\proyecto_sigecom\env\Lib\site-packages\django\uti
+ls\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+    ~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\VC-\PROYECTOS\proyecto_sigecom\env\Lib\site-packages\django\cor
+e\management\commands\runserver.py", line 134, in inner_run
+    self.check(**check_kwargs)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\Users\VC-\PROYECTOS\proyecto_sigecom\env\Lib\site-packages\django\cor
+e\management\base.py", line 492, in check
+    all_issues = checks.run_checks(
+        app_configs=app_configs,
+    ...<2 lines>...
+        databases=databases,
+    )
+  File "C:\Users\VC-\PROYECTOS\proyecto_sigecom\env\Lib\site-packages\django\cor
+e\checks\registry.py", line 89, in run_checks
+    new_errors = check(app_configs=app_configs, databases=databases)
+  File "C:\Users\VC-\PROYECTOS\proyecto_sigecom\env\Lib\site-packages\django\cor
+e\checks\urls.py", line 136, in check_custom_error_handlers
+    handler = resolver.resolve_error_handler(status_code)
+  File "C:\Users\VC-\PROYECTOS\proyecto_sigecom\env\Lib\site-packages\django\url
+s\resolvers.py", line 732, in resolve_error_handler
+    callback = getattr(self.urlconf_module, "handler%s" % view_type, None)
+                       ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\VC-\PROYECTOS\proyecto_sigecom\env\Lib\site-packages\django\uti
+ls\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\VC-\PROYECTOS\proyecto_sigecom\env\Lib\site-packages\django\url
+s\resolvers.py", line 711, in urlconf_module
+    return import_module(self.urlconf_name)
+  File "C:\Users\VC-\AppData\Local\Programs\Python\Python313\Lib\importlib\__ini
+t__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\Users\VC-\PROYECTOS\proyecto_sigecom\backend\urls.py", line 18, in 
+<module>
+    path('api/', include('logistica_api.urls')),
+                 ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\VC-\PROYECTOS\proyecto_sigecom\env\Lib\site-packages\django\url
+s\conf.py", line 39, in include
+    urlconf_module = import_module(urlconf_module)
+  File "C:\Users\VC-\AppData\Local\Programs\Python\Python313\Lib\importlib\__ini
+t__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\Users\VC-\PROYECTOS\proyecto_sigecom\logistica_api\urls.py", line 4, 
+in <module>
+    from . import views
+  File "C:\Users\VC-\PROYECTOS\proyecto_sigecom\logistica_api\views.py", line 
+1264
+    total = float(item.get(�total�) or 0)
+                           ^
+SyntaxError: invalid character '�' (U+201C)
+
+(process:12020): GLib-GIO-WARNING **: 16:31:03.702: Unexpectedly, UWP app 
+`Microsoft.OutlookForWindows_1.2026.602.400_x64__8wekyb3d8bbwe' (AUMId 
+`Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookforWindows') 
+supports 4 extensions but has no verbs
+
+(process:12020): GLib-GIO-WARNING **: 16:31:05.063: Unexpectedly, UWP app 
+`OpenAI.Codex_26.616.10790.0_x64__2p2nqsd0c76g0' (AUMId 
+`OpenAI.Codex_2p2nqsd0c76g0!App') supports 5 extensions but has no verbs

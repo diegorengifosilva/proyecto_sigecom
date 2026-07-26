@@ -43,7 +43,7 @@ export default function SeguimientoModal({ open, onClose, num_reg }) {
     try {
       setLoading(true);
       const token = localStorage.getItem("access_token");
-      const res = await axios.get(`/api/cotizacion/${num_reg}/seguimientos/`, {
+      const res = await axios.get(`/api/cotizacion/seguimientos/${num_reg}/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 

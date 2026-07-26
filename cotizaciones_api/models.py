@@ -6,770 +6,475 @@ from decimal import Decimal
 from simple_history.models import HistoricalRecords
 from django.contrib.auth.hashers import check_password, make_password
 import datetime
-from core.models import Representante
 
 #========================================================================================
 
-#========================================================================================
+##==============##
+## COTIZACIONES ##
+##==============##
+class Cotizacion(models.Model):
+    # ── IDENTIFICADORES Y PERIODOS ─────────────────────────────
+    id_registro = models.AutoField(primary_key=True)
+    anno = models.IntegerField(null=True, blank=True) # year(4) en MySQL
+    mes = models.IntegerField(null=True, blank=True)
+    codigo = models.CharField(max_length=45, null=True, blank=True) # Antes 'cotin'
+    
+    # ── TIPADO Y FECHAS ─────────────────────────────
+    # Relación con la tabla tipo_coti
+    id_tipo = models.ForeignKey(
+        'core.TipoCotizacion', on_delete=models.PROTECT, db_column='id_tipo', null=True
+    )
+    tipo_venta = models.CharField(max_length=45, null=True, blank=True) # T=Total, P=Parcial
+    fecha = models.DateTimeField(default=timezone.now, null=True, blank=True) # Antes 'cotif'
+    referencia = models.CharField(max_length=200, null=True, blank=True) # Antes 'refer'
 
-##============================##
-## APROBACIÓN DE COTIZACIONES ##
-##============================##
-class DashboardCotizacion(models.Model):
-    # ── DATOS PRINCIPALES ─────────────────────────────
-    numero = models.CharField(max_length=70, db_column="cotin", blank=True, null=True)
-    fecha = models.DateField(db_column="cotif", db_index=True, default=timezone.now)
-    referencia = models.CharField(max_length=150, blank=True, null=True, db_column="refer")
-    num_reg = models.AutoField(primary_key=True, db_column="num_reg")
+    # ── CLIENTE Y REPRESENTANTE ─────────────────────────────
+    id_cliente = models.ForeignKey(
+        'core.Cliente', on_delete=models.PROTECT, db_column='id_cliente', null=True
+    )
+    id_representante = models.ForeignKey(
+        'core.Representante', on_delete=models.PROTECT, db_column='id_representante', null=True
+    )
+    # Campos de respaldo (Snapshot) para cuando el representante cambie en el maestro
+    representante_nombre = models.CharField(max_length=100, null=True, blank=True)
+    representante_cargo = models.CharField(max_length=100, null=True, blank=True)
+    representante_telefono = models.CharField(max_length=100, null=True, blank=True)
+    representante_movil = models.CharField(max_length=100, null=True, blank=True)
+    representante_correo = models.CharField(max_length=100, null=True, blank=True)
 
-    # ── CLIENTE ─────────────────────────────
-    cliente_codigo = models.CharField(max_length=5, blank=True, null=True, db_column="empre")
-    nombr = models.CharField(max_length=70, blank=True, null=True, db_column="nombr")
-    cargr = models.CharField(max_length=70, blank=True, null=True, db_column="cargr")
-    codir = models.CharField(max_length=5, blank=True, null=True, db_column="codir")
-    teler = models.CharField(max_length=50, blank=True, null=True, db_column="teler")
-    movir = models.CharField(max_length=50, blank=True, null=True, db_column="movir")
-    mailr = models.CharField(max_length=50, blank=True, null=True, db_column="mailr")
+    # ── PERSONAL INTERNO ─────────────────────────────
+    id_comercial = models.ForeignKey(
+        'users.Usuario', on_delete=models.PROTECT, db_column='id_comercial', 
+        related_name='cotizaciones_comercial', null=True
+    )
+    id_tecnico = models.ForeignKey(
+        'users.Usuario', on_delete=models.PROTECT, db_column='id_tecnico', 
+        related_name='cotizaciones_tecnico', null=True
+    )
+    id_creador = models.ForeignKey(
+        'users.Usuario', on_delete=models.PROTECT, db_column='id_creador', 
+        related_name='cotizaciones_creadas', null=True
+    )
 
-    prob = models.CharField(max_length=1, blank=True, null=True, db_column="prob")
-    cotit = models.CharField(max_length=1, blank=True, null=True, db_column="cotit")
-    tven = models.CharField(max_length=1, blank=True, null=True, db_column="tven")
+    # ── CONDICIONES COMERCIALES ─────────────────────────────
+    forma_pago = models.CharField(max_length=100, null=True, blank=True)
+    lugar = models.CharField(max_length=50, null=True, blank=True)
+    tipo_moneda = models.CharField(max_length=45, default='S') # S=Soles, D=Dólares
+    igv = models.CharField(max_length=1, null=True, blank=True) # S/N
+    tipo_cambio = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
 
-    # ── ÁREA ─────────────────────────────
-    area_codigo = models.CharField(max_length=1, blank=True, null=True, db_column="area")
+    # ── TIEMPOS (USANDO LA NUEVA TABLA UNIDADTIEMPO) ─────────────
+    entrega_suministros = models.IntegerField(null=True, blank=True)
+    id_unidad_tiempo_entrega_suministros = models.ForeignKey(
+        'core.UnidadTiempo', on_delete=models.PROTECT, 
+        db_column='id_unidad_tiempo_entrega_suministros', null=True, related_name='suministros'
+    )
+    
+    entrega_servicios = models.IntegerField(null=True, blank=True)
+    id_unidad_tiempo_entrega_servicios = models.ForeignKey(
+        'core.UnidadTiempo', on_delete=models.PROTECT, 
+        db_column='id_unidad_tiempo_entrega_servicios', null=True, related_name='servicios'
+    )
+    
+    validez_oferta = models.IntegerField(null=True, blank=True)
+    id_unidad_tiempo_validez = models.ForeignKey(
+        'core.UnidadTiempo', on_delete=models.PROTECT, 
+        db_column='id_unidad_tiempo_validez', null=True, related_name='validez'
+    )
 
-    # ── ESTADO ─────────────────────────────
-    estado_codigo = models.CharField(max_length=1, blank=True, null=True, db_column="estad")
-
-    # ── ENVÍO ─────────────────────────────
-    envio = models.IntegerField(blank=True, null=True, db_column="envio", default="0")
-
-    # ── IMPORTE ─────────────────────────────
-    tot_c = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True, db_column="tot_c")
-
-    # ── PAGO / ENTREGA / MONEDA ─────────────
-    fpago = models.CharField(max_length=50, blank=True, null=True, db_column="fpago")
-    lugar = models.CharField(max_length=100, blank=True, null=True, db_column="lugar")
-    entrp = models.IntegerField(blank=True, null=True, db_column="entrp")
-    entrf = models.CharField(max_length=50, blank=True, null=True, db_column="entrf")
-    tmone = models.CharField(max_length=20, blank=True, null=True, db_column="tmone")
-    tcamb = models.DecimalField(max_digits=7, decimal_places=3, blank=True, null=True)
-    igv = models.CharField(max_length=1, blank=True, null=True, db_column="igv")
-
-    # ── ENTREGA SUMINISTROS ─────────────
-    plazo = models.IntegerField(blank=True, null=True, db_column="plazo")      # antes era CharField, DB es int(3)
-    tot_d = models.CharField(max_length=1, blank=True, null=True, db_column="tot_d")  # varchar(1)
-
-    # ── ENTREGA SERVICIOS ─────────────
-    por_c = models.IntegerField(blank=True, null=True, db_column="por_c")      # int(3)
-    tot_s = models.CharField(max_length=1, blank=True, null=True, db_column="tot_s")  # varchar(1)
-
-    # ── VALIDEZ OFERTA ─────────────
-    valid = models.IntegerField(blank=True, null=True, db_column="valid")      # int(3)
-    acu_s = models.CharField(max_length=1, blank=True, null=True, db_column="acu_s")  # varchar(1)
-
-    # ── CONTACTOS ─────────────────────────────
-    # Comercial
-    codic = models.CharField(max_length=8, blank=True, null=True, db_column="codic")
-    nombc = models.CharField(max_length=150, blank=True, null=True, db_column="nombc")
-    telec = models.CharField(max_length=20, blank=True, null=True, db_column="telec")
-    mov1c = models.CharField(max_length=20, blank=True, null=True, db_column="mov1c")
-    mov2c = models.CharField(max_length=20, blank=True, null=True, db_column="mov2c")
-    mov3c = models.CharField(max_length=20, blank=True, null=True, db_column="mov3c")
-    mailc = models.CharField(max_length=100, blank=True, null=True, db_column="mailc")
-
-    # Técnico
-    codit = models.CharField(max_length=8, blank=True, null=True, db_column="codit")
-    nombt = models.CharField(max_length=150, blank=True, null=True, db_column="nombt")
-    telet = models.CharField(max_length=20, blank=True, null=True, db_column="telet")
-    mov1t = models.CharField(max_length=20, blank=True, null=True, db_column="mov1t")
-    mov2t = models.CharField(max_length=20, blank=True, null=True, db_column="mov2t")
-    mov3t = models.CharField(max_length=20, blank=True, null=True, db_column="mov3t")
-    mailt = models.CharField(max_length=100, blank=True, null=True, db_column="mailt")
-
-    # ── ADICIONALES ─────────────────────────────
-    acu_e = models.TextField(blank=True, null=True)
-    sald = models.DecimalField(max_digits=11, decimal_places=2, blank=True, null=True, db_column="sald")
-    anno = models.CharField(max_length=4, blank=True, null=True, db_column="anno")
-    mes = models.CharField(max_length=2, blank=True, null=True, db_column="mes")
-    regus = models.CharField(max_length=200, blank=True, null=True, db_column="regus")
+    # ── TOTALES Y ESTADOS ─────────────────────────────
+    condiciones_generales = models.TextField(db_column='condiciones_generales', null=True, blank=True)
+    total_cotizacion = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    saldo = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    id_estado = models.ForeignKey(
+        'core.Estado', on_delete=models.PROTECT, db_column='id_estado', null=True
+    )
+    id_area = models.IntegerField(null=True, blank=True) # Relación con tabla área
+    estado_envio = models.IntegerField(null=True, blank=True) # 0 o 1
+    sincronizado_old_db = models.IntegerField(default=0, db_column='sincronizado_old_db')
 
     # ── DESCUENTOS ─────────────────────────────
-    des_a = models.CharField(max_length=1, blank=True, null=True, db_column="des_a")
-    des_t = models.CharField(max_length=1, blank=True, null=True, db_column="des_t")
-    des_m = models.DecimalField(max_digits=11, decimal_places=2, blank=True, null=True, db_column="des_m")
-    des_p = models.DecimalField(max_digits=11, decimal_places=2, blank=True, null=True, db_column="des_p")
+    descuento_aplica = models.IntegerField(default=0) # 0=No, 1=Si
+    descuento_afecto = models.CharField(max_length=1, null=True, blank=True) # T, M, S
+    descuento_monto = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    descuento_porcentaje = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
-    anno = models.CharField(max_length=4, blank=True, null=True, db_column="anno")
-    mes = models.CharField(max_length=2, blank=True, null=True, db_column="mes")
-    anno_a = models.CharField(max_length=4, blank=True, null=True, db_column="anno_a", default="2026")
+    # ── KPI / SEGUIMIENTO ─────────────────────────────
+    año_apertura = models.IntegerField(null=True, blank=True)
+    mensajes = models.IntegerField(null=True, blank=True)
+    seguimiento = models.IntegerField(null=True, blank=True)
+    probabilidad = models.IntegerField(null=True, blank=True)
+    fijar = models.IntegerField(default=0, db_column='fijar')
 
-    # ── PROPIEDADES DERIVADAS ─────────────────────────────
-    @property
-    def cliente_nombre(self):
-        try:
-            from cotizaciones_api.models import Cliente
-            if not self.id_cliente:
-                return self.nombr or "Sin Cliente"
-            
-            cliente = Cliente.objects.filter(codigo=self.id_cliente).first()
-            if cliente:
-                return cliente.nombre
-            return self.nombr or ""
-            
-        except Exception:
-            return self.nombr or ""
-
-    @property
-    def prob_nombre(self):
-        mapping = {"0": "Baja", "1": "Media", "2": "Alta", "3": "Muy Alta"}
-        return mapping.get(self.prob, "")
-
-    @property
-    def tipo_nombre(self):
-        mapping = {"P": "Proyecto", "S": "Servicio", "V": "Venta"}
-        return mapping.get(self.cotit, "")
-
-    @property
-    def area_nombre(self):
-        mapping = {"1": "Industria", "2": "Mineria", "3": "Mantenimiento",
-                   "4": "Petroquimica", "8": "Seguridad de Maquinaria"}
-        return mapping.get(self.area_codigo, "")
-
-    @property
-    def estado_nombre(self):
-        mapping = {"1": "Adjudicado", "2": "Pendiente", "3": "Perdida", "4": "Anulado",
-                   "5": "Postergada", "6": "En Seguimiento"}
-        return mapping.get(self.estado_codigo, "")
-
-    @property
-    def moneda_nombre(self):
-        mapping = {"S": "Soles", "D": "Dólares"}
-        return mapping.get(self.tmone, "")
-
-    @property
-    def unidad_suministro_nombre(self):
-        mapping = {"D": "Dias", "S": "Semanas", "M": "Meses"}
-        return mapping.get(self.tot_d, "")
-
-    @property
-    def unidad_servicio_nombre(self):
-        mapping = {"D": "Dias", "S": "Semanas", "M": "Meses"}
-        return mapping.get(self.tot_s, "")
-
-    @property
-    def unidad_validez_nombre(self):
-        mapping = {"D": "Dias", "S": "Semanas", "M": "Meses"}
-        return mapping.get(self.acu_s, "")
-
-    @property
-    def igv_nombre(self):
-        mapping = {
-            "S": "Incluye",
-            "N": "No Incluye",
-        }
-        return mapping.get(self.igv, "")
+    # ── OPORTUNIDADES ─────────────────────────────
+    recepcion_solicitud = models.DateTimeField(null=True, blank=True)
+    visita_tecnica = models.DateTimeField(null=True, blank=True)
+    fecha_limite = models.DateTimeField(null=True, blank=True)
+    emision_cotizacion = models.DateTimeField(null=True, blank=True)
+    estado_oportunidad = models.IntegerField(default=1, null=True, blank=True)
+    comentario = models.TextField(null=True, blank=True)
 
     class Meta:
-        managed = False
-        db_table = "vc_mov_cotizaciones"
-        verbose_name = "Cotización Dashboard"
-        verbose_name_plural = "Cotizaciones Dashboard"
-        ordering = ["-fecha", "-numero", ]
+        managed = False # Cambiar a True si vas a migrar datos de la vieja a la nueva
+        db_table = 'cotizaciones'
+        indexes = [
+            models.Index(fields=['id_cliente', 'id_tipo']),
+        ]
 
     def __str__(self):
-        return f"Cotización #{self.numero} | {self.cliente_nombre} | {self.estado_nombre}"
+        return f"Cotización {self.codigo} - {self.id_cliente}"
 
-class CotiSuministros(models.Model):
-    num_reg = models.IntegerField(blank=True, null=True)
-    cog = models.CharField(max_length=5, blank=True, null=True)
-    nog = models.CharField(max_length=200, blank=True, null=True)
-    nig = models.IntegerField(blank=True, null=True)
-    num = models.IntegerField(primary_key=True)
-    cod = models.CharField(max_length=60, blank=True, null=True)
-    des = models.CharField(max_length=5000, blank=True, null=True)
-    pro = models.CharField(max_length=50, blank=True, null=True)
-    can = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
-    puc = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
-    toc = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
-    env_tot = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True) # Costo Envio Total
-    env_par = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True) # Costo Envío por Item
-    cost_env = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True) # Costo Envío
-    por_env = models.DecimalField(max_digits=12, decimal_places=4, blank=True, null=True) # % Envío (4 decimales para precisión)
-    cost_c_env = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True) # Costo Con Envío
-    cau = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    tou = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    val = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    tot = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    mov = models.CharField(max_length=2, blank=True, null=True)
-    tpr = models.CharField(max_length=2, blank=True, null=True)
-    tde = models.CharField(max_length=50, blank=True, null=True)
-    tog = models.CharField(max_length=1, blank=True, null=True)
-
-    ent = models.IntegerField(blank=True, null=True)        # Tiempo (Número)
-    enu = models.CharField(max_length=1, blank=True, null=True) # Unidad (D, S, M)
-    obs = models.CharField(max_length=5000, blank=True, null=True) # Observación
-
-    class Meta:
-        db_table = 'vc_mov_cotizaciones_su'
-        managed = False 
-
-    def __str__(self):
-        return f"Registro {self.num_reg} - Código {self.cod}"
-
-class CotiServicios(models.Model):
-    num_reg = models.IntegerField(blank=True, null=True)
-    cog = models.CharField(max_length=5, blank=True, null=True)
-    nog = models.CharField(max_length=200, blank=True, null=True)
-    nig = models.IntegerField(blank=True, null=True)
-
-    # Mantenemos num como PK igual que suministros
-    num = models.IntegerField(primary_key=True)
-
-    cod = models.CharField(max_length=60, blank=True, null=True)
-    des = models.CharField(max_length=100, blank=True, null=True)
-    pro = models.CharField(max_length=50, blank=True, null=True)
-
-    can = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
-    puc = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
-    toc = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
-
-    cau = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    tou = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    val = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    tot = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-
-    mov = models.CharField(max_length=2, blank=True, null=True)
-    tpr = models.CharField(max_length=1, blank=True, null=True)
-
-    # En servicios tde es DECIMAL según la BD real
-    tde = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
-
-    # tog es longtext → TextField
-    tog = models.TextField(blank=True, null=True)
-
-    class Meta:
-        db_table = 'vc_mov_cotizaciones_mo'
-        managed = False
-
-    def __str__(self):
-        return f"Servicio {self.num_reg} - Código {self.cod}"
-
-class CotiMensajes(models.Model):
-    id_mensaje = models.AutoField(primary_key=True)
-    num_reg = models.CharField(max_length=70)
-    dat = models.DateTimeField(blank=True, null=True)
-    cod = models.CharField(max_length=20)
-    msj = models.CharField(max_length=500)
-    tipo = models.CharField(max_length=1, default="N")   # N, L, C, M
-    alerta = models.CharField(max_length=1, default="N") # S, N
-    alerta_fecha = models.DateTimeField(null=True, blank=True) # La agenda exacta
-    alerta_completada = models.DateTimeField(blank=True)    # Para el check de la notificación
-    act = models.CharField(max_length=1, default="1")    # 1: Pendiente, 2: Completado
-
-    class Meta:
-        db_table = "vc_mov_cotizaciones_msj"
-        ordering = ["-dat"]
-        managed = False 
-
-    def __str__(self):
-        return f"{self.num_reg} - {self.cod} ({self.tipo})"
+class CotizacionSuministro(models.Model):
+    # ── IDENTIFICADOR (Nueva PK Auto-incremental) ──
+    id_suministro = models.AutoField(primary_key=True)
     
-class CotiSeguimiento(models.Model):
-    dat = models.DateTimeField(primary_key=True)
-    num_reg = models.IntegerField()
-    num = models.IntegerField()
-    fec = models.CharField(max_length=25)  # 🔥 CAMBIO CLAVE
-    hor = models.CharField(max_length=10)
-    des = models.CharField(max_length=700)
-    cod = models.CharField(max_length=30)
-    act = models.CharField(max_length=1, default="1")
+    # ── RELACIÓN PADRE (Vínculo con Cotización) ──
+    id_registro = models.ForeignKey(
+        'Cotizacion', 
+        on_delete=models.CASCADE, 
+        db_column='id_registro', 
+        related_name='suministros'
+    )
+
+    # ── LLAVES FORÁNEAS (Relacionales) ──
+    id_tipo_gasto = models.ForeignKey(
+        'core.TipoGasto', 
+        on_delete=models.PROTECT, 
+        db_column='id_tipo_gasto', 
+        null=True, blank=True
+    )
+    id_marca = models.ForeignKey(
+        'core.TipoMarca', 
+        on_delete=models.PROTECT, 
+        db_column='id_marca', 
+        null=True, blank=True
+    )
+    id_unidad_tiempo_entrega = models.ForeignKey(
+        'core.UnidadTiempo', 
+        on_delete=models.PROTECT, 
+        db_column='id_unidad_tiempo_entrega', 
+        null=True, blank=True
+    )
+
+    # ── CAMPOS DE GRUPO Y ESTRUCTURA ──
+    codigo_grupo = models.IntegerField()
+    nombre_grupo = models.CharField(max_length=500, null=True, blank=True)
+    nivel = models.IntegerField(null=True, blank=True) # 0=Nombre Grupo, 1=Items
+    orden = models.IntegerField(default=0, null=True, blank=True)
+    
+    # ── INFORMACIÓN DEL ITEM ──
+    codigo_item = models.CharField(max_length=100)
+    descripcion = models.CharField(max_length=5000)
+    observacion = models.CharField(max_length=3000, null=True, blank=True)
+    proveedor = models.CharField(max_length=100, null=True, blank=True)
+    tipo_unidad = models.CharField(max_length=45, null=True, blank=True)
+    cantidad = models.IntegerField(null=True, blank=True)
+    
+    # ── TIEMPOS ──
+    tiempo_entrega = models.IntegerField(null=True, blank=True)
+
+    # ── CAMPOS ECONÓMICOS (Decimales) ──
+    costo_precio = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    costo_total = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    costo_envio_total = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    costo_envio_unidad = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    porcentaje_envio = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    costo_envio = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    costo_con_envio = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    porcentaje_utilidad = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    utilidad = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    precio_venta = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    venta_total = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    
+    total_por_grupo = models.IntegerField(null=True, blank=True)
 
     class Meta:
-        db_table = "vc_mov_cotizaciones_vi"
         managed = False
-        ordering = ["-dat"]
+        db_table = 'cotizaciones_suministros'
+        verbose_name = "Suministro"
+        verbose_name_plural = "Suministros"
 
     def __str__(self):
-        return f"{self.num_reg} - {self.cod}"
+        return f"{self.id_registro} - {self.descripcion}"
+
+class CotizacionServicio(models.Model):
+    id_servicio = models.AutoField(primary_key=True)
+    id_registro = models.ForeignKey(
+        'Cotizacion', 
+        on_delete=models.CASCADE, 
+        db_column='id_registro',
+        related_name='servicios'
+    )
+    # Relaciones con tablas maestras
+    id_tipo_gasto = models.ForeignKey(
+        'core.TipoGasto',
+        on_delete=models.SET_NULL,
+        db_column='id_tipo_gasto',
+        null=True, blank=True
+    )
+    id_area = models.ForeignKey(
+        'users.Area',
+        on_delete=models.SET_NULL,
+        db_column='id_area',
+        null=True, blank=True
+    )
+    
+    # Datos del Servicio (Nivel 0)
+    codigo_servicio = models.CharField(max_length=100, null=True, blank=True)
+    nombre_servicio = models.CharField(max_length=100, null=True, blank=True)
+    nivel = models.IntegerField(null=True, blank=True) # 0=Servicio, 1=Tipo Gasto, 2=Item
+    orden = models.IntegerField(null=True, blank=True, default=0)
+    
+    # Datos del Ítem (Nivel 2)
+    codigo_item = models.CharField(max_length=100, null=True, blank=True)
+    descripcion_item = models.CharField(max_length=255, null=True, blank=True)
+    
+    # Cálculos y Cantidades
+    horas = models.IntegerField(null=True, blank=True)
+    cantidad_hombres = models.IntegerField(null=True, blank=True)
+    costo_hombre_dia = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    cantidad_dias = models.IntegerField(null=True, blank=True)
+    
+    # Valores Monetarios (Costo)
+    costo_total = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    porcentaje = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    utilidad = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    
+    # Valores Monetarios (Cotizado/Venta)
+    cotizado_hombre_dia = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    cotizado_total = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    
+    # Descripciones largas
+    descripcion_servicio = models.TextField(db_column='descripcion_servicio', null=True, blank=True)
+
+    class Meta:
+        managed = False
+        db_table = 'cotizaciones_servicios'
+        ordering = ['orden', 'id_servicio']
+
+    def __str__(self):
+        return f"{self.id_registro} - {self.nombre_servicio or self.descripcion_item}"
 
 class CotizacionAdjunto(models.Model):
-    # 'id' se crea automáticamente como AutoField en Django
-    id_registro = models.IntegerField()
-    nombre = models.CharField(max_length=255)
-    descripcion = models.TextField(null=True, blank=True)
-    fecha = models.DateTimeField(auto_now_add=True)
-    usuario = models.CharField(max_length=100)
-    ruta = models.CharField(max_length=500)
+    id_adjuntos = models.AutoField(primary_key=True, db_column='id_adjuntos')
+    id_registro = models.ForeignKey(
+        'Cotizacion', 
+        on_delete=models.CASCADE, 
+        db_column='id_registro', 
+        related_name='adjuntos'
+    )
+    nombre = models.CharField(max_length=255, db_column='nombre')
+    descripcion = models.TextField(null=True, blank=True, db_column='descripcion')
+    fecha = models.DateTimeField(default=timezone.now, db_column='fecha')
+    id_usuario = models.ForeignKey(
+        'users.Usuario', 
+        on_delete=models.PROTECT, 
+        db_column='id_usuario'
+    )
+    # Si en la DB es varchar(255), usamos CharField. FileField es para cuando Django gestiona el storage.
+    ruta = models.CharField(max_length=255, db_column='ruta')
+    activo = models.CharField(max_length=1, default='1', db_column='activo')
 
     class Meta:
+        managed = False
         db_table = 'cotizaciones_adjuntos'
-        managed = False  # Al haber creado la tabla manualmente en SQLyog
 
-#========================================================================================
-
-##===============##
-## OPORTUNIDADES ##
-##===============##
-class DashboardOportunidad(models.Model):
-    # ── IDENTIFICACIÓN ──────────────────────────
-    num_reg = models.AutoField(primary_key=True, db_column="num_reg")
-    num_reg_cot = models.IntegerField(db_column="num_reg_cot", blank=True, null=True)
-    numero = models.CharField(max_length=70, db_column="cotin", blank=True, null=True) 
-    fecha = models.DateField(db_column="cotif", blank=True, null=True)
-    referencia = models.CharField(max_length=150, db_column="refer", blank=True, null=True)
-
-    # ── SEGUIMIENTO (El núcleo) ──────────────────
-    f_recp = models.DateField(db_column="f_recp", default=timezone.now)
-    f_limite = models.DateField(db_column="f_limite", blank=True, null=True)
-    f_emi = models.DateField(db_column="f_emi", blank=True, null=True)
-    estado_op = models.IntegerField(db_column="estado_op", default=0)
-    coment = models.TextField(db_column="coment", blank=True, null=True)
+class CotizacionMensaje(models.Model):
+    id_mensaje = models.AutoField(primary_key=True)
+    # Relación con el padre
+    id_registro = models.ForeignKey(
+        'Cotizacion', 
+        on_delete=models.CASCADE, 
+        db_column='id_registro', 
+        related_name='mensajes_rel'
+    )
+    fecha = models.DateTimeField(default=timezone.now)
+    # Relación con el usuario que escribe
+    id_usuario = models.ForeignKey(
+        'users.Usuario', 
+        on_delete=models.PROTECT, 
+        db_column='id_usuario',
+        null=True,
+        blank=True
+    )
+    mensaje = models.TextField(null=True, blank=True)
     
-    # ── CLASIFICACIÓN Y ESTADO COMERCIAL ──────────
-    prob = models.CharField(max_length=1, db_column="prob", blank=True, null=True)
-    cotit = models.CharField(max_length=1, db_column="cotit", blank=True, null=True) # P/S/V
-    tven = models.CharField(max_length=1, db_column="tven", blank=True, null=True)
-    area_codigo = models.CharField(max_length=1, db_column="area", blank=True, null=True)
-    estado_codigo = models.CharField(max_length=1, db_column="estad", blank=True, null=True) # Estado de coti (1-6)
-    envio = models.IntegerField(db_column="envio", default=0)
-
-    # ── CLIENTE Y CONTACTO ────────────────────────
-    empre = models.CharField(max_length=10, db_column="empre", blank=True, null=True)
-    nombr = models.CharField(max_length=150, db_column="nombr", blank=True, null=True)
-    cargr = models.CharField(max_length=70, db_column="cargr", blank=True, null=True)
-    codir = models.CharField(max_length=5, db_column="codir", blank=True, null=True)
-    teler = models.CharField(max_length=50, db_column="teler", blank=True, null=True)
-    movir = models.CharField(max_length=50, db_column="movir", blank=True, null=True)
-    mailr = models.CharField(max_length=50, db_column="mailr", blank=True, null=True)
-
-    # ── PAGO / MONEDA / TOTALES ──────────────────
-    tot_c = models.DecimalField(max_digits=12, decimal_places=2, db_column="tot_c", blank=True, null=True)
-    fpago = models.CharField(max_length=50, db_column="fpago", blank=True, null=True)
-    lugar = models.CharField(max_length=100, db_column="lugar", blank=True, null=True)
-    tmone = models.CharField(max_length=20, db_column="tmone", blank=True, null=True)
-    tcamb = models.DecimalField(max_digits=7, decimal_places=3, db_column="tcamb", blank=True, null=True)
-    igv = models.CharField(max_length=1, db_column="igv", blank=True, null=True)
-
-    # ── TIEMPOS DE ENTREGA Y VALIDEZ ─────────────
-    plazo = models.IntegerField(db_column="plazo", blank=True, null=True)
-    tot_d = models.CharField(max_length=1, db_column="tot_d", blank=True, null=True)
-    por_c = models.IntegerField(db_column="por_c", blank=True, null=True)
-    tot_s = models.CharField(max_length=1, db_column="tot_s", blank=True, null=True)
-    valid = models.IntegerField(db_column="valid", blank=True, null=True)
-    acu_s = models.CharField(max_length=1, db_column="acu_s", blank=True, null=True)
-
-    # ── RESPONSABLES (Comercial y Técnico) ────────
-    codic = models.CharField(max_length=8, db_column="codic", blank=True, null=True)
-    nombc = models.CharField(max_length=150, db_column="nombc", blank=True, null=True)
-    codit = models.CharField(max_length=8, db_column="codit", blank=True, null=True)
-    nombt = models.CharField(max_length=150, db_column="nombt", blank=True, null=True)
-
-    # ── DESCUENTOS Y ADICIONALES ─────────────────
-    des_a = models.CharField(max_length=1, db_column="des_a", blank=True, null=True)
-    des_t = models.CharField(max_length=1, db_column="des_t", blank=True, null=True)
-    des_m = models.DecimalField(max_digits=11, decimal_places=2, db_column="des_m", blank=True, null=True)
-    des_p = models.DecimalField(max_digits=11, decimal_places=2, db_column="des_p", blank=True, null=True)
-    acu_e = models.TextField(db_column="acu_e", blank=True, null=True)
-
-    # ── METADATOS ───────────────────────────────
-    regus = models.CharField(max_length=200, db_column="regus", blank=True, null=True)
-    anno = models.CharField(max_length=4, db_column="anno", blank=True, null=True)
-    mes = models.CharField(max_length=2, db_column="mes", blank=True, null=True)
-    anno_a = models.CharField(max_length=4, db_column="anno_a", default="2026")
-
-    # ── PROPIEDADES (Para Dashboard y Selects) ──
-    @property
-    def area_nombre(self):
-        mapping = {"1": "Industria", "2": "Mineria", "3": "Mantenimiento", "4": "Petroquimica", "8": "Seguridad de Maquinaria"}
-        return mapping.get(self.area, "")
-
-    @property
-    def estado_nombre(self):
-        # 0: Pendiente, 1: No Cotizado, 2: Rechazado, 3: Cotizado
-        mapping = {0: "PENDIENTE", 1: "NO COTIZADO", 2: "RECHAZADO", 3: "COTIZADO"}
-        return mapping.get(self.estado_op, "PENDIENTE")
-
-    @property
-    def prob_nombre(self):
-        mapping = {"0": "Baja", "1": "Media", "2": "Alta", "3": "Muy Alta"}
-        return mapping.get(self.prob, "")
-
-    @property
-    def igv_nombre(self):
-        return "Incluye" if self.igv == "S" else "No Incluye"
+    # Sistema de Alertas
+    alerta = models.CharField(max_length=1, default='0') # '1' para Sí, '0' para No
+    alerta_fecha = models.DateTimeField(null=True, blank=True)
+    alerta_completada = models.DateTimeField(null=True, blank=True)
+    
+    completo = models.CharField(max_length=1, default='0') # '1' Completado, '0' Pendiente
+    activo = models.CharField(max_length=1, default='1')
 
     class Meta:
-        managed = False 
-        db_table = "vc_mov_oportunidades"
+        managed = False
+        db_table = 'cotizaciones_mensajes' # Verifica si es 'mensajes' o 'messages' según tu SQL
+        ordering = ['-fecha']
+
+    def __str__(self):
+        return f"Msj {self.id_mensaje} - Cot: {self.id_registro_id}"
+
+class CotizacionSeguimiento(models.Model):
+    id_seguimiento = models.AutoField(primary_key=True)
+    # Relación con la cotización padre
+    id_registro = models.ForeignKey(
+        'Cotizacion', 
+        on_delete=models.CASCADE, 
+        db_column='id_registro',
+        related_name='seguimientos'
+    )
+    fecha = models.DateTimeField(auto_now_add=True)
+    detalle = models.CharField(max_length=500, null=True, blank=True) # Ajustado para mensajes largos
+    # Relación con el usuario (ID entero)
+    id_usuario = models.ForeignKey(
+        'users.Usuario', 
+        on_delete=models.PROTECT, 
+        db_column='id_usuario',
+        null=True,
+        blank=True
+    )
+    activo = models.CharField(max_length=1, default='1')
+
+    class Meta:
+        managed = False
+        db_table = 'cotizaciones_seguimiento'
+        ordering = ['-fecha']
+
+    def save(self, *args, **kwargs):
+        if self.detalle and len(self.detalle) > 1000:
+            self.detalle = self.detalle[:997] + "..."
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Seguimiento {self.id_seguimiento} - Cot: {self.id_registro_id}"
+
+class CotizacionCondicionGeneral(models.Model):
+    # Usamos id_condicion_general como PK manual si ya existe en SQL
+    id_condicion_general = models.AutoField(primary_key=True)
+    
+    # La relación con la tabla padre 'cotizaciones'
+    # db_column='id_registro' asegura que coincida con el nombre en SQL
+    id_registro = models.OneToOneField(
+        'Cotizacion', 
+        on_delete=models.CASCADE, 
+        db_column='id_registro',
+        related_name='condiciones_extendidas'
+    )
+    
+    descripcion = models.TextField(db_column='descripcion', blank=True, null=True)
+    fecha = models.DateTimeField(db_column='fecha', auto_now=True)
+
+    class Meta:
+        managed = False  # Ponemos False porque la tabla ya existe en SQL
+        db_table = 'cotizaciones_condiciones_generales'
+
+#========================================================================================
+##=====================##
+## APERTURA COTIZACION ##
+##=====================##
+class CotizacionApertura(models.Model):
+    # ── IDENTIFICADORES Y RELACIONES PRINCIPALES ────────────────
+    id_apertura = models.AutoField(primary_key=True, db_column='id_apertura')
+    
+    # FK hacia tu modelo Cotizacion recién refactorizado
+    id_registro = models.ForeignKey(
+        'Cotizacion', 
+        on_delete=models.CASCADE, 
+        db_column='id_registro', 
+        null=True, 
+        blank=True,
+        related_name='aperturas'
+    )
+
+    # ── PERIODOS Y DATOS DE LA ORDEN ───────────────────────────
+    anno = models.IntegerField(null=True, blank=True, db_column='anno')  # year(4) en MySQL
+    mes = models.IntegerField(null=True, blank=True, db_column='mes')
+    numero_orden = models.CharField(max_length=70, null=True, blank=True, db_column='numero_orden')
+    estado_orden = models.IntegerField(null=True, blank=True, default=1, db_column='estado_orden')
+
+    # ── FECHAS PROCESO ─────────────────────────────────────────
+    fecha_orden = models.DateTimeField(null=True, blank=True, db_column='fecha_orden')
+    fecha_entrega = models.DateTimeField(null=True, blank=True, db_column='fecha_entrega')
+    mes_entrega = models.IntegerField(null=True, blank=True, db_column='mes_entrega')
+    fecha_factura = models.DateTimeField(null=True, blank=True, db_column='fecha_factura')
+
+    # ── PLAZOS (RELACIÓN CON UNIDAD DE TIEMPO) ─────────────────
+    orden_plazo_valor = models.IntegerField(null=True, blank=True, db_column='orden_plazo_valor')
+    orden_plazo_unidad = models.ForeignKey(
+        'core.UnidadTiempo', 
+        on_delete=models.SET_NULL, 
+        db_column='orden_plazo_unidad', 
+        null=True, 
+        blank=True,
+        related_name='plazos_apertura'
+    )
+
+    # ── VALORES ECONÓMICOS Y DESGLOSE COMPRAS ──────────────────
+    total_orden = models.DecimalField(max_digits=11, decimal_places=2, null=True, blank=True, db_column='total_orden')
+    presupuesto = models.DecimalField(max_digits=11, decimal_places=2, null=True, blank=True, db_column='presupuesto')
+    
+    orden_compra_equipos = models.DecimalField(max_digits=11, decimal_places=2, null=True, blank=True, db_column='orden_compra_equipos')
+    orden_compra_materiales = models.DecimalField(max_digits=11, decimal_places=2, null=True, blank=True, db_column='orden_compra_materiales')
+    orden_compra_hh = models.DecimalField(max_digits=11, decimal_places=2, null=True, blank=True, db_column='orden_compra_hh')
+    orden_compra_entrega = models.DecimalField(max_digits=11, decimal_places=2, null=True, blank=True, db_column='orden_compra_entrega')
+    orden_compra_costo_servicios = models.DecimalField(max_digits=11, decimal_places=2, null=True, blank=True, db_column='orden_compra_costo_servicios')
+    orden_compra_otros = models.DecimalField(max_digits=11, decimal_places=2, null=True, blank=True, db_column='orden_compra_otros')
+    
+    totfa = models.DecimalField(max_digits=11, decimal_places=2, null=True, blank=True, db_column='totfa')
+    salfa = models.DecimalField(max_digits=11, decimal_places=2, null=True, blank=True, db_column='salfa')
+    uti_des = models.DecimalField(max_digits=11, decimal_places=2, null=True, blank=True, db_column='uti_des')
+
+    # ── DOCUMENTACIÓN ADJUNTA Y RESPONSABLES ───────────────────
+    orden_adjunta = models.CharField(max_length=255, null=True, blank=True, db_column='orden_adjunta')
+    responsables = models.TextField(null=True, blank=True, db_column='responsables')
+    oobs = models.CharField(max_length=255, null=True, blank=True, db_column='oobs')
+    doc = models.CharField(max_length=50, null=True, blank=True, db_column='doc')
+    
+    # Snapshot/Históricos de documentos adjuntos
+    do1 = models.CharField(max_length=255, null=True, blank=True, db_column='do1')
+    do2 = models.CharField(max_length=255, null=True, blank=True, db_column='do2')
+    do3 = models.CharField(max_length=255, null=True, blank=True, db_column='do3')
+    ti1 = models.CharField(max_length=255, null=True, blank=True, db_column='ti1')
+    ti2 = models.CharField(max_length=255, null=True, blank=True, db_column='ti2')
+    ti3 = models.CharField(max_length=255, null=True, blank=True, db_column='ti3')
+
+    # ── DESCUENTOS Y CONTROLES ADICIONALES ─────────────────────
+    des_a = models.CharField(max_length=1, null=True, blank=True, db_column='des_a')
+    des_t = models.CharField(max_length=1, null=True, blank=True, db_column='des_t')
+    des_m = models.DecimalField(max_digits=11, decimal_places=2, null=True, blank=True, db_column='des_m')
+    des_p = models.DecimalField(max_digits=11, decimal_places=2, null=True, blank=True, db_column='des_p')
+    
+    anno_a = models.CharField(max_length=4, default='2026', null=True, blank=True, db_column='anno_a')
+    prio = models.CharField(max_length=1, default='0', null=True, blank=True, db_column='prio')
+
+    # Indicators / Flags de procesos
+    poceq = models.IntegerField(default=1, null=True, blank=True, db_column='poceq')
+    pocma = models.IntegerField(default=1, null=True, blank=True, db_column='pocma')
+    pocrh = models.IntegerField(default=0, null=True, blank=True, db_column='pocrh')
+    pocse = models.IntegerField(default=0, null=True, blank=True, db_column='pocse')
+    pocot = models.IntegerField(default=0, null=True, blank=True, db_column='pocot')
+    pger = models.IntegerField(default=1, null=True, blank=True, db_column='pger')
+    
+    envio = models.IntegerField(null=True, blank=True, db_column='envio')
+    pres = models.IntegerField(default=0, null=True, blank=True, db_column='pres')
+
+    class Meta:
+        managed = False  # Mantenlo en False si la base de datos ya maneja la estructura real
+        db_table = 'cotizaciones_apertura'
+
+    def __str__(self):
+        return f"Apertura {self.id_apertura} - Orden: {self.numero_orden or 'S/N'}"
 
 #========================================================================================
 
-##================##
-## NOTIFICACIONES ##
-##================##
-class Notificacion(models.Model):
-
-    TIPO_CHOICES = (
-        ("urgente", "Urgente"),
-        ("atencion", "Atención"),
-        ("informativo", "Informativo"),
-    )
-
-    usuario = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="notificaciones"
-    )
-
-    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES)
-
-    titulo = models.CharField(max_length=255)
-    descripcion = models.TextField()
-
-    cantidad = models.IntegerField(default=0)
-
-    leido = models.BooleanField(default=False)
-
-    fecha = models.DateTimeField(auto_now_add=True)
-
-    # Para futuro ML
-    metadata = models.JSONField(blank=True, null=True)
-
-    class Meta:
-        ordering = ["-fecha"]
+# (El modelo Notificacion se trasladó a su propia app de notificaciones_api)
 
 #========================================================================================
 
 ##================##
 ## DATOS DE BD_VC ##
 ##================##
-  
-# vc_tab_estado
-class vc_tab_estado(models.Model):
-    codigo = models.CharField(max_length=5, primary_key=True)
-    nombre = models.CharField(max_length=100)
-    cot = models.CharField(max_length=1)
-    activo = models.BooleanField(default=True)
-
-    class Meta:
-        managed = False
-        db_table = "vc_tab_estado"
-
-    def __str__(self):
-        return self.nombre
-
-# vc_tab_tipo
-class vc_tab_tipo(models.Model):
-    codigo = models.CharField(max_length=10, primary_key=True, verbose_name="Código")
-    nombre = models.CharField(max_length=100, verbose_name="Nombre")
-    activo = models.BooleanField(default=True, verbose_name="Activo")
-
-    class Meta:
-        db_table = 'vc_tab_tipo'
-        verbose_name = 'Tipo'
-        verbose_name_plural = 'Tipos'
-
-    def __str__(self):
-        return f"{self.codigo} - {self.nombre}"
-
-# vc_mov_cotizaciones
-class vc_mov_cotizaciones(models.Model):
-    # Datos principales
-    num_reg = models.IntegerField(blank=True, null=True)
-    anno = models.IntegerField(default=timezone.now().year)
-    mes = models.IntegerField(blank=True, null=True)
-    cotin = models.IntegerField(primary_key=True)
-    cotit = models.CharField(max_length=50, blank=True, null=True)
-    cotif = models.DateField(blank=True, null=True)
-    refer = models.CharField(max_length=150, blank=True, null=True)
-    empre = models.CharField(max_length=20, blank=True, null=True)
-    codir = models.CharField(max_length=10, blank=True, null=True)
-    nombr = models.CharField(max_length=150, blank=True, null=True)
-    cargr = models.CharField(max_length=50, blank=True, null=True)
-    teler = models.CharField(max_length=20, blank=True, null=True)
-    movir = models.CharField(max_length=20, blank=True, null=True)
-    mailr = models.CharField(max_length=100, blank=True, null=True)
-    
-    # Contacto Comercial
-    codic = models.CharField(max_length=10, blank=True, null=True)
-    nombc = models.CharField(max_length=150, blank=True, null=True)
-    telec = models.CharField(max_length=20, blank=True, null=True)
-    mov1c = models.CharField(max_length=20, blank=True, null=True)
-    mov2c = models.CharField(max_length=20, blank=True, null=True)
-    mov3c = models.CharField(max_length=20, blank=True, null=True)
-    mailc = models.CharField(max_length=100, blank=True, null=True)
-    
-    # Contacto Técnico
-    codit = models.CharField(max_length=10, blank=True, null=True)
-    nombt = models.CharField(max_length=150, blank=True, null=True)
-    telet = models.CharField(max_length=20, blank=True, null=True)
-    mov1t = models.CharField(max_length=20, blank=True, null=True)
-    mov2t = models.CharField(max_length=20, blank=True, null=True)
-    mov3t = models.CharField(max_length=20, blank=True, null=True)
-    mailt = models.CharField(max_length=100, blank=True, null=True)
-
-    # Pago / Entrega / Moneda
-    fpago = models.CharField(max_length=50, blank=True, null=True)
-    lugar = models.CharField(max_length=100, blank=True, null=True)
-    plazo = models.CharField(max_length=50, blank=True, null=True)
-    tmone = models.CharField(max_length=20, blank=True, null=True)
-    igv = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True)
-    valid = models.IntegerField(blank=True, null=True)
-    
-    # Otros
-    por_c = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    acu_e = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    acu_s = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    tot_c = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    tot_d = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    tot_s = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    estad = models.CharField(max_length=5, blank=True, null=True)
-    ocomn = models.CharField(max_length=50, blank=True, null=True)
-    ocomf = models.CharField(max_length=50, blank=True, null=True)
-    area = models.CharField(max_length=10, blank=True, null=True)
-    entrp = models.IntegerField(blank=True, null=True)
-    entrf = models.CharField(max_length=50, blank=True, null=True)
-    regus = models.CharField(max_length=50, blank=True, null=True)
-    fecus = models.DateField(blank=True, null=True)
-    envio = models.CharField(max_length=50, blank=True, null=True)
-    tcamb = models.DecimalField(max_digits=10, decimal_places=3, blank=True, null=True)
-    sald = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    des_a = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    des_t = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    des_m = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    des_p = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    anno_a = models.IntegerField(blank=True, null=True)
-    msj = models.CharField(max_length=255, blank=True, null=True)
-    seg = models.CharField(max_length=50, blank=True, null=True)
-    prob = models.CharField(max_length=50, blank=True, null=True)
-
-    class Meta:
-        managed = False
-        db_table = "vc_mov_cotizaciones"
-        ordering = ["-cotif"]
-
-    # ─── Propiedades derivadas ───────────────────────
-    @property
-    def cliente_nombre(self):
-        try:
-            from cotizaciones_api.models import Representante
-            if not self.empre:
-                return self.nombr or ""
-            cliente = Representante.objects.get(codigo=self.empre)
-            return cliente.representante or self.nombr or ""
-        except Representante.DoesNotExist:
-            return self.nombr or ""
-        except Exception:
-            return self.nombr or ""
-    
-    @property
-    def area_nombre(self):
-        try:
-            from cotizaciones_api.models import Area
-            if not self.area:
-                return ""
-            area_obj = Area.objects.get(id_area=self.area)
-            return area_obj.nombre
-        except Exception:
-            return ""
-
-    @property
-    def estado_nombre(self):
-        try:
-            from cotizaciones_api.models import vc_tab_estado
-            if not self.estad:
-                return ""
-            estado_obj = vc_tab_estado.objects.get(codigo=self.estad)
-            return estado_obj.nombre
-        except Exception:
-            return ""
-
-    @property
-    def tipo_nombre(self):
-        """
-        Devuelve el nombre del tipo (Servicio / Proyecto / Venta)
-        según el código cotit y la tabla vc_tab_tipo.
-        """
-        try:
-            from cotizaciones_api.models import vc_tab_tipo
-            if not self.cotit:
-                return ""
-            tipo_obj = vc_tab_tipo.objects.get(codigo=self.cotit)
-            return tipo_obj.nombre
-        except vc_tab_tipo.DoesNotExist:
-            return ""
-        except Exception:
-            return ""
-
-    @property
-    def mes(self):
-        if self.cotif:
-            return self.cotif.month
-        return None
-
-# vc_tab_tproveedor
-class vc_tab_tproveedor(models.Model):
-    codigo = models.CharField(max_length=2, primary_key=True)
-    nombre = models.CharField(max_length=50, blank=True, null=True)
-    activo = models.CharField(max_length=1, blank=True, null=True)
-
-    class Meta:
-        db_table = "vc_tab_tproveedor"
-        managed = False
-
-    def __str__(self):
-        return f"{self.codigo} - {self.nombre}"
-
-# vc_tab_categorias
-class vc_tab_categorias(models.Model):
-    codigo = models.CharField("Código", max_length=4, primary_key=True)
-    nombre = models.CharField("Nombre", max_length=70, blank=True, null=True)
-    cos_min = models.DecimalField("Costo Min", max_digits=10, decimal_places=2)
-    cos_max = models.DecimalField("Costo Max", max_digits=10, decimal_places=2)
-    cod_area = models.CharField("Código Área", max_length=1, blank=True, null=True)
-    activo = models.CharField("Activo", max_length=1) 
-
-    class Meta:
-        db_table = "vc_tab_categorias"
-        verbose_name = "Categoría"
-        verbose_name_plural = "Categorías"
-
-    def __str__(self):
-        return f"{self.codigo} - {self.nombre}"
-    
-# vc_tab_tgastos
-class vc_tab_tgastos(models.Model):
-    codigo = models.CharField("Código", max_length=2, primary_key=True)
-    nombre = models.CharField("Nombre", max_length=50, blank=True, null=True)
-    activo = models.CharField("Activo", max_length=1) 
-    concepto = models.CharField("Concepto", max_length=1) 
-
-    class Meta:
-        db_table = "vc_tab_tgastos"
-        verbose_name = "Tipo Gasto"
-        verbose_name_plural = "Tipo Gasto"
-
-    def __str__(self):
-        return f"{self.codigo} - {self.nombre}"
-
-# vc_tab_tgastos_d
-class vc_tab_tgastos_d(models.Model):
-    codigo = models.CharField("Código", max_length=5, primary_key=True)
-    nombre = models.CharField("Nombre", max_length=100, blank=True, null=True)
-    unimed = models.CharField("Unimed", max_length=5, blank=True, null=True)
-    importe = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
-    cod_tipo = models.CharField("Cod_Tipo", max_length=2, blank=True, null=True)
-    activo = models.CharField("Activo", max_length=1) 
-    cantidad = models.IntegerField(max_length=10) 
-
-    class Meta:
-        db_table = "vc_tab_tgastos_d"
-        verbose_name = "Tipo Gasto D"
-        verbose_name_plural = "Tipo Gasto D"
-
-    def __str__(self):
-        return f"{self.codigo} - {self.nombre}"
-
-# cont_cias
-class cont_cias(models.Model):
-    cod = models.CharField(primary_key=True, max_length=10)  # clave primaria real (ej. "001")
-    anno = models.IntegerField(default=timezone.now().year)
-
-    class Meta:
-        db_table = "cont_cias"
-        managed = False
-
-# vc_tab_rittal
-class vc_tab_rittal(models.Model):
-    codigo = models.CharField(max_length=10, primary_key=True)  # Código del cliente o registro
-    nombre = models.CharField(max_length=100, blank=True, null=True)
-    grupo = models.CharField(max_length=5, blank=True, null=True)
-    um = models.CharField(max_length=10, blank=True, null=True)
-    descripcion = models.CharField(max_length=100, blank=True, null=True)
-    precio_s = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    precio_d = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    cantidad = models.DecimalField(max_digits=9, decimal_places=2, blank=True, null=True)
-    ocodigo = models.CharField(max_length=15, blank=True, null=True)
-    stock_min = models.DecimalField(max_digits=9, decimal_places=2, blank=True, null=True)
-    stock_max = models.DecimalField(max_digits=9, decimal_places=2, blank=True, null=True)
-    descuento = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True)
-    proveedor = models.CharField(max_length=70, blank=True, null=True)
-    activo = models.BooleanField(default=True)  # Indicador de activo/inactivo
-
-    class Meta:
-        managed = False
-        db_table = "vc_tab_rittal"
-        ordering = ["codigo"]
-
-    def __str__(self):
-        return f"{self.codigo} ({self.nombre})"
-
-# vc_tab_rockwell
-class vc_tab_rockwell(models.Model):
-    codigo = models.CharField(max_length=60, primary_key=True)  # Código del cliente o registro
-    codigo2 = models.CharField(max_length=60, blank=True, null=True)
-    descripcion = models.CharField(max_length=100, blank=True, null=True)
-    ds = models.CharField(max_length=2, blank=True, null=True)
-    pgc = models.CharField(max_length=3, blank=True, null=True)
-    precio = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
-    proveedor = models.CharField(max_length=20, blank=True, null=True)
-    activo = models.BooleanField(default=True)  # Indicador de activo/inactivo
-    cprimario = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
-    x = models.CharField(max_length=1, blank=True, null=True)
-
-    class Meta:
-        managed = False
-        db_table = "vc_tab_rockwell"
-        ordering = ["codigo"]
-
-    def __str__(self):
-        return f"{self.codigo} ({self.codigo2})"
-
-# vc_tab_ceyesa
-class vc_tab_ceyesa(models.Model):
-    codigo = models.CharField(max_length=60, primary_key=True)  # Código del cliente o registro
-    codigo2 = models.CharField(max_length=60, blank=True, null=True)
-    descripcion = models.CharField(max_length=150, blank=True, null=True)
-    ds = models.CharField(max_length=2, blank=True, null=True)
-    pgc = models.CharField(max_length=3, blank=True, null=True)
-    precio = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
-    proveedor = models.CharField(max_length=20, blank=True, null=True)
-    activo = models.BooleanField(default=True)  # Indicador de activo/inactivo
-    cprimario = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
-
-    class Meta:
-        managed = False
-        db_table = "vc_tab_ceyesa"
-        ordering = ["codigo"]
-
-    def __str__(self):
-        return f"{self.codigo} ({self.codigo2})"
-
-# vc_tab_hoffman
-class vc_tab_hoffman(models.Model):
-    codigo = models.CharField(max_length=10, primary_key=True)  # Código del cliente o registro
-    nombre = models.CharField(max_length=100, blank=True, null=True)
-    grupo = models.CharField(max_length=5, blank=True, null=True)
-    um = models.CharField(max_length=10, blank=True, null=True)
-    descripcion = models.CharField(max_length=100, blank=True, null=True)
-    precio_s = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    precio_d = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    cantidad = models.DecimalField(max_digits=9, decimal_places=2, blank=True, null=True)
-    ocodigo = models.CharField(max_length=15, blank=True, null=True)
-    stock_min = models.DecimalField(max_digits=9, decimal_places=2, blank=True, null=True)
-    stock_max = models.DecimalField(max_digits=9, decimal_places=2, blank=True, null=True)
-    descuento = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True)
-    proveedor = models.CharField(max_length=70, blank=True, null=True)
-    activo = models.BooleanField(default=True)  # Indicador de activo/inactivo
-
-    class Meta:
-        managed = False
-        db_table = "vc_tab_hoffman"
-        ordering = ["codigo"]
-
-    def __str__(self):
-        return f"{self.codigo} ({self.nombre})"
 
 # alm_articulos
 class alm_articulos(models.Model):
@@ -795,6 +500,9 @@ class alm_articulos(models.Model):
 
     def __str__(self):
         return f"{self.codigo} ({self.nombre})"
+
+
+
 
 class ObjetivoAnual(models.Model):
     anno = models.IntegerField(unique=True)

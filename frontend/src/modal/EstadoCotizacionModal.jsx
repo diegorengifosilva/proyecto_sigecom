@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui/button";
 import { toast } from "react-toastify";
 import { RefreshCcw, ChevronDown, Info, Loader2, Lock } from "lucide-react";
+import SelectField from "@/components/ui/SelectField";
 
 export default function EstadoCotizacionModal({ open, onClose, num_reg }) {
   const [loading, setLoading] = useState(false);
@@ -19,7 +20,7 @@ export default function EstadoCotizacionModal({ open, onClose, num_reg }) {
       setLoading(true);
       const token = localStorage.getItem("access_token");
 
-      const res = await axios.get(`/api/cotizaciones/modal/${num_reg}/`, {
+      const res = await axios.get(`/api/cotizaciones/cotizacion_detalle/${num_reg}/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -37,12 +38,12 @@ export default function EstadoCotizacionModal({ open, onClose, num_reg }) {
   const cargarEstados = async () => {
     try {
       const token = localStorage.getItem("access_token");
-      const res = await axios.get("/api/cotizaciones/estados/", {
+      const res = await axios.get("/api/core/estados/?cotizaciones=1", {
         headers: { Authorization: `Bearer ${token}` },
       });
 
       const estadosFiltrados = res.data.filter(
-        item => item.activo && Number(item.cot) === 1
+        item => item.activo && (Number(item.cotizaciones) === 1 || Number(item.cot) === 1)
       );
 
       setEstados(estadosFiltrados);
@@ -86,7 +87,7 @@ export default function EstadoCotizacionModal({ open, onClose, num_reg }) {
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-md bg-white rounded-[2rem] shadow-2xl border-none p-0 overflow-hidden">
-        
+
         {/* HEADER MODERNO - SKY STYLE */}
         <div className="bg-sky-50/80 px-6 py-5 border-b border-sky-100">
           <div className="flex items-center gap-4">
@@ -107,7 +108,7 @@ export default function EstadoCotizacionModal({ open, onClose, num_reg }) {
         {/* CONTENIDO DEL FORMULARIO */}
         <div className="p-6 space-y-4">
           <div className="bg-slate-50 border border-slate-100 rounded-[1.5rem] p-5 space-y-5 shadow-inner">
-            
+
             {/* CAMPO: NRO COTIZACIÓN (READ ONLY) */}
             <div className="flex flex-col gap-1.5">
               <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">
@@ -126,28 +127,13 @@ export default function EstadoCotizacionModal({ open, onClose, num_reg }) {
             </div>
 
             {/* CAMPO: SELECTOR DE ESTADO */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] font-black uppercase tracking-widest text-sky-600 ml-1">
-                Nuevo Estado Operativo
-              </label>
-              <div className="relative">
-                <select
-                  value={estadoCodigo}
-                  onChange={(e) => setEstadoCodigo(e.target.value)}
-                  className="w-full bg-white border-2 border-sky-100 focus:border-sky-500 rounded-xl px-4 py-2.5 text-xs font-[900] text-slate-800 appearance-none outline-none transition-all focus:ring-4 focus:ring-sky-500/10 cursor-pointer"
-                >
-                  <option value="">Seleccione un estado...</option>
-                  {estados.map(e => (
-                    <option key={e.codigo} value={e.codigo} className="font-semibold">
-                      {e.nombre}
-                    </option>
-                  ))}
-                </select>
-                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
-                  <ChevronDown size={16} className="text-sky-500" />
-                </div>
-              </div>
-            </div>
+            <SelectField
+              label="Nuevo Estado Operativo"
+              value={estadoCodigo}
+              onChange={(e) => setEstadoCodigo(e.target.value)}
+              options={estados.map(e => ({ id: e.codigo, nombre: e.nombre }))}
+              className="[&_label]:text-[10px] [&_label]:font-black [&_label]:uppercase [&_label]:tracking-widest [&_label]:text-sky-600 [&_label]:ml-1"
+            />
           </div>
 
           {/* NOTA INFORMATIVA */}
@@ -168,7 +154,7 @@ export default function EstadoCotizacionModal({ open, onClose, num_reg }) {
           >
             Cancelar
           </Button>
-          
+
           <Button
             disabled={loading || !estadoCodigo || estadoCodigo === estadoInicial}
             onClick={handleAceptar}

@@ -55,7 +55,7 @@ function RegistroItemModal({ open, onClose, onConfirm, item, num_reg, tipoVenta,
     if (!open || !num_reg) return;
 
     const fetchCotizacion = async () => {
-      const res = await api.get(`/cotizaciones/modal/${num_reg}/`);
+      const res = await api.get(`/cotizaciones/cotizacion_detalle/${num_reg}/`);
       setTcamb(Number(res.data.tcamb) || 1);
     };
     fetchCotizacion();
@@ -67,7 +67,7 @@ function RegistroItemModal({ open, onClose, onConfirm, item, num_reg, tipoVenta,
   useEffect(() => {
     const fetchProveedores = async () => {
       try {
-        const res = await api.get("/cotizaciones/proveedores/");
+        const res = await api.get("/core/tipo_marca/");
         setProveedores(Array.isArray(res.data) ? res.data : []);
       } catch (err) {
         console.error("Error cargando proveedores", err);
@@ -136,7 +136,7 @@ function RegistroItemModal({ open, onClose, onConfirm, item, num_reg, tipoVenta,
     const next = { ...data };
     const cantidad = toNumber(next.cantidad);
     const costoPrecio = toNumber(next.costoPrecio);
-    
+
     // ==========================================
     // CASO 1 Y 2: LOGÍSTICA DE GRUPO
     // ==========================================
@@ -144,28 +144,28 @@ function RegistroItemModal({ open, onClose, onConfirm, item, num_reg, tipoVenta,
       let costoEnvioUnitario = 0;
 
       if (tipoVenta === "T") {
-          const costoTotalLineaActual = costoPrecio * cantidad;
+        const costoTotalLineaActual = costoPrecio * cantidad;
 
-          // 1. Determinamos cuánto pesa esta línea en el grupo (sin dividir por cantidad aún)
-          const valorAnteriorEnSuma = item?.toc ? toNumber(item.toc) : 0;
-          const sumatoriaReal = (sumaVentaGrupo - valorAnteriorEnSuma) + costoTotalLineaActual;
-          
-          const divisor = sumatoriaReal > 0 ? sumatoriaReal : costoTotalLineaActual;
+        // 1. Determinamos cuánto pesa esta línea en el grupo (sin dividir por cantidad aún)
+        const valorAnteriorEnSuma = item?.toc ? toNumber(item.toc) : 0;
+        const sumatoriaReal = (sumaVentaGrupo - valorAnteriorEnSuma) + costoTotalLineaActual;
 
-          // 2. RATIO DE LA LÍNEA (Peso total del renglón sobre el total del grupo)
-          // Ejemplo Excel: 8504.64 / 22858.34 = 0.372 (37.2%)
-          const ratioPesoLinea = divisor > 0 ? (costoTotalLineaActual / divisor) : 0;
+        const divisor = sumatoriaReal > 0 ? sumatoriaReal : costoTotalLineaActual;
 
-          // 3. PORCENTAJE DE ENVÍO (Visual)
-          // Calculamos el porcentaje por unidad y aplicamos formato
-          const porcentajeCalculado = (ratioPesoLinea * 100) / cantidad;
+        // 2. RATIO DE LA LÍNEA (Peso total del renglón sobre el total del grupo)
+        // Ejemplo Excel: 8504.64 / 22858.34 = 0.372 (37.2%)
+        const ratioPesoLinea = divisor > 0 ? (costoTotalLineaActual / divisor) : 0;
 
-          next.porcentajeEnvio = `${porcentajeCalculado.toFixed(2)}%`;
+        // 3. PORCENTAJE DE ENVÍO (Visual)
+        // Calculamos el porcentaje por unidad y aplicamos formato
+        const porcentajeCalculado = (ratioPesoLinea * 100) / cantidad;
 
-          // 4. COSTO ENVÍO UNITARIO
-          // (Costo Total Envío Grupo * Peso de la Línea) / Cantidad de la línea
-          // Ejemplo: (300 * 0.372) / 4 = 111.6 / 4 = 27.90
-          costoEnvioUnitario = cantidad > 0 ? (costoEnvioGrupo * ratioPesoLinea) / cantidad : 0;
+        next.porcentajeEnvio = `${porcentajeCalculado.toFixed(2)}%`;
+
+        // 4. COSTO ENVÍO UNITARIO
+        // (Costo Total Envío Grupo * Peso de la Línea) / Cantidad de la línea
+        // Ejemplo: (300 * 0.372) / 4 = 111.6 / 4 = 27.90
+        costoEnvioUnitario = cantidad > 0 ? (costoEnvioGrupo * ratioPesoLinea) / cantidad : 0;
 
       } else {
         // Tipo "P" (Parcial/Unitario): El costo de envío total se divide entre las unidades
@@ -187,7 +187,7 @@ function RegistroItemModal({ open, onClose, onConfirm, item, num_reg, tipoVenta,
       }
 
       const ventaPrecio = costoConEnvio + utilidadUnit;
-      
+
       next.costoTotal = (costoPrecio * cantidad).toFixed(2);
       next.costoEnvio = costoEnvioUnitario.toFixed(2);
       next.costoConEnvio = costoConEnvio.toFixed(2);
@@ -236,7 +236,7 @@ function RegistroItemModal({ open, onClose, onConfirm, item, num_reg, tipoVenta,
       // Si el usuario borra todo el input, mandamos 0 para el cálculo pero guardamos "" para el input
       const valorParaCalculo = value === "" ? 0 : value;
       const actualizado = { ...prev, [name]: valorParaCalculo };
-      
+
       return calcularValores(
         actualizado,
         name,
@@ -259,7 +259,7 @@ function RegistroItemModal({ open, onClose, onConfirm, item, num_reg, tipoVenta,
       cod: dataFinalizada.codigo,
       des: dataFinalizada.descripcion,
       pro: dataFinalizada.marca,
-      tpr: dataFinalizada.proveedor, 
+      tpr: dataFinalizada.proveedor,
       tde: dataFinalizada.unidad,
       obs: dataFinalizada.observacion,
       can: toNumber(dataFinalizada.cantidad),
@@ -273,7 +273,7 @@ function RegistroItemModal({ open, onClose, onConfirm, item, num_reg, tipoVenta,
       tou: toNumber(dataFinalizada.utilidad),
       val: toNumber(dataFinalizada.ventaPrecio),
       tot: toNumber(dataFinalizada.ventaTotal),
-      
+
       // Logística: Estos son los que el padre necesita recalculados
       cost_env: toNumber(dataFinalizada.costoEnvio),
       por_env: toNumber(dataFinalizada.porcentajeEnvio),
@@ -329,12 +329,12 @@ function RegistroItemModal({ open, onClose, onConfirm, item, num_reg, tipoVenta,
         if (!encontrado) return;
 
         const normalizado = calcularItemSegunProveedor(encontrado, form.proveedor, tcamb, toNumber(form.cantidad));
-        
+
         // REEMPLAZO: Aplicamos el margen del 20% al encontrar el item
         setForm(prev => {
-          const actualizado = { 
-            ...prev, 
-            ...normalizado, 
+          const actualizado = {
+            ...prev,
+            ...normalizado,
             cantidad: prev.cantidad,
             porcentaje: prev.porcentaje || 20 // Mantenemos el % actual o 20 por defecto
           };
@@ -373,7 +373,7 @@ function RegistroItemModal({ open, onClose, onConfirm, item, num_reg, tipoVenta,
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="max-w-3xl bg-white rounded-2xl shadow-2xl border-none p-0 overflow-hidden font-sans">
-        
+
         {/* HEADER IDENTICO AL DE GRUPOS */}
         <div className="bg-slate-50/80 px-6 py-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
@@ -393,7 +393,7 @@ function RegistroItemModal({ open, onClose, onConfirm, item, num_reg, tipoVenta,
 
         {/* CONTENIDO FORMULARIO */}
         <div className="p-2 space-y-2">
-          
+
           {/* SECCIÓN 1: INFORMACIÓN BÁSICA */}
           <div className="bg-slate-50/50 border border-slate-100 rounded-2xl p-4 space-y-4 shadow-inner">
             <div className="flex items-center gap-2">
@@ -457,11 +457,11 @@ function RegistroItemModal({ open, onClose, onConfirm, item, num_reg, tipoVenta,
               <InputField inline size="sm" label="Unidad:" name="unidad" value={form.unidad} onChange={handleChange} />
               <InputField inline size="sm" type="number" label="Cantidad:" name="cantidad" value={form.cantidad} onChange={handleChange} />
               {/* TIEMPO DE ENTREGA */}
-              <InputField 
-                inline size="sm" type="number" label="Entrega:" name="entrega" 
-                value={form.entrega} onChange={handleChange} placeholder="0" 
+              <InputField
+                inline size="sm" type="number" label="Entrega:" name="entrega"
+                value={form.entrega} onChange={handleChange} placeholder="0"
               />
-              
+
               {/* UNIDAD DE ENTREGA (SELECTOR) */}
               <select
                 name="entrega_uni"
@@ -478,7 +478,7 @@ function RegistroItemModal({ open, onClose, onConfirm, item, num_reg, tipoVenta,
 
           {/* SECCIÓN 2: COSTOS VS RESUMEN */}
           <div className="grid grid-cols-2 gap-2">
-            
+
             {/* COSTOS Y UTILIDAD */}
             <div className="bg-slate-50/50 border border-slate-100 rounded-2xl p-4 space-y-4 shadow-inner">
               <div className="flex items-center gap-2">
@@ -487,27 +487,27 @@ function RegistroItemModal({ open, onClose, onConfirm, item, num_reg, tipoVenta,
               </div>
               <div className="space-y-3">
                 {/* FILA 1: COSTO PRECIO (Ancho total) */}
-                <InputField 
-                  inline 
-                  size="sm" 
-                  label="Costo Precio:" 
-                  name="costoPrecio" 
-                  type="number" 
-                  value={form.costoPrecio} 
-                  onChange={handleChange} 
+                <InputField
+                  inline
+                  size="sm"
+                  label="Costo Precio:"
+                  name="costoPrecio"
+                  type="currency"
+                  value={form.costoPrecio}
+                  onChange={handleChange}
                 />
 
                 {/* FILA 2: Lógica dinámica según Tipo de Venta */}
                 {(tipoVenta === "T" || tipoVenta === "P") && (
                   <div className="grid grid-cols-2 gap-4">
                     {/* Costo Envío: Siempre visible en T y P */}
-                    <InputField 
-                      inline 
-                      size="sm" 
-                      label="Costo Envío:" 
-                      name="costoEnvio" 
-                      type="number" 
-                      value={form.costoEnvio} 
+                    <InputField
+                      inline
+                      size="sm"
+                      label="Costo Envío:"
+                      name="costoEnvio"
+                      type="currency"
+                      value={form.costoEnvio}
                       onChange={handleChange}
                       className={tipoVenta === "T" ? "bg-gray-100 font-semibold text-gray-500" : "bg-blue-50/50 font-semibold"}
                       readOnly //={tipoVenta === "T"} // En T es automático, en P es manual
@@ -515,39 +515,39 @@ function RegistroItemModal({ open, onClose, onConfirm, item, num_reg, tipoVenta,
 
                     {/* % Envío: SOLO visible si es Tipo T */}
                     {tipoVenta === "T" ? (
-                      <InputField 
-                        inline 
-                        size="sm" 
-                        label="% Envío:" 
-                        name="porcentajeEnvio" 
-                        type="text" 
-                        value={form.porcentajeEnvio || "0.00"} 
-                        readOnly 
+                      <InputField
+                        inline
+                        size="sm"
+                        label="% Envío:"
+                        name="porcentajeEnvio"
+                        type="text"
+                        value={form.porcentajeEnvio || "0.00"}
+                        readOnly
                         className="bg-gray-50 text-gray-400 font-medium"
                       />
                     ) : (
-                      <div /> 
+                      <div />
                     )}
                   </div>
                 )}
 
                 {/* FILA 3: UTILIDAD | PORCENTAJE UTILIDAD */}
                 <div className="grid grid-cols-2 gap-4">
-                  <InputField 
-                    inline size="sm" 
-                    label="Utilidad:" 
-                    name="utilidad" 
-                    type="number" 
-                    value={form.utilidad} 
-                    onChange={handleChange} 
+                  <InputField
+                    inline size="sm"
+                    label="Utilidad:"
+                    name="utilidad"
+                    type="currency"
+                    value={form.utilidad}
+                    onChange={handleChange}
                   />
-                  <InputField 
-                    inline size="sm" 
-                    label="% Utilidad:" 
-                    name="porcentaje" 
-                    type="number" 
-                    value={form.porcentaje} 
-                    onChange={handleChange} 
+                  <InputField
+                    inline size="sm"
+                    label="% Utilidad:"
+                    name="porcentaje"
+                    type="currency"
+                    value={form.porcentaje}
+                    onChange={handleChange}
                   />
                 </div>
               </div>
@@ -560,14 +560,14 @@ function RegistroItemModal({ open, onClose, onConfirm, item, num_reg, tipoVenta,
                 <span className="text-[11px] font-black text-[#0d767e] uppercase tracking-tight">Resumen de Venta</span>
               </div>
               <div className="space-y-1">
-                <InputField inline size="sm" label="Costo Total:" value={form.costoTotal} readOnly className="bg-transparent border-none text-[11px]" />
+                <InputField inline size="sm" type="currency" label="Costo Total:" value={form.costoTotal} readOnly className="bg-transparent border-none text-[11px]" />
                 {/* 💡 Solo aparece si hay logística de envío */}
                 {(tipoVenta === "T" || tipoVenta === "P") && (
-                  <InputField inline size="sm" label="Costo c/ Envio:" value={form.costoConEnvio} readOnly className="bg-transparent border-none text-[11px]" />
+                  <InputField inline size="sm" type="currency" label="Costo c/ Envio:" value={form.costoConEnvio} readOnly className="bg-transparent border-none text-[11px]" />
                 )}
-                <InputField inline size="sm" label="Precio Venta:" value={form.ventaPrecio} readOnly className="bg-transparent border-none text-[11px]" />
-                <InputField inline size="sm" label="Venta Total:" value={form.ventaTotal} readOnly className="bg-transparent border-none font-black text-[#0d767e] text-sm" />
-                <InputField inline size="sm" label="Utilidad Total:" value={form.utilidadTotal} readOnly className="bg-transparent border-none font-bold text-teal-700 text-[11px]" />
+                <InputField inline size="sm" type="currency" label="Precio Venta:" value={form.ventaPrecio} readOnly className="bg-transparent border-none text-[11px]" />
+                <InputField inline size="sm" type="currency" label="Venta Total:" value={form.ventaTotal} readOnly className="bg-transparent border-none font-black text-[#0d767e] text-sm" />
+                <InputField inline size="sm" type="currency" label="Utilidad Total:" value={form.utilidadTotal} readOnly className="bg-transparent border-none font-bold text-teal-700 text-[11px]" />
               </div>
             </div>
 
@@ -595,13 +595,13 @@ function RegistroItemModal({ open, onClose, onConfirm, item, num_reg, tipoVenta,
           onClose={() => setCodigoItemOpen(false)}
           onSelect={(itemSeleccionado) => {
             const normalizado = calcularItemSegunProveedor(itemSeleccionado, form.proveedor, tcamb, toNumber(form.cantidad));
-            
+
             // REEMPLAZO: Aplicamos el cálculo inmediatamente al seleccionar
             setForm((prev) => {
-              const actualizado = { 
-                ...prev, 
+              const actualizado = {
+                ...prev,
                 ...normalizado,
-                porcentaje: prev.porcentaje || 20 
+                porcentaje: prev.porcentaje || 20
               };
               return calcularValores(actualizado, "porcentaje");
             });

@@ -38,7 +38,7 @@ export default function SeguimientoCotizacionesModal({ open, onClose, cotizacion
     try {
       const token = localStorage.getItem("access_token");
       const res = await axios.get(
-        `${import.meta.env.VITE_API_URL}/cotizaciones/modal/${numero}/`,
+        `${import.meta.env.VITE_API_URL}/cotizaciones/cotizacion_detalle/${numero}/`,
         {
           headers: { Authorization: `Bearer ${token}` },
         }
@@ -91,7 +91,7 @@ export default function SeguimientoCotizacionesModal({ open, onClose, cotizacion
 
     try {
       const token = localStorage.getItem("access_token");
-      const res = await axios.get(`/api/cotizacion/${num_reg}/servicios/`, {
+      const res = await axios.get(`/api/cotizaciones/lista_servicios/${num_reg}/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -107,7 +107,7 @@ export default function SeguimientoCotizacionesModal({ open, onClose, cotizacion
   const guardarCondiciones = async (nuevoTexto) => {
     try {
       await axios.post(
-        `/api/cotizaciones/${numero}/condiciones-generales/`,
+        `/api/cotizaciones/condiciones-generales/${numero}/`,
         { condiciones_generales: nuevoTexto },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -128,7 +128,7 @@ export default function SeguimientoCotizacionesModal({ open, onClose, cotizacion
     try {
       const { data } = await axios.get(
         `/api/cotizaciones/${numero}/generar-codigo/`,
-        { headers: { Authorization: `Bearer ${token}` }}
+        { headers: { Authorization: `Bearer ${token}` } }
       );
       setCodigo(data.codigo);
     } catch (e) {
@@ -151,43 +151,43 @@ export default function SeguimientoCotizacionesModal({ open, onClose, cotizacion
       fetchServicios(reg);
     }
   }, [open, data?.num_reg, cotizacion?.num_reg]);
-  
-    return (
+
+  return (
     <Dialog open={open} onOpenChange={onClose}>
-        <DialogContent className="max-w-4xl w-[95%] max-h-[90vh] overflow-y-auto bg-white rounded-2xl shadow-lg animate-fadeIn p-4 sm:p-6">
-        
+      <DialogContent className="max-w-4xl w-[95%] max-h-[90vh] overflow-y-auto bg-white rounded-2xl shadow-lg animate-fadeIn p-4 sm:p-6">
+
         {/* ENCABEZADO */}
         <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-xl sm:text-2xl font-bold text-gray-800">
+          <DialogTitle className="flex items-center gap-2 text-xl sm:text-2xl font-bold text-gray-800">
             Cotización {data?.numero || ""}
-            </DialogTitle>
+          </DialogTitle>
         </DialogHeader>
 
         {/* ESTADOS */}
         {loading ? (
-            <p className="text-gray-500 text-center py-4">Cargando cotización...</p>
+          <p className="text-gray-500 text-center py-4">Cargando cotización...</p>
         ) : !data ? (
-            <p className="text-gray-500 text-center py-4">No se encontró la cotización.</p>
+          <p className="text-gray-500 text-center py-4">No se encontró la cotización.</p>
         ) : (
-            <>
+          <>
             {/* TABS DINÁMICOS */}
             <InfoTabs
-                data={data}
-                suministros={Array.isArray(suministros) ? suministros : []} // siempre un array
-                servicios={Array.isArray(servicios) ? servicios : []}
-                openCondiciones={openCondiciones}
-                setOpenCondiciones={setOpenCondiciones}
-                openGenerarCodigo={openGenerarCodigo}
-                setOpenGenerarCodigo={setOpenGenerarCodigo}
-                openDescuentos={openDescuentos}
-                setOpenDescuentos={setOpenDescuentos}
-                openEnviarCoti={openEnviarCoti}
-                setOpenEnviarCoti={setOpenEnviarCoti}
-                tabsToShow={[
+              data={data}
+              suministros={Array.isArray(suministros) ? suministros : []} // siempre un array
+              servicios={Array.isArray(servicios) ? servicios : []}
+              openCondiciones={openCondiciones}
+              setOpenCondiciones={setOpenCondiciones}
+              openGenerarCodigo={openGenerarCodigo}
+              setOpenGenerarCodigo={setOpenGenerarCodigo}
+              openDescuentos={openDescuentos}
+              setOpenDescuentos={setOpenDescuentos}
+              openEnviarCoti={openEnviarCoti}
+              setOpenEnviarCoti={setOpenEnviarCoti}
+              tabsToShow={[
                 "datos",            // TAB principal
                 "suministros",        // TAB contactos
                 "servicios",      // TAB condiciones
-                ]}
+              ]}
             />
 
             {/* SUBMODALES */}
@@ -199,7 +199,7 @@ export default function SeguimientoCotizacionesModal({ open, onClose, cotizacion
                 setOpenCondiciones(false);
               }}
             />
-            
+
             <GenerarCodigoModal
               open={openGenerarCodigo}
               onClose={() => setOpenGenerarCodigo(false)}
@@ -214,20 +214,20 @@ export default function SeguimientoCotizacionesModal({ open, onClose, cotizacion
               onClose={() => setOpenDescuentos(false)}
             />
 
-            <EnviarCotiModal 
-              open={openEnviarCoti} 
-              onClose={() => setOpenEnviarCoti(false)} 
+            <EnviarCotiModal
+              open={openEnviarCoti}
+              onClose={() => setOpenEnviarCoti(false)}
             />
 
             {/* BOTÓN CERRAR */}
             <div className="flex justify-end mt-4">
-                <Button onClick={onClose} className="bg-red-600 hover:bg-red-700 text-white">
+              <Button onClick={onClose} className="bg-red-600 hover:bg-red-700 text-white">
                 Cerrar
-                </Button>
+              </Button>
             </div>
-            </>
+          </>
         )}
-        </DialogContent>
+      </DialogContent>
     </Dialog>
-    );
+  );
 }
