@@ -271,7 +271,7 @@ export const ClienteAutocomplete = ({ value, onSelect, isReadOnly, initialId, on
     >
       <Icon name="briefcase" className="h-3.5 w-3.5 mr-1.5 text-teal-500" />
       {isReadOnly ? (
-        <span className="font-bold text-gray-800 uppercase tracking-tight truncate max-w-[200px]">
+        <span className="font-bold text-[11px] text-gray-800 uppercase tracking-tight truncate max-w-[200px]">
           {value || "SIN CLIENTE"}
         </span>
       ) : (
@@ -287,7 +287,7 @@ export const ClienteAutocomplete = ({ value, onSelect, isReadOnly, initialId, on
             ref={inputRef}
             type="text"
             tabIndex={tabIndex}
-            className="bg-transparent hover:bg-white focus:bg-white border-b border-transparent focus:border-teal-300 px-1 font-bold text-gray-800 uppercase outline-none text-xs transition-all"
+            className="bg-transparent hover:bg-white focus:bg-white border-b border-transparent focus:border-teal-300 px-1 font-bold text-gray-800 uppercase outline-none text-[11px] py-0 h-4 transition-all"
             style={{ width: `${width}px` }}
             value={query}
             onFocus={(e) => {
@@ -612,7 +612,7 @@ export const RepresentanteAutocomplete = ({ value, clienteId, onSelect, isReadOn
     >
       <Icon name="user" className="h-3.5 w-3.5 mr-1.5 text-amber-500" />
       {isReadOnly ? (
-        <span className="font-bold text-gray-800 uppercase tracking-tight truncate max-w-[150px]">
+        <span className="font-bold text-[11px] text-gray-800 uppercase tracking-tight truncate max-w-[150px]">
           {value || "SIN NOMBRE"}
         </span>
       ) : (
@@ -628,7 +628,7 @@ export const RepresentanteAutocomplete = ({ value, clienteId, onSelect, isReadOn
             ref={inputRef}
             type="text"
             tabIndex={tabIndex}
-            className="bg-transparent hover:bg-white focus:bg-white border-b border-transparent focus:border-teal-300 px-1 font-bold text-gray-800 uppercase outline-none text-xs transition-all"
+            className="bg-transparent hover:bg-white focus:bg-white border-b border-transparent focus:border-teal-300 px-1 font-bold text-gray-800 uppercase outline-none text-[11px] py-0 h-4 transition-all"
             style={{ width: `${width}px` }}
             value={query}
             onFocus={(e) => {

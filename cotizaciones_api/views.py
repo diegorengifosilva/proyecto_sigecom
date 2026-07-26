@@ -145,7 +145,18 @@ def get_csrf_token(request):
     """
     return JsonResponse({'message': 'CSRF token set correctly.'}, status=200)
 
-#========================================================================================
+def format_datetime(value, fmt="%Y-%m-%d %H:%M:%S"):
+    if not value:
+        return None
+    if isinstance(value, str):
+        return value
+    from django.utils.timezone import is_aware, localtime
+    try:
+        if is_aware(value):
+            value = localtime(value)
+        return value.strftime(fmt)
+    except Exception:
+        return str(value)
 
 #==============#
 # COTIZACIONES #
@@ -421,7 +432,70 @@ def lista_cotizaciones(request):
             "clientes": clientes_lista,
         }
 
-        tabla_data = CotizacionTablaSerializer(qs.order_by('-fecha', '-id_registro'), many=True).data
+        AREA_MAP = {
+            1: "Industria", 
+            2: "Minería", 
+            3: "Mantenimiento", 
+            4: "Petroquímica", 
+            8: "Seguridad"
+        }
+        
+        tabla_data = []
+        ordered_qs = qs.order_by('-fecha', '-id_registro')
+        from decimal import Decimal
+        for c in ordered_qs:
+            comercial_nombre = c.id_comercial.nombre_completo if c.id_comercial else "Por asignar"
+            comercial_correo = c.id_comercial.correo if c.id_comercial else None
+            comercial_movil_corporativo = c.id_comercial.movil_coorporativo if c.id_comercial else None
+            comercial_movil_personal = c.id_comercial.movil_personal if c.id_comercial else None
+
+            tecnico_nombre = c.id_tecnico.nombre_completo if c.id_tecnico else "Por asignar"
+            tecnico_correo = c.id_tecnico.correo if c.id_tecnico else None
+            tecnico_movil_corporativo = c.id_tecnico.movil_coorporativo if c.id_tecnico else None
+            tecnico_movil_personal = c.id_tecnico.movil_personal if c.id_tecnico else None
+
+            cliente_nombre = c.id_cliente.nombre if c.id_cliente else (c.representante_nombre or "S/N")
+            estado_nombre = c.id_estado.nombre if c.id_estado else None
+            tipo_nombre = c.id_tipo.nombre if c.id_tipo else None
+            area_nombre = AREA_MAP.get(c.id_area, "Otros")
+            
+            envio = 3 if c.estado_envio == 2 else 2
+            fecha_str = format_datetime(c.fecha)
+            total_val = str(c.total_cotizacion) if isinstance(c.total_cotizacion, Decimal) else c.total_cotizacion
+
+            tabla_data.append({
+                "id_registro": c.id_registro,
+                "codigo": c.codigo,
+                "fecha": fecha_str,
+                "numero": c.codigo,
+                "referencia": c.referencia,
+                "cliente_nombre": cliente_nombre,
+                "representante_nombre": c.representante_nombre,
+                "comercial_nombre": comercial_nombre,
+                "comercial_correo": comercial_correo,
+                "comercial_movil_corporativo": comercial_movil_corporativo,
+                "comercial_movil_personal": comercial_movil_personal,
+                "tecnico_nombre": tecnico_nombre,
+                "tecnico_correo": tecnico_correo,
+                "tecnico_movil_corporativo": tecnico_movil_corporativo,
+                "tecnico_movil_personal": tecnico_movil_personal,
+                "estado_nombre": estado_nombre,
+                "id_estado": c.id_estado_id,
+                "tipo_nombre": tipo_nombre,
+                "area_nombre": area_nombre,
+                "total_cotizacion": total_val,
+                "tipo_moneda": c.tipo_moneda,
+                "probabilidad": c.probabilidad,
+                "estado_envio": c.estado_envio,
+                "envio": envio,
+                "suministros_valor": c.entrega_suministros,
+                "suministros_unidad": c.id_unidad_tiempo_entrega_suministros.nombre if c.id_unidad_tiempo_entrega_suministros else None,
+                "servicios_valor": c.entrega_servicios,
+                "servicios_unidad": c.id_unidad_tiempo_entrega_servicios.nombre if c.id_unidad_tiempo_entrega_servicios else None,
+                "validez_valor": c.validez_oferta,
+                "validez_unidad": c.id_unidad_tiempo_validez.nombre if c.id_unidad_tiempo_validez else None,
+                "fijar": c.fijar,
+            })
 
         return Response({"dashboard": dashboard_data, "tabla": tabla_data, "anno": anno})
     except Exception as e:
@@ -2068,12 +2142,35 @@ def lista_oportunidades(request):
         }
 
         # ============================================================
-        # 4) Respuesta con Serializer especializado
+        # 4) Respuesta con Serialización manual ultra-rápida
         # ============================================================
-        tabla_data = OportunidadTablaSerializer(
-            qs.order_by('-recepcion_solicitud', '-id_registro'), 
-            many=True
-        ).data
+        tabla_data = []
+        ordered_qs = qs.order_by('-recepcion_solicitud', '-id_registro')
+        for c in ordered_qs:
+            comercial_nombre = c.id_comercial.nombre_completo if c.id_comercial else "Por asignar"
+            comercial_correo = c.id_comercial.correo if c.id_comercial else None
+            comercial_movil_corporativo = c.id_comercial.movil_coorporativo if c.id_comercial else None
+            comercial_movil_personal = c.id_comercial.movil_personal if c.id_comercial else None
+            cliente_nombre = c.id_cliente.nombre if c.id_cliente else (c.representante_nombre or "S/N")
+
+            tabla_data.append({
+                "id_registro": c.id_registro,
+                "codigo": c.codigo,
+                "recepcion_solicitud": format_datetime(c.recepcion_solicitud),
+                "cliente_nombre": cliente_nombre,
+                "representante_nombre": c.representante_nombre,
+                "referencia": c.referencia,
+                "visita_tecnica": format_datetime(c.visita_tecnica),
+                "fecha_limite": format_datetime(c.fecha_limite),
+                "emision_cotizacion": format_datetime(c.emision_cotizacion),
+                "estado_oportunidad": c.estado_oportunidad,
+                "comercial_nombre": comercial_nombre,
+                "comercial_correo": comercial_correo,
+                "comercial_movil_corporativo": comercial_movil_corporativo,
+                "comercial_movil_personal": comercial_movil_personal,
+                "comentario": c.comentario,
+                "fijar": c.fijar,
+            })
 
         return Response({
             "dashboard": dashboard_data,
@@ -2301,11 +2398,63 @@ def lista_aperturas(request):
             "clientes": clientes_lista,
         }
 
-        # Serialización limpia del listado de la tabla (Orden descendente por ID e ID_Apertura)
-        tabla_data = CotizacionAperturaTablaSerializer(
-            qs.order_by('-anno', '-mes', '-id_apertura'), 
-            many=True
-        ).data
+        # Serialización limpia del listado de la tabla manual ultra-rápida
+        tabla_data = []
+        ordered_qs = qs.order_by('-anno', '-mes', '-id_apertura')
+        from decimal import Decimal
+        AREA_MAP = {1: "Industria", 2: "Minería", 3: "Mantenimiento", 4: "Petroquímica", 8: "Seguridad"}
+        for ap in ordered_qs:
+            estado_orden_nombre = "Pendiente" if ap.estado_orden == 1 else ("Aprobada" if ap.estado_orden == 2 else ("Facturada" if ap.estado_orden == 3 else ("Anulada" if ap.estado_orden == 4 else "Desconocido")))
+            plazo_unidad = ap.orden_plazo_unidad.nombre if ap.orden_plazo_unidad else None
+            
+            cotizacion_id = ap.id_registro.id_registro if ap.id_registro else None
+            cotizacion_codigo = ap.id_registro.codigo if ap.id_registro else None
+            cotizacion_referencia = ap.id_registro.referencia if ap.id_registro else None
+            
+            cliente_id = ap.id_registro.id_cliente_id if ap.id_registro else None
+            cliente_nombre = ap.id_registro.id_cliente.nombre if (ap.id_registro and ap.id_registro.id_cliente) else (ap.id_registro.representante_nombre if ap.id_registro else "S/N")
+            area_nombre = AREA_MAP.get(ap.id_registro.id_area, "Otros") if ap.id_registro else "Otros"
+            
+            if ap.id_registro:
+                id_registro_data = {
+                    "codigo": ap.id_registro.codigo,
+                    "referencia": ap.id_registro.referencia,
+                    "id_cliente": ap.id_registro.id_cliente_id,
+                    "cliente_nombre": ap.id_registro.id_cliente.nombre if ap.id_registro.id_cliente else (ap.id_registro.representante_nombre or "S/N"),
+                    "id_area": ap.id_registro.id_area,
+                    "area_nombre": AREA_MAP.get(ap.id_registro.id_area, "Otros"),
+                    "fijar": ap.id_registro.fijar,
+                }
+            else:
+                id_registro_data = None
+
+            total_orden_val = str(ap.total_orden) if isinstance(ap.total_orden, Decimal) else ap.total_orden
+            totfa_val = str(ap.totfa) if isinstance(ap.totfa, Decimal) else ap.totfa
+            salfa_val = str(ap.salfa) if isinstance(ap.salfa, Decimal) else ap.salfa
+
+            tabla_data.append({
+                "id_apertura": ap.id_apertura,
+                "anno": ap.anno,
+                "mes": ap.mes,
+                "fecha_orden": format_datetime(ap.fecha_orden),
+                "fecha_factura": format_datetime(ap.fecha_factura),
+                "numero_orden": ap.numero_orden,
+                "id_registro": id_registro_data,
+                "total_orden": total_orden_val,
+                "estado_orden": ap.estado_orden,
+                "estado_orden_nombre": estado_orden_nombre,
+                "orden_plazo_valor": ap.orden_plazo_valor,
+                "plazo_unidad": plazo_unidad,
+                "totfa": totfa_val,
+                "salfa": salfa_val,
+                "cotizacion_id": cotizacion_id,
+                "cotizacion_codigo": cotizacion_codigo,
+                "cotizacion_referencia": cotizacion_referencia,
+                "cliente_id": cliente_id,
+                "cliente_nombre": cliente_nombre,
+                "area_nombre": area_nombre,
+                "prio": ap.prio,
+            })
 
         return Response({"dashboard": dashboard_data, "tabla": tabla_data, "anno": anno})
 
@@ -2342,14 +2491,27 @@ def apertura_detalle(request, id_apertura):
                 apertura.numero_orden = data['numero_orden']
             if 'fecha_orden' in data:
                 apertura.fecha_orden = data['fecha_orden']
+            
             if 'fecha_entrega' in data:
                 apertura.fecha_entrega = data['fecha_entrega']
+            elif 'fecha_real_entrega' in data:
+                apertura.fecha_entrega = data['fecha_real_entrega']
+                
             if 'fecha_factura' in data:
                 apertura.fecha_factura = data['fecha_factura']
+            elif 'fecha_recepcion' in data:
+                apertura.fecha_factura = data['fecha_recepcion']
+                
             if 'mes_entrega' in data:
                 apertura.mes_entrega = data['mes_entrega']
+            elif 'orden_devengo_mes' in data:
+                apertura.mes_entrega = data['orden_devengo_mes']
+                
             if 'estado_orden' in data:
                 apertura.estado_orden = data['estado_orden']
+            elif 'orden_compra_estado' in data:
+                apertura.estado_orden = data['orden_compra_estado']
+                
             if 'prio' in data:
                 apertura.prio = data['prio']
             if 'envio' in data:
@@ -2366,6 +2528,9 @@ def apertura_detalle(request, id_apertura):
                 
             if 'orden_plazo_valor' in data:
                 apertura.orden_plazo_valor = data['orden_plazo_valor']
+            elif 'orden_plazo' in data:
+                apertura.orden_plazo_valor = data['orden_plazo']
+                
             if 'orden_plazo_unidad' in data:
                 apertura.orden_plazo_unidad_id = data['orden_plazo_unidad']
 
@@ -2411,6 +2576,24 @@ def apertura_detalle(request, id_apertura):
             if 'uti_des' in data:
                 apertura.uti_des = data['uti_des']
                 
+            # Recalcular Fecha de Entrega en base a la Fecha de Emisión y el Plazo de Entrega
+            if apertura.fecha_orden and apertura.orden_plazo_valor is not None:
+                import datetime
+                from django.utils.dateparse import parse_datetime, parse_date
+                fo = apertura.fecha_orden
+                if isinstance(fo, str):
+                    dt = parse_datetime(fo)
+                    if not dt:
+                        d = parse_date(fo)
+                        if d:
+                            dt = datetime.datetime.combine(d, datetime.time.min)
+                    fo = dt
+                if fo:
+                    try:
+                        apertura.fecha_entrega = fo + datetime.timedelta(days=int(apertura.orden_plazo_valor))
+                    except Exception as dt_err:
+                        logger.error(f"Error calculating fecha_entrega: {dt_err}")
+
             apertura.save()
             
             serializer = CotizacionAperturaSerializer(apertura)
@@ -2419,6 +2602,99 @@ def apertura_detalle(request, id_apertura):
         import traceback
         traceback.print_exc()
         return Response({"error": str(e), "traceback": traceback.format_exc()}, status=500)
+
+def sync_apertura_oc_file(apertura):
+    try:
+        from django.conf import settings
+        ruta_carpeta = os.path.join(settings.BASE_DIR, 'cotizaciones_api', 'ocfiles')
+        extensiones = ['.pdf', '.xlsx', '.xls', '.docx', '.doc']
+        path_completo = None
+        ext_encontrada = None
+        id_apertura_str = str(int(apertura.id_apertura)).strip()
+        
+        for ext in extensiones:
+            path_test = os.path.join(ruta_carpeta, f"{id_apertura_str}{ext}")
+            if os.path.exists(path_test):
+                path_completo = path_test
+                ext_encontrada = ext
+                break
+
+        if not path_completo:
+            return False
+
+        texto_completo = extract_text_from_file(path_completo, ext_encontrada)
+        if not texto_completo:
+            return False
+
+        texto_metadata = extract_text_from_file(path_completo, ext_encontrada, max_pages=2)
+
+        changed = False
+        nro_orden = extract_order_number(texto_metadata)
+        if nro_orden and apertura.numero_orden != nro_orden:
+            apertura.numero_orden = nro_orden
+            changed = True
+        
+        total_ext = extract_total_amount(texto_metadata)
+        if total_ext and abs(Decimal(str(total_ext)) - (apertura.total_orden or Decimal('0'))) > Decimal('0.01'):
+            apertura.total_orden = Decimal(str(total_ext))
+            changed = True
+
+        if apertura.id_registro_id:
+            matched_supplies, matched_services = match_apertura_items(texto_completo, apertura.id_registro_id)
+            new_doc = ",".join(matched_supplies) if matched_supplies else ""
+            new_ti1 = ",".join(matched_services) if matched_services else ""
+            
+            if apertura.doc != new_doc or apertura.ti1 != new_ti1 or changed:
+                apertura.doc = new_doc
+                apertura.ti1 = new_ti1
+                recalculate_apertura_costs(apertura)
+                changed = True
+
+        if changed:
+            apertura.save()
+            return True
+
+    except Exception as ex:
+        logger.error(f"Error auto-syncing OC for apertura {apertura.id_apertura}: {ex}", exc_info=True)
+    return False
+
+def cleanup_duplicate_aperturas(id_registro):
+    try:
+        aperturas = list(CotizacionApertura.objects.filter(id_registro=id_registro).order_by('id_apertura'))
+        if len(aperturas) <= 1:
+            return
+
+        by_num = {}
+        for ap in aperturas:
+            num = (ap.numero_orden or "").strip()
+            if num:
+                by_num.setdefault(num, []).append(ap)
+
+        for num, group in by_num.items():
+            if len(group) > 1:
+                primary = next((a for a in group if a.orden_adjunta), group[0])
+                for dupe in group:
+                    if dupe.id_apertura != primary.id_apertura:
+                        if not primary.orden_adjunta and dupe.orden_adjunta:
+                            primary.orden_adjunta = dupe.orden_adjunta
+                        if not primary.doc and dupe.doc:
+                            primary.doc = dupe.doc
+                        if not primary.ti1 and dupe.ti1:
+                            primary.ti1 = dupe.ti1
+                        if (not primary.total_orden or primary.total_orden == 0) and dupe.total_orden:
+                            primary.total_orden = dupe.total_orden
+                        primary.save()
+                        dupe.delete()
+
+        remaining = list(CotizacionApertura.objects.filter(id_registro=id_registro).order_by('id_apertura'))
+        if len(remaining) > 1:
+            has_real_filled = any(bool(a.orden_adjunta) or (a.total_orden and Decimal(str(a.total_orden)) > 0) or bool(a.numero_orden) for a in remaining)
+            if has_real_filled:
+                for a in remaining:
+                    if not a.orden_adjunta and not a.numero_orden and (not a.total_orden or a.total_orden == 0):
+                        a.delete()
+    except Exception as e:
+        logger.error(f"Error cleaning up duplicate aperturas for {id_registro}: {e}", exc_info=True)
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -2431,7 +2707,6 @@ def aperturas_por_registro(request, id_registro):
             'id_registro__id_estado'
         ).filter(id_registro=id_registro)
         
-        # Fallback legacy: si no hay resultados por id_registro, puede ser un id_apertura
         if not aperturas.exists():
             try:
                 aperturadef = CotizacionApertura.objects.get(id_apertura=id_registro)
@@ -2446,25 +2721,19 @@ def aperturas_por_registro(request, id_registro):
                 pass
         
         if not aperturas.exists():
-            # Creamos una apertura inicial vacía para este id_registro
-            from django.utils import timezone
-            try:
-                cotizacion = Cotizacion.objects.get(id_registro=id_registro)
-            except Cotizacion.DoesNotExist:
-                return Response({"error": "Cotización no encontrada"}, status=404)
-            
-            nueva_apertura = CotizacionApertura.objects.create(
-                id_registro=cotizacion,
-                anno=timezone.now().year,
-                mes=timezone.now().month,
-                envio=1, # Pendiente
-                prio='0', # Normal
-                total_orden=cotizacion.total_cotizacion or 0,
-                presupuesto=cotizacion.total_cotizacion or 0,
-                responsables=""
-            )
-            aperturas = CotizacionApertura.objects.filter(id_apertura=nueva_apertura.id_apertura)
-            
+            return Response([])
+        
+
+        target_id_registro = aperturas.first().id_registro_id if aperturas.exists() else id_registro
+        if target_id_registro:
+            cleanup_duplicate_aperturas(target_id_registro)
+            aperturas = CotizacionApertura.objects.select_related(
+                'orden_plazo_unidad',
+                'id_registro',
+                'id_registro__id_cliente',
+                'id_registro__id_estado'
+            ).filter(id_registro=target_id_registro)
+
         serializer = CotizacionAperturaSerializer(aperturas, many=True)
         return Response(serializer.data)
     except Exception as e:
@@ -2481,26 +2750,35 @@ def crear_nueva_oc(request, id_registro):
         except Cotizacion.DoesNotExist:
             return Response({"error": "Cotización no encontrada"}, status=404)
             
-        aperturas_existentes = CotizacionApertura.objects.filter(id_registro=id_registro)
-        responsables = ""
-        if aperturas_existentes.exists():
-            responsables = aperturas_existentes.first().responsables or ""
-            
-        from django.utils import timezone
-        nueva_apertura = CotizacionApertura.objects.create(
-            id_registro=cotizacion,
-            anno=timezone.now().year,
-            mes=timezone.now().month,
-            envio=1, # Pendiente
-            prio='0', # Normal
-            total_orden=0,
-            presupuesto=0,
-            responsables=responsables
-        )
+        empty_ap = CotizacionApertura.objects.filter(
+            id_registro=id_registro,
+            orden_adjunta="",
+            numero_orden="",
+            total_orden=0
+        ).first()
+
+        if empty_ap:
+            nueva_apertura = empty_ap
+            nueva_apertura.estado_orden = 1
+            nueva_apertura.save()
+        else:
+            aperturas_existentes = CotizacionApertura.objects.filter(id_registro=id_registro)
+            responsables = aperturas_existentes.first().responsables if aperturas_existentes.exists() else ""
+            from django.utils import timezone
+            nueva_apertura = CotizacionApertura.objects.create(
+                id_registro=cotizacion,
+                anno=timezone.now().year,
+                mes=timezone.now().month,
+                envio=1,
+                prio='0',
+                estado_orden=1,
+                total_orden=0,
+                presupuesto=0,
+                responsables=responsables or ""
+            )
         
         archivo = request.FILES.get("archivo")
         if archivo:
-            # Procesamos el archivo igual que en subir_oc_apertura
             from django.conf import settings
             ruta_carpeta = os.path.join(settings.BASE_DIR, 'cotizaciones_api', 'ocfiles')
             if not os.path.exists(ruta_carpeta):
@@ -2519,11 +2797,11 @@ def crear_nueva_oc(request, id_registro):
 
             url_descarga = f"/api/cotizaciones/ocfiles/ver/{nueva_apertura.id_apertura}/"
             nueva_apertura.orden_adjunta = url_descarga
+            nueva_apertura.fecha_orden = timezone.now()
 
-            # OCR / Procesamiento
             try:
                 texto_completo = extract_text_from_file(path_destino, ext)
-                texto_metadata = texto_completo
+                texto_metadata = extract_text_from_file(path_destino, ext, max_pages=2)
                 
                 if texto_metadata:
                     nro_orden = extract_order_number(texto_metadata)
@@ -2542,6 +2820,8 @@ def crear_nueva_oc(request, id_registro):
                 logger.error(f"Error procesando OCR en crear_nueva_oc: {ocr_err}", exc_info=True)
             
             nueva_apertura.save()
+
+        cleanup_duplicate_aperturas(id_registro)
 
         aperturas_all = CotizacionApertura.objects.select_related(
             'orden_plazo_unidad',
@@ -2626,28 +2906,111 @@ def clean_numeric_value(val_str):
         return 0.0
 
 def extract_order_number(text):
+    if not text:
+        return None
+        
+    address_keywords = {"AV.", "AVENIDA", "JR.", "JIRON", "CALLE", "URB.", "URBANIZACION", "MZA.", "LOTE", "TELEF", "FAX", "PANAMA", "CATALINA", "VICTORIA", "LIMA", "DIRECCION", "DIR.", "DOMICILIO", "PROVINCIA", "DISTRITO"}
+    ruc_keywords = {"RUC", "R.U.C.", "R.U.C", "REGISTRO UNICO DE CONTRIBUYENTES", "CONTRIBUYENTE"}
+    phone_keywords = {"CELULAR", "CEL", "TELEFONO", "TLF", "TLFN", "ANEXO", "CONTACTO", "RPM"}
+    
+    # Pre-split into lines and inspect candidates
+    lines = [line.strip() for line in text.split('\n') if line.strip()]
+    candidates = []
+    
+    for idx, line in enumerate(lines):
+        line_upper = line.upper()
+        # Skip lines that look like addresses
+        if any(kw in line_upper for kw in address_keywords):
+            continue
+            
+        # Search for integer sequences of length 4 to 12
+        for match in re.finditer(r'\b\d{4,12}\b', line):
+            num = match.group(0)
+            
+            # 1. EXCLUDE RUCs COMPLETELY (11 digits starting with 1 or 2)
+            if len(num) == 11 and num[0] in {'1', '2'}:
+                continue
+                
+            # Exclude sequences that match current/adjacent year numbers unless heavily scored
+            is_year = num in {"2023", "2024", "2025", "2026", "2027", "2028"}
+            
+            # Base score based on length (PO numbers are typically 8 to 10 digits)
+            if len(num) in {8, 9, 10}:
+                score = 30 + len(num)
+            elif len(num) == 11 or len(num) == 12:
+                score = 15 + len(num)
+            else:
+                score = len(num)
+                
+            if is_year:
+                score = 1
+                
+            # 2. PROXIMITY TO ORDER KEYWORDS
+            order_keywords = {
+                "PEDIDO", "ORDEN", "PURCHASE", "O/C", "OC", "OS", "O/S", "PO", 
+                "P.O.", "O.C.", "O.S.", "CONTRATO", "LICITACION", "NRO. PEDIDO", 
+                "NRO PEDIDO", "NUMERO PEDIDO", "N° PEDIDO", "N° PEDIDO", 
+                "N° ORDEN", "N° ORDEN", "NUMERO ORDEN", "NRO ORDEN"
+            }
+            
+            has_order_kw_same = any(okw in line_upper for okw in order_keywords)
+            has_order_kw_prev = idx > 0 and any(okw in lines[idx-1].upper() for okw in order_keywords)
+            
+            if has_order_kw_same:
+                score += 100
+            elif has_order_kw_prev:
+                score += 80
+                
+            # 3. NEGATIVE PENALTIES
+            # Penalty if RUC label is on the same line
+            if any(rkw in line_upper for rkw in ruc_keywords):
+                score -= 120
+                
+            # Penalty if phone/contact keywords are on same line
+            if any(pkw in line_upper for pkw in phone_keywords):
+                score -= 80
+                
+            # Position boost: closer to the top is better
+            if idx < len(lines) * 0.3:
+                score += 15
+            elif idx < len(lines) * 0.5:
+                score += 5
+                
+            candidates.append((num, score))
+            
+    if candidates:
+        # Sort by score descending, then by length descending
+        candidates.sort(key=lambda x: (x[1], len(x[0])), reverse=True)
+        return candidates[0][0]
+
+    # Fallback to standard regex patterns if no candidates found
     text_clean_spaces = re.sub(r'[ \t]+', ' ', text)
     patterns = [
-        r'\b(?:ORDEN\s+DE\s+(?:COMPR?R?A|SERVICIOS?)|ORDEN\s+(?:COMPR?R?A|SERVICIOS?)|O/C|P\.O\.|O\.C\.|O\.S\.|O/S|OC|OS|PO|P\.O)(?:\b|\s|\.)\s*(?:\n|\r|\s)*(?:NRO|N[O°ºº\.]|NUMERO|NUM|NRO\.|NUM\.)?\s*[:\-#]?\s*([A-Z0-9\-_]+(?:\s*-\s*[A-Z0-9\-_]+)*)',
-        r'\b(?:NRO|N[O°ºº\.]|NUMERO|NUM|NRO\.|NUM\.)\s*[:\-#]?\s*([A-Z0-9\-_]+(?:\s*-\s*[A-Z0-9\-_]+)*)',
-        r'\b(?:ORDEN\s+DE\s+(?:COMPR?R?A|SERVICIOS?)|ORDEN\s+(?:COMPR?R?A|SERVICIOS?)|O/C|P\.O\.|O\.C\.|O\.S\.|O/S|OC|OS|PO|P\.O)(?:\b|\s|\.)\s*[:\-#]?\s*([A-Z0-9\-_]+(?:\s*-\s*[A-Z0-9\-_]+)*)',
+        r'\b(?:PEDIDO|SOLICITUD\s+DE\s+PEDIDO|PEDIDO\s+DE\s+COMPRA|PURCHASE\s+ORDER|ORDER\s+NO|ORDER\s+NUMBER|ORDER\s+#|ORDEN\s+DE\s+(?:COMPR?R?A|SERVICIOS?)|ORDEN\s+(?:COMPR?R?A|SERVICIOS?)|DOCUMENTO\s+DE\s+COMPRA|DOC\.\s*COMPRA|O/C|P\.O\.|O\.C\.|O\.S\.|O/S|OC|OS|PO)(?:\b|\s|\.)\s*(?:NRO|N[O°º\.]|NUMERO|NUM|NUMBER|NO\.)?\s*[:\-#]?\s*([A-Z0-9\-_]+(?:\s*-\s*[A-Z0-9\-_]+)*)',
+        r'\b(?:NRO|N[O°º\.]|NUMERO|NUM|NRO\.|NUM\.)\s*[:\-#]?\s*([A-Z0-9\-_]+(?:\s*-\s*[A-Z0-9\-_]+)*)',
     ]
     for pattern in patterns:
         for match in re.finditer(pattern, text_clean_spaces, re.IGNORECASE):
             val = match.group(1).strip()
             val = val.split('\n')[0].strip()
             val = re.sub(r'^[^\w]+|[^\w]+$', '', val).strip()
+            val_upper = val.upper()
+            if any(kw in val_upper for kw in address_keywords):
+                continue
             if len(val) >= 4 and len(val) <= 40:
                 if re.search(r'\d', val):
-                    # Clean/extract numeric part if it contains hyphens/slashes/spaces
                     chunks = re.split(r'[\-_/\u2010-\u2015\s]+', val)
                     for chunk in chunks:
                         chunk_clean = chunk.strip()
                         if chunk_clean.isdigit() and len(chunk_clean) >= 6:
+                            if len(chunk_clean) == 11 and (chunk_clean.startswith("10") or chunk_clean.startswith("20")):
+                                continue
                             return chunk_clean
                     for chunk in chunks:
                         chunk_clean = chunk.strip()
                         if chunk_clean.isdigit() and len(chunk_clean) >= 4:
+                            if len(chunk_clean) == 11 and (chunk_clean.startswith("10") or chunk_clean.startswith("20")):
+                                continue
                             return chunk_clean
                     return val
     return None
@@ -2686,6 +3049,26 @@ def normalize_match_string(s):
         return ''
     return re.sub(r'[^A-Z0-9]', '', remove_accents(s).upper())
 
+_fuzzy_match_cache = {}
+
+def fuzzy_word_match(w1, w2):
+    if w1 == w2:
+        return True
+    if abs(len(w1) - len(w2)) >= 3:
+        return False
+    if len(w1) < 4 or len(w2) < 4:
+        return False
+    
+    key = (w1, w2) if w1 < w2 else (w2, w1)
+    if key in _fuzzy_match_cache:
+        return _fuzzy_match_cache[key]
+        
+    import difflib
+    ratio = difflib.SequenceMatcher(None, w1, w2).ratio()
+    res = (ratio >= 0.80)
+    _fuzzy_match_cache[key] = res
+    return res
+
 def check_description_match(desc, text_upper):
     if not desc:
         return False
@@ -2698,49 +3081,113 @@ def check_description_match(desc, text_upper):
     
     import re as regularexpr
     words = [w.strip() for w in regularexpr.split(r'[^A-Z0-9]', desc_clean) if len(w.strip()) >= 3]
-    stopwords = {"DEL", "CON", "PARA", "COMO", "ESTE", "ESTA", "SOLO", "TIPO", "PARA", "LAS", "LOS", "UNA", "UNO"}
+    stopwords = {"DEL", "CON", "PARA", "COMO", "ESTE", "ESTA", "SOLO", "TIPO", "PARA", "LAS", "LOS", "UNA", "UNO", "POR", "SIN", "MAS", "QUE"}
     words = [w for w in words if w not in stopwords]
     if not words:
         return False
     
-    if len(words) == 1:
-        if words[0] in {"MATERIALES", "EQUIPOS", "SERVICIOS", "GASTOS", "OTROS", "COMPRA", "VENTA", "TOTAL", "GENERAL"}:
-            return False
-        return regularexpr.search(r'\b' + regularexpr.escape(words[0]) + r'\b', text_clean) is not None
+    words_set = set(words)
+    lines = [line.strip() for line in text_clean.split('\n') if line.strip()]
+    
+    # Generate single lines and 2-line combinations to handle line wraps
+    candidates = []
+    for i in range(len(lines)):
+        candidates.append(lines[i])
+        if i < len(lines) - 1:
+            candidates.append(lines[i] + " " + lines[i+1])
+            
+    for candidate in candidates:
+        # Performance pre-filter: the candidate line must share at least one exact substring
+        # matching a word from our description to avoid doing expensive regex and fuzzy checks.
+        if not any(w in candidate for w in words):
+            continue
+            
+        candidate_words = set(w.strip() for w in regularexpr.split(r'[^A-Z0-9]', candidate) if len(w.strip()) >= 3)
         
-    matched_count = sum(1 for w in words if regularexpr.search(r'\b' + regularexpr.escape(w) + r'\b', text_clean) is not None)
-    return (matched_count / len(words)) >= 0.7
+        if len(words) == 1:
+            w = words[0]
+            if w in {"MATERIALES", "EQUIPOS", "SERVICIOS", "GASTOS", "OTROS", "COMPRA", "VENTA", "TOTAL", "GENERAL"}:
+                continue
+            if w in candidate_words or any(fuzzy_word_match(w, tw) for tw in candidate_words):
+                return True
+        else:
+            matched_count = sum(1 for w in words if (w in candidate_words or any(fuzzy_word_match(w, tw) for tw in candidate_words)))
+            if (matched_count / len(words)) >= 0.5:
+                return True
+                
+    return False
+
+def check_keyword_overlap(supply_name, service_text):
+    if not supply_name or not service_text:
+        return False
+    import re
+    s_words = [w.strip() for w in re.split(r'[^A-Z0-9]', remove_accents(supply_name).upper()) if len(w.strip()) >= 3]
+    srv_words = [w.strip() for w in re.split(r'[^A-Z0-9]', remove_accents(service_text).upper()) if len(w.strip()) >= 3]
+    
+    stopwords = {"DEL", "CON", "PARA", "COMO", "ESTE", "ESTA", "SOLO", "TIPO", "LAS", "LOS", "UNA", "UNO", "POR", "SIN", "MAS", "QUE", "SERVICIO", "ARMADO", "MONTAJE", "INSTALACION", "MANTENIMIENTO"}
+    s_words = [w for w in s_words if w not in stopwords]
+    srv_words = [w for w in srv_words if w not in stopwords]
+    
+    if not s_words or not srv_words:
+        return False
+        
+    for sw in s_words:
+        match_found = False
+        for srv_w in srv_words:
+            if sw == srv_w:
+                match_found = True
+                break
+            if len(sw) >= 4 and len(srv_w) >= 4 and sw[:4] == srv_w[:4]:
+                match_found = True
+                break
+        
+        if match_found:
+            if sw in {"TABLERO", "TAB"}:
+                other_s_words = [w for w in s_words if w not in {"TABLERO", "TAB"}]
+                if not other_s_words:
+                    return True
+                for osw in other_s_words:
+                    for srv_w in srv_words:
+                        if osw == srv_w or (len(osw) >= 4 and len(srv_w) >= 4 and osw[:4] == srv_w[:4]):
+                            return True
+            else:
+                return True
+    return False
 
 def match_apertura_items(text, id_registro):
+    _fuzzy_match_cache.clear()
     supplies = CotizacionSuministro.objects.filter(id_registro=id_registro)
     services = CotizacionServicio.objects.filter(id_registro=id_registro)
 
+    all_supply_groups = list(set(str(item.codigo_grupo) for item in supplies if item.codigo_grupo))
+    
+    service_headers = {item.codigo_servicio[:2]: item for item in services if item.nivel == 0 and item.codigo_servicio}
+    all_service_ids = list(set(str(item.id_servicio) for item in services if item.nivel == 0))
+
     norm_text = normalize_match_string(text)
     text_upper = text.upper()
-    
-    # 1. Matching Supplies
+
+    # 1. CASO SUMINISTROS (Título de grupo, Código de ítem, Descripción u Observación)
     matched_supply_groups = set()
     for item in supplies:
         if item.nivel == 0:
-            if check_description_match(item.nombre_grupo, text_upper):
+            matched = check_description_match(item.nombre_grupo, text_upper)
+            if matched:
                 matched_supply_groups.add(str(item.codigo_grupo))
         elif item.nivel == 1:
             norm_code = normalize_match_string(item.codigo_item)
-            if len(norm_code) >= 4 and norm_code in norm_text:
-                matched_supply_groups.add(str(item.codigo_grupo))
-                continue
-            if check_description_match(item.descripcion, text_upper):
+            matched_code = len(norm_code) >= 4 and norm_code in norm_text
+            matched_desc = check_description_match(item.descripcion, text_upper) or check_description_match(item.observacion, text_upper)
+            if matched_code or matched_desc:
                 matched_supply_groups.add(str(item.codigo_grupo))
 
-    # 2. Matching Services
+    # 2. CASO SERVICIOS (Título de servicio, Detalle de servicio, Código de ítem o Descripción)
     matched_service_ids = set()
-    service_headers = {item.codigo_servicio[:2]: item for item in services if item.nivel == 0 and item.codigo_servicio}
-    
     for item in services:
         if item.nivel == 0:
-            if check_description_match(item.nombre_servicio, text_upper):
-                matched_service_ids.add(str(item.id_servicio))
-            elif check_description_match(item.descripcion_servicio, text_upper):
+            match_name = check_description_match(item.nombre_servicio, text_upper)
+            match_desc = check_description_match(item.descripcion_servicio, text_upper)
+            if match_name or match_desc:
                 matched_service_ids.add(str(item.id_servicio))
         elif item.nivel == 2:
             prefix = item.codigo_servicio[:2] if item.codigo_servicio else ''
@@ -2748,13 +3195,31 @@ def match_apertura_items(text, id_registro):
                 continue
             
             norm_code = normalize_match_string(item.codigo_item)
-            if len(norm_code) >= 4 and norm_code in norm_text:
-                matched_service_ids.add(str(service_headers[prefix].id_servicio))
-                continue
-            if check_description_match(item.descripcion_item, text_upper):
+            matched_code = len(norm_code) >= 4 and norm_code in norm_text
+            if matched_code:
                 matched_service_ids.add(str(service_headers[prefix].id_servicio))
 
+    # 2.5. CASO CRUZADO: Si se detectaron suministros, buscar servicios relacionados
+    if matched_supply_groups:
+        matched_supply_names = []
+        for item in supplies:
+            if item.nivel == 0 and str(item.codigo_grupo) in matched_supply_groups:
+                if item.nombre_grupo:
+                    matched_supply_names.append(item.nombre_grupo)
+                    
+        for item in services:
+            if item.nivel == 0 and str(item.id_servicio) not in matched_service_ids:
+                for s_name in matched_supply_names:
+                    if check_keyword_overlap(s_name, item.nombre_servicio or "") or check_keyword_overlap(s_name, item.descripcion_servicio or ""):
+                        matched_service_ids.add(str(item.id_servicio))
+                        break
+
+    # 3. RETORNO DE ÍTEMS DETECTADOS (Si no hay coincidencias, se retorna vacío para no autoseleccionar todo)
+    if not matched_supply_groups and not matched_service_ids:
+        return [], []
+
     return list(matched_supply_groups), list(matched_service_ids)
+
 
 def recalculate_apertura_costs(apertura):
     supplies = CotizacionSuministro.objects.filter(id_registro=apertura.id_registro)
@@ -2885,6 +3350,59 @@ def recalculate_apertura_costs(apertura):
     apertura.total_orden = total_orden.quantize(Decimal('0.01'))
     apertura.uti_des = uti_des.quantize(Decimal('0.01'))
 
+    # ── Recalcular Plazo de Entrega (Tiempo de Entrega) en base a los ítems activos ──
+    cotizacion = apertura.id_registro
+    if cotizacion:
+        # Check if there are checked supplies
+        has_checked_supplies = False
+        for g_code in suministros_por_grupo.keys():
+            if is_suministro_checked(apertura.doc, g_code):
+                has_checked_supplies = True
+                break
+                
+        # Check if there are checked services
+        has_checked_services = False
+        for prefix, g_data in servicios_por_grupo.items():
+            header = g_data['header']
+            if header and is_servicio_checked(apertura.ti1, header.id_servicio):
+                has_checked_services = True
+                break
+                
+        def convert_to_days(val, unidad_obj):
+            if not val or not unidad_obj:
+                return 0
+            nombre = (unidad_obj.nombre or "").upper()
+            try:
+                val_float = float(val)
+            except (ValueError, TypeError):
+                return 0
+            if "DÍA" in nombre or "DIA" in nombre:
+                return val_float
+            elif "SEMANA" in nombre:
+                return val_float * 7
+            elif "MES" in nombre:
+                return val_float * 30
+            elif "AÑO" in nombre or "ANO" in nombre:
+                return val_float * 365
+            return val_float
+
+        plazo_dias = 0
+        if has_checked_supplies and cotizacion.entrega_suministros:
+            plazo_dias += convert_to_days(cotizacion.entrega_suministros, cotizacion.id_unidad_tiempo_entrega_suministros)
+        if has_checked_services and cotizacion.entrega_servicios:
+            plazo_dias += convert_to_days(cotizacion.entrega_servicios, cotizacion.id_unidad_tiempo_entrega_servicios)
+            
+        if plazo_dias > 0:
+            apertura.orden_plazo_valor = int(plazo_dias)
+            ut_dias = UnidadTiempo.objects.filter(id_tiempo=1).first() or UnidadTiempo.objects.filter(nombre__icontains="DIA").first() or UnidadTiempo.objects.filter(nombre__icontains="DÍA").first()
+            if ut_dias:
+                apertura.orden_plazo_unidad = ut_dias
+                
+            # Recalcular Fecha de Entrega en base a la Fecha de Emisión y el Plazo de Entrega
+            if apertura.fecha_orden:
+                from datetime import timedelta
+                apertura.fecha_entrega = apertura.fecha_orden + timedelta(days=int(plazo_dias))
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def subir_oc_apertura(request, id_apertura):
@@ -2920,11 +3438,12 @@ def subir_oc_apertura(request, id_apertura):
         url_descarga = f"/api/cotizaciones/ocfiles/ver/{id_apertura}/"
         
         apertura.orden_adjunta = url_descarga
+        apertura.fecha_orden = timezone.now()
 
         # --- AUTOMATIZACION DE LECTURA Y VINCULACION ---
         try:
             texto_completo = extract_text_from_file(path_destino, ext)
-            texto_metadata = texto_completo
+            texto_metadata = extract_text_from_file(path_destino, ext, max_pages=2)
             
             if texto_metadata:
                 # 1. Extraer número de orden
@@ -2962,6 +3481,65 @@ def subir_oc_apertura(request, id_apertura):
             "apertura": serializer.data
         })
     except Exception as e:
+        return Response({"error": str(e)}, status=500)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def reprocesar_oc_apertura(request, id_apertura):
+    try:
+        apertura = CotizacionApertura.objects.get(id_apertura=id_apertura)
+    except CotizacionApertura.DoesNotExist:
+        return Response({"error": "Apertura no encontrada"}, status=404)
+
+    try:
+        from django.conf import settings
+        ruta_carpeta = os.path.join(settings.BASE_DIR, 'cotizaciones_api', 'ocfiles')
+        
+        extensiones = ['.pdf', '.xlsx', '.xls', '.docx', '.doc']
+        path_completo = None
+        ext_encontrada = None
+        id_apertura_str = str(int(id_apertura)).strip()
+        
+        for ext in extensiones:
+            path_test = os.path.join(ruta_carpeta, f"{id_apertura_str}{ext}")
+            if os.path.exists(path_test):
+                path_completo = path_test
+                ext_encontrada = ext
+                break
+
+        if not path_completo:
+            return Response({"error": "No se encontró ningún archivo físico de Orden de Compra guardado para este registro."}, status=404)
+
+        apertura.fecha_orden = timezone.now()
+        texto_completo = extract_text_from_file(path_completo, ext_encontrada)
+        texto_metadata = extract_text_from_file(path_completo, ext_encontrada, max_pages=2)
+        
+        if texto_completo:
+            nro_orden = extract_order_number(texto_metadata)
+            if nro_orden:
+                apertura.numero_orden = nro_orden
+            
+            total_ext = extract_total_amount(texto_metadata)
+            if total_ext:
+                apertura.total_orden = Decimal(str(total_ext))
+
+            if apertura.id_registro_id:
+                matched_supplies, matched_services = match_apertura_items(texto_completo, apertura.id_registro_id)
+                apertura.doc = ",".join(matched_supplies) if matched_supplies else ""
+                apertura.ti1 = ",".join(matched_services) if matched_services else ""
+                
+                recalculate_apertura_costs(apertura)
+
+        apertura.save()
+        serializer = CotizacionAperturaSerializer(apertura)
+
+        return Response({
+            "ok": True,
+            "message": "Orden de Compra re-procesada y vinculada correctamente.",
+            "apertura": serializer.data
+        })
+    except Exception as e:
+        logger.error(f"Error re-procesando OC {id_apertura}: {e}", exc_info=True)
         return Response({"error": str(e)}, status=500)
 
 @api_view(['GET'])
@@ -3926,20 +4504,42 @@ def generar_codigo_cotizacion(request, id_registro):
 @permission_classes([IsAuthenticated])
 def eliminar_cotizacion(request, id_registro):
     try:
+        tipo_borrado = request.GET.get("tipo") or (request.data.get("tipo") if hasattr(request, 'data') and isinstance(request.data, dict) else None)
+
         with transaction.atomic():
-
-            # 1. Verificar existencia de la cotización
-            cotizacion = Cotizacion.objects.filter(
-                id_registro=id_registro
-            ).first()
-
+            cotizacion = Cotizacion.objects.filter(id_registro=id_registro).first()
             if not cotizacion:
-                return Response(
-                    {"error": "La cotización no existe"},
-                    status=404
-                )
+                return Response({"error": "La cotización no existe"}, status=404)
 
-            # Buscar si este registro fue creado como copia o nueva versión
+            # CASO 1: APERTURA (Borra solo la apertura y revierte cotización a estado Cotización)
+            if tipo_borrado == "apertura":
+                CotizacionApertura.objects.filter(id_registro=id_registro).delete()
+                cotizacion.id_estado_id = 2  # Pendiente / Cotización
+                cotizacion.estado_envio = 1  # Editable
+                cotizacion.save()
+                return Response({"message": "Apertura eliminada correctamente"}, status=200)
+
+            # CASO 2: COTIZACIÓN (Borra cotización y apertura. Si fue originada de Oportunidad, vuelve a Oportunidad)
+            if tipo_borrado == "cotizacion":
+                CotizacionApertura.objects.filter(id_registro=id_registro).delete()
+                CotizacionSuministro.objects.filter(id_registro=id_registro).delete()
+                CotizacionServicio.objects.filter(id_registro=id_registro).delete()
+                CotizacionMensaje.objects.filter(id_registro=id_registro).delete()
+                CotizacionSeguimiento.objects.filter(id_registro=id_registro).delete()
+                CotizacionAdjunto.objects.filter(id_registro=id_registro).delete()
+                CotizacionCondicionGeneral.objects.filter(id_registro=id_registro).delete()
+
+                if cotizacion.estado_oportunidad is not None and int(cotizacion.estado_oportunidad) != 0:
+                    cotizacion.id_estado_id = 11  # Oportunidad
+                    cotizacion.estado_oportunidad = 1  # Pendiente
+                    cotizacion.estado_envio = 0
+                    cotizacion.save()
+                    return Response({"message": "Cotización y apertura eliminadas. El registro retornó a Oportunidad."}, status=200)
+                else:
+                    cotizacion.delete()
+                    return Response({"message": "Cotización y apertura eliminadas correctamente."}, status=200)
+
+            # CASO 3: OPORTUNIDAD (Borra oportunidad, cotización y apertura completamente de la BD)
             import re
             base_log = CotizacionSeguimiento.objects.filter(
                 id_registro=id_registro,
@@ -3963,7 +4563,6 @@ def eliminar_cotizacion(request, id_registro):
                             activo='1'
                         )
 
-            # 2. Eliminar dependencias
             CotizacionSuministro.objects.filter(id_registro=id_registro).delete()
             CotizacionServicio.objects.filter(id_registro=id_registro).delete()
             CotizacionMensaje.objects.filter(id_registro=id_registro).delete()
@@ -3972,19 +4571,12 @@ def eliminar_cotizacion(request, id_registro):
             CotizacionCondicionGeneral.objects.filter(id_registro=id_registro).delete()
             CotizacionApertura.objects.filter(id_registro=id_registro).delete()
 
-            # 3. Eliminar cotización principal
             cotizacion.delete()
 
-        return Response(
-            {"message": "Cotización eliminada correctamente"},
-            status=200
-        )
+        return Response({"message": "Oportunidad, cotización y apertura eliminadas completamente"}, status=200)
 
     except Exception as e:
-        return Response(
-            {"error": str(e)},
-            status=500
-        )
+        return Response({"error": str(e)}, status=500)
 
 @csrf_exempt
 @api_view(["PATCH"])
@@ -3992,6 +4584,7 @@ def eliminar_cotizacion(request, id_registro):
 def enviar_cotizacion_aprobacion(request, id_registro):
 
     try:
+        revert = request.query_params.get("revert", "false").lower() in ["true", "1"]
         with transaction.atomic():
             # Buscamos por la nueva PK: id_registro
             cotizacion = Cotizacion.objects.filter(id_registro=id_registro).first()
@@ -3999,28 +4592,42 @@ def enviar_cotizacion_aprobacion(request, id_registro):
             if not cotizacion:
                 return Response({"error": "La cotización no existe"}, status=404)
 
-            # Control estricto del nuevo flujo simplificado
-            if cotizacion.estado_envio == 1:
-                cotizacion.estado_envio = 2
-                # Opcional: Aquí puedes meter lógica de negocio extra al enviar (ej: fijar fecha de envío)
-            elif cotizacion.estado_envio == 2:
-                return Response(
-                    {"error": "La cotización ya fue enviada al cliente anteriormente"}, 
-                    status=400
-                )
+            if revert:
+                if cotizacion.estado_envio == 2:
+                    cotizacion.estado_envio = 1
+                elif cotizacion.estado_envio == 1:
+                    return Response(
+                        {"error": "La cotización ya está en estado Pendiente de Envío"}, 
+                        status=400
+                    )
+                else:
+                    return Response(
+                        {"error": f"Estado de envío actual ({cotizacion.estado_envio}) inválido para revertir"}, 
+                        status=400
+                    )
             else:
-                # Por si acaso quedó un registro huérfano con valor nulo o inconsistente en la migración
-                return Response(
-                    {"error": f"Estado de envío actual ({cotizacion.estado_envio}) inválido para avanzar"}, 
-                    status=400
-                )
+                # Control estricto del nuevo flujo simplificado
+                if cotizacion.estado_envio == 1:
+                    cotizacion.estado_envio = 2
+                elif cotizacion.estado_envio == 2:
+                    return Response(
+                        {"error": "La cotización ya fue enviada al cliente anteriormente"}, 
+                        status=400
+                    )
+                else:
+                    # Por si acaso quedó un registro huérfano con valor nulo o inconsistente en la migración
+                    return Response(
+                        {"error": f"Estado de envío actual ({cotizacion.estado_envio}) inválido para avanzar"}, 
+                        status=400
+                    )
 
             # Guardamos explícitamente solo el campo afectado por rendimiento
             cotizacion.save(update_fields=["estado_envio"])
 
+        msg = "Cotización cambiada a Pendiente de Envío exitosamente" if revert else "Cotización enviada al cliente exitosamente"
         return Response(
             {
-                "message": "Cotización enviada al cliente exitosamente",
+                "message": msg,
                 "nuevo_estado": cotizacion.estado_envio
             }, 
             status=200

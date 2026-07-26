@@ -391,7 +391,7 @@ class CotizacionApertura(models.Model):
     anno = models.IntegerField(null=True, blank=True, db_column='anno')  # year(4) en MySQL
     mes = models.IntegerField(null=True, blank=True, db_column='mes')
     numero_orden = models.CharField(max_length=70, null=True, blank=True, db_column='numero_orden')
-    estado_orden = models.IntegerField(null=True, blank=True, db_column='estado_orden')
+    estado_orden = models.IntegerField(null=True, blank=True, default=1, db_column='estado_orden')
 
     # ── FECHAS PROCESO ─────────────────────────────────────────
     fecha_orden = models.DateTimeField(null=True, blank=True, db_column='fecha_orden')

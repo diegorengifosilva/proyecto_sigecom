@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Search, FileText, Filter, MoreHorizontal, LayoutDashboard, ClipboardCheck, TrendingUp, FolderCheck, CalendarRange, ArrowUpRight, X, Trash2, Brush, Pin, PinOff, ExternalLink, Copy, Mail, GitBranch, ShieldCheck, FileDown } from "lucide-react";
+import { Plus, Search, FileText, Filter, MoreHorizontal, LayoutDashboard, ClipboardCheck, TrendingUp, FolderCheck, CalendarRange, ArrowUpRight, X, Trash2, Brush, Pin, PinOff, ExternalLink, Copy, Mail, GitBranch, ShieldCheck, FileDown, ListOrdered, FileSpreadsheet } from "lucide-react";
 import api from "@/services/api";
 import { useAuth } from "@/context/AuthContext";
 import { ERPTable, StatusBadge, ERPButton, ERPInput, FilterDropdown } from "@/components/ui/ERPComponents";
@@ -528,22 +528,32 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
     }
   };
 
-  const handleEliminarCotizacion = async (item) => {
+  const handleEliminarCotizacion = async (item, tipoOverride = null) => {
     try {
       const token = localStorage.getItem("access_token");
-      toast.info("Eliminando cotización...");
-      await api.delete(
-        `cotizaciones/eliminar/${item.id_registro}/`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const tipo = tipoOverride || (currentTab === "oportunidades" ? "oportunidad" : currentTab === "aperturas" ? "apertura" : "cotizacion");
+      const targetReg = item.id_registro || item.cotizacion_id;
 
-      toast.success("La cotización ha sido eliminada del sistema");
+      if (tipo === "apertura" && item.id_apertura) {
+        toast.info("Eliminando apertura...");
+        await api.delete(`cotizaciones/apertura_detalle/${item.id_apertura}/`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+      } else {
+        toast.info(`Eliminando ${tipo}...`);
+        await api.delete(
+          `cotizaciones/eliminar/${targetReg}/?tipo=${tipo}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+      }
+
+      toast.success("Registro eliminado del sistema correctamente");
       queryClient.invalidateQueries({ queryKey: ["cotizaciones"] });
       queryClient.invalidateQueries({ queryKey: ["oportunidades"] });
       queryClient.invalidateQueries({ queryKey: ["aperturas"] });
     } catch (error) {
       console.error(error);
-      toast.error(error.response?.data?.error || "Error al eliminar la cotización");
+      toast.error(error.response?.data?.error || "Error al eliminar el registro");
     }
   };
 
@@ -1963,6 +1973,23 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
                 {opt.label}
               </button>
             ))
+          ) : currentTab === "aperturas" ? (
+            [
+              { label: "PENDIENTE", value: "2" },
+              { label: "ADJUDICADO", value: "1" },
+              { label: "ANULADO", value: "4" }
+            ].map((opt) => (
+              <button
+                key={opt.label}
+                onClick={() => setEstadoOrdenFilter(prev => prev === opt.value ? "%" : opt.value)}
+                className={`whitespace-nowrap px-3 py-1.5 text-[9px] font-black rounded-xl transition-all ${estadoOrdenFilter === opt.value
+                    ? "bg-indigo-600 text-white shadow-lg shadow-indigo-100"
+                    : "text-gray-500 hover:bg-gray-50 hover:text-gray-900"
+                  }`}
+              >
+                {opt.label}
+              </button>
+            ))
           ) : (
             [
               "PENDIENTE", "EN SEGUIMIENTO",
@@ -2212,7 +2239,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
                               setContextMenuOpen(false);
                             }}
                           >
-                            <FileText className="w-4 h-4 opacity-70 text-indigo-600" />
+                            <ListOrdered className="w-4 h-4 opacity-70 text-indigo-600" />
                             <span>Reporte Detallado</span>
                           </DropdownMenu.Item>
                           <DropdownMenu.Item
@@ -2228,7 +2255,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
                               setContextMenuOpen(false);
                             }}
                           >
-                            <FileText className="w-4 h-4 opacity-70 text-amber-600" />
+                            <FileSpreadsheet className="w-4 h-4 opacity-70 text-amber-600" />
                             <span>Reporte Resumen</span>
                           </DropdownMenu.Item>
                           <DropdownMenu.Item
@@ -2244,7 +2271,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
                               setContextMenuOpen(false);
                             }}
                           >
-                            <FileText className="w-4 h-4 opacity-70 text-slate-500" />
+                            <FileDown className="w-4 h-4 opacity-70 text-slate-600" />
                             <span>Reporte PDF / Word</span>
                           </DropdownMenu.Item>
                         </>
@@ -2326,6 +2353,12 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
                           toast.success("Nombre del cliente copiado");
                         }
                       }
+                    },
+                    {
+                      label: "Eliminar",
+                      icon: Trash2,
+                      className: "text-red-600 hover:bg-red-50 hover:text-red-700",
+                      onClick: () => handleEliminarCotizacion(contextMenuItem, "apertura")
                     }
                   ]
             }

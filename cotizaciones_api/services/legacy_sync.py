@@ -5,7 +5,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from django.db import connections, transaction
 from django.utils import timezone
-from cotizaciones_api.models import Cotizacion, CotizacionSuministro, CotizacionServicio, CotizacionMensaje, CotizacionSeguimiento, CotizacionCondicionGeneral
+from cotizaciones_api.models import Cotizacion, CotizacionSuministro, CotizacionServicio, CotizacionMensaje, CotizacionSeguimiento, CotizacionCondicionGeneral, CotizacionApertura
 from core.models import Cliente, Representante, TipoMarca, TipoPersonal, TipoGastoDetalle, Producto
 from users.models import Usuario
 
@@ -1506,6 +1506,179 @@ def disparar_eliminacion_condicion_legada(cotizacion_id: int):
     luego de confirmarse el COMMIT (reaplica el UPDATE con el texto restante o NULL).
     """
     disparar_sincronizacion_condicion_legada(cotizacion_id)
+
+
+# Cerradura global por ID de apertura
+_apertura_locks = defaultdict(threading.Lock)
+_apertura_locks_lock = threading.Lock()
+
+def get_lock_for_apertura(apertura_id: int):
+    with _apertura_locks_lock:
+        return _apertura_locks[apertura_id]
+
+
+def _ejecutar_sincronizacion_apertura_legada(apertura_id: int):
+    """
+    Función de fondo que sincroniza un registro de CotizacionApertura
+    con la tabla legacy backup_actual.vc_mov_orden.
+    """
+    lock = get_lock_for_apertura(apertura_id)
+    lock.acquire()
+    try:
+        logger.info(f"[SyncLegado] Iniciando sincronización de apertura ID: {apertura_id}")
+        
+        try:
+            ap = CotizacionApertura.objects.select_related('orden_plazo_unidad', 'id_registro').get(id_apertura=apertura_id)
+        except CotizacionApertura.DoesNotExist:
+            logger.warning(f"[SyncLegado] CotizacionApertura ID {apertura_id} no existe en la BD local. Abortando sync.")
+            return
+
+        db_alias = "legacy" if "legacy" in connections else "default"
+        with connections[db_alias].cursor() as cursor:
+            sql = """
+                INSERT INTO backup_actual.vc_mov_orden (
+                    num_reg, anno, mes, onum, ofec, ofece, ofecc, ofecf, otot, oesta,
+                    onpla, odpla, otco, oceq, ocma, ocrh, ocen, ocse, ocot, num_regc,
+                    adj, resp, totfa, salfa, oobs, des_a, des_t, des_m, des_p, doc,
+                    anno_a, uti_des, prio, poceq, pocma, pocrh, pocse, pocot, pger,
+                    do1, do2, do3, ti1, ti2, ti3, envio, pres
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s
+                ) ON DUPLICATE KEY UPDATE
+                    anno = VALUES(anno),
+                    mes = VALUES(mes),
+                    onum = VALUES(onum),
+                    ofec = VALUES(ofec),
+                    ofece = VALUES(ofece),
+                    ofecc = VALUES(ofecc),
+                    ofecf = VALUES(ofecf),
+                    otot = VALUES(otot),
+                    oesta = VALUES(oesta),
+                    onpla = VALUES(onpla),
+                    odpla = VALUES(odpla),
+                    otco = VALUES(otco),
+                    oceq = VALUES(oceq),
+                    ocma = VALUES(ocma),
+                    ocrh = VALUES(ocrh),
+                    ocen = VALUES(ocen),
+                    ocse = VALUES(ocse),
+                    ocot = VALUES(ocot),
+                    num_regc = VALUES(num_regc),
+                    adj = VALUES(adj),
+                    resp = VALUES(resp),
+                    totfa = VALUES(totfa),
+                    salfa = VALUES(salfa),
+                    oobs = VALUES(oobs),
+                    des_a = VALUES(des_a),
+                    des_t = VALUES(des_t),
+                    des_m = VALUES(des_m),
+                    des_p = VALUES(des_p),
+                    doc = VALUES(doc),
+                    anno_a = VALUES(anno_a),
+                    uti_des = VALUES(uti_des),
+                    prio = VALUES(prio),
+                    poceq = VALUES(poceq),
+                    pocma = VALUES(pocma),
+                    pocrh = VALUES(pocrh),
+                    pocse = VALUES(pocse),
+                    pocot = VALUES(pocot),
+                    pger = VALUES(pger),
+                    do1 = VALUES(do1),
+                    do2 = VALUES(do2),
+                    do3 = VALUES(do3),
+                    ti1 = VALUES(ti1),
+                    ti2 = VALUES(ti2),
+                    ti3 = VALUES(ti3),
+                    envio = VALUES(envio),
+                    pres = VALUES(pres)
+            """
+            
+            from django.utils.timezone import is_aware, localtime
+            def to_local_naive(val):
+                if not val:
+                    return None
+                if is_aware(val):
+                    val = localtime(val)
+                return val.replace(tzinfo=None)
+            
+            ofec_val = to_local_naive(ap.fecha_orden)
+            ofece_val = to_local_naive(ap.fecha_entrega)
+            ofecf_val = to_local_naive(ap.fecha_factura)
+
+            mes_val = str(ap.mes).zfill(2) if ap.mes is not None else ""
+            oesta_val = str(ap.estado_orden) if ap.estado_orden is not None else ""
+            odpla_val = ap.orden_plazo_unidad.nombre[0].upper() if (ap.orden_plazo_unidad and ap.orden_plazo_unidad.nombre) else ""
+            num_regc_val = str(ap.id_registro_id) if ap.id_registro_id is not None else ""
+            adj_val = str(ap.id_apertura) if ap.orden_adjunta else ""
+            
+            params = [
+                ap.id_apertura, ap.anno, mes_val, ap.numero_orden, ofec_val, ofece_val, ap.mes_entrega, ofecf_val, ap.total_orden, oesta_val,
+                ap.orden_plazo_valor, odpla_val, ap.presupuesto, ap.orden_compra_equipos, ap.orden_compra_materiales, ap.orden_compra_hh, ap.orden_compra_entrega, ap.orden_compra_costo_servicios, ap.orden_compra_otros, num_regc_val,
+                adj_val, ap.responsables, ap.totfa, ap.salfa, ap.oobs, ap.des_a, ap.des_t, ap.des_m, ap.des_p, ap.doc,
+                ap.anno_a, ap.uti_des, ap.prio, ap.poceq, ap.pocma, ap.pocrh, ap.pocse, ap.pocot, ap.pger,
+                ap.do1, ap.do2, ap.do3, ap.ti1, ap.ti2, ap.ti3, ap.envio, ap.pres
+            ]
+            
+            cursor.execute(sql, params)
+            
+        logger.info(f"[SyncLegado] Sincronización exitosa para apertura ID: {apertura_id}")
+
+    except Exception as e:
+        logger.error(f"[SyncLegado] Error durante la sincronización de la apertura ID {apertura_id}: {str(e)}", exc_info=True)
+    finally:
+        connections.close_all()
+        lock.release()
+
+
+def disparar_sincronizacion_apertura_legada(apertura_id: int):
+    """
+    Registra la tarea de sincronización de apertura en segundo plano
+    inmediatamente después del COMMIT.
+    """
+    try:
+        transaction.on_commit(lambda: SYNC_EXECUTOR.submit(_ejecutar_sincronizacion_apertura_legada, apertura_id))
+        logger.debug(f"[SyncLegado] Tarea de sincronización de apertura registrada en on_commit para ID: {apertura_id}")
+    except Exception as e:
+        logger.error(f"[SyncLegado] No se pudo encolar la sincronización para apertura ID {apertura_id}: {str(e)}", exc_info=True)
+
+
+def _ejecutar_eliminacion_apertura_legada(apertura_id: int):
+    """
+    Función de fondo que elimina la apertura de la BD legada backup_actual.vc_mov_orden.
+    """
+    lock = get_lock_for_apertura(apertura_id)
+    lock.acquire()
+    try:
+        logger.info(f"[SyncLegado] Iniciando eliminación legada para apertura ID: {apertura_id}")
+
+        db_alias = "legacy" if "legacy" in connections else "default"
+        with connections[db_alias].cursor() as cursor:
+            cursor.execute("DELETE FROM backup_actual.vc_mov_orden WHERE num_reg = %s", [apertura_id])
+
+        logger.info(f"[SyncLegado] Eliminación legada exitosa para apertura ID {apertura_id}.")
+
+    except Exception as e:
+        logger.error(f"[SyncLegado] Error durante la eliminación legada de la apertura ID {apertura_id}: {str(e)}", exc_info=True)
+    finally:
+        connections.close_all()
+        lock.release()
+
+
+def disparar_eliminacion_apertura_legada(apertura_id: int):
+    """
+    Registra la tarea de eliminación de apertura en segundo plano
+    inmediatamente después del COMMIT.
+    """
+    try:
+        transaction.on_commit(lambda: SYNC_EXECUTOR.submit(_ejecutar_eliminacion_apertura_legada, apertura_id))
+        logger.debug(f"[SyncLegado] Tarea de eliminación de apertura registrada en on_commit para ID: {apertura_id}")
+    except Exception as e:
+        logger.error(f"[SyncLegado] No se pudo encolar la eliminación para apertura ID {apertura_id}: {str(e)}", exc_info=True)
+
 
 
 

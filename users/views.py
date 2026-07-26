@@ -160,10 +160,17 @@ def usuario_actual(request):
     return Response(user_data, status=status.HTTP_200_OK)
 
 # Area
-@api_view(["GET", "POST"])
+@api_view(["GET", "POST", "PUT", "DELETE"])
 @permission_classes([IsAuthenticated])
-def lista_areas(request):
+def lista_areas(request, id_area=None):
     if request.method == "GET":
+        if id_area:
+            try:
+                area = Area.objects.get(pk=id_area)
+                serializer = AreasSerializer(area)
+                return Response(serializer.data)
+            except Area.DoesNotExist:
+                return Response({"error": "Área no encontrada"}, status=404)
         # Quitamos el filtro de activo para ver todo el catálogo
         areas = Area.objects.all().order_by("id_area")
         serializer = AreasSerializer(areas, many=True)
@@ -175,6 +182,32 @@ def lista_areas(request):
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    elif request.method == "PUT":
+        pk = id_area or request.data.get("id_area") or request.data.get("codigo")
+        try:
+            area = Area.objects.get(pk=pk)
+            # El frontend envía 'activo' como booleano, en BD es int(11)
+            data = request.data.copy()
+            if "activo" in data:
+                data["activo"] = 1 if data["activo"] in [True, 1, "1", "true", "True"] else 0
+            serializer = AreasSerializer(area, data=data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Area.DoesNotExist:
+            return Response({"error": "Área no encontrada"}, status=status.HTTP_404_NOT_FOUND)
+
+    elif request.method == "DELETE":
+        pk = id_area or request.data.get("id_area") or request.data.get("codigo")
+        try:
+            area = Area.objects.get(pk=pk)
+            area.activo = 0
+            area.save()
+            return Response({"message": "Área desactivada correctamente"}, status=status.HTTP_200_OK)
+        except Area.DoesNotExist:
+            return Response({"error": "Área no encontrada"}, status=status.HTTP_404_NOT_FOUND)
 
 # Cargo
 @api_view(["GET", "POST", "PUT"])

@@ -28,7 +28,17 @@ const NAV_ITEMS = [
   { path: "/sigecom/compras", label: "Compras", icon: "ShoppingCart" },
   { path: "/sigecom/almacen", label: "Almacén", icon: "Package" },
   { path: "/sigecom/finanzas", label: "Finanzas", icon: "DollarSign" },
-  { path: "/sigecom/maestro/catalogo", label: "Maestro", icon: "Database" },
+  {
+    path: "/sigecom/maestro/catalogo",
+    label: "Maestro",
+    icon: "Database",
+    subItems: [
+      { path: "/sigecom/maestro/catalogo", label: "Marcas y Productos" },
+      { path: "/sigecom/maestro/estructura", label: "Estructura y Comercial" },
+      { path: "/sigecom/maestro/parametros", label: "Parámetros y Notas" },
+      { path: "/sigecom/maestro/gastos", label: "Gastos y Personal" }
+    ]
+  },
   { path: "/sigecom/audit", label: "Auditoría", icon: "ShieldCheck" },
 ];
 

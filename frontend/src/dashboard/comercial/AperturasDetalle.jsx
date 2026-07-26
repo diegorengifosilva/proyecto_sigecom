@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
 import * as LucideIcons from 'lucide-react';
@@ -103,7 +103,10 @@ export default function AperturasDetalle({ idRegistro }) {
   
   const [gruposExpandidos, setGruposExpandidos] = useState({});
   const toggleGrupo = (grupoId) => {
-    setGruposExpandidos(prev => ({ ...prev, [grupoId]: !prev[grupoId] }));
+    setGruposExpandidos(prev => {
+      const current = prev[grupoId] !== false;
+      return { ...prev, [grupoId]: !current };
+    });
   };
   // State to manage expanded/collapsed OC cards
   const [ocExpanded, setOcExpanded] = useState({});
@@ -119,17 +122,25 @@ export default function AperturasDetalle({ idRegistro }) {
     }
   }, [aperturas]);
 
+  const parseSafeDate = (dateStr) => {
+    if (!dateStr) return null;
+    const isoStr = String(dateStr).replace(' ', 'T');
+    const d = new Date(isoStr);
+    return isNaN(d.getTime()) ? null : d;
+  };
+
   const initialFormState = (ap) => ({
     id_apertura: ap.id_apertura,
     numero_orden: ap.numero_orden || '',
-    fecha_orden: ap.fecha_orden ? new Date(ap.fecha_orden) : null,
-    fecha_entrega: ap.fecha_entrega ? new Date(ap.fecha_entrega) : null,
-    fecha_factura: ap.fecha_factura ? new Date(ap.fecha_factura) : null,
+    fecha_orden: parseSafeDate(ap.fecha_orden),
+    fecha_entrega: parseSafeDate(ap.fecha_entrega),
+    fecha_factura: parseSafeDate(ap.fecha_factura),
     mes_entrega: ap.mes_entrega !== null ? String(ap.mes_entrega).padStart(2, '0') : '',
     total_orden: Number(ap.total_orden || 0),
     presupuesto: Number(ap.presupuesto || 0),
     prio: String(ap.prio || '0'),
     envio: Number(ap.envio || 1),
+    estado_orden: ap.estado_orden !== null && ap.estado_orden !== undefined ? Number(ap.estado_orden) : 1,
     oobs: ap.oobs || '',
     orden_adjunta: ap.orden_adjunta || '',
     orden_plazo_valor: ap.orden_plazo_valor !== null ? Number(ap.orden_plazo_valor) : 0,
@@ -178,6 +189,7 @@ export default function AperturasDetalle({ idRegistro }) {
       Number(formObj.presupuesto) !== Number(dbObj.presupuesto || 0) ||
       formObj.prio !== String(dbObj.prio || '0') ||
       formObj.envio !== Number(dbObj.envio || 1) ||
+      formObj.estado_orden !== Number(dbObj.estado_orden || 1) ||
       formObj.oobs !== (dbObj.oobs || '') ||
       formObj.orden_adjunta !== (dbObj.orden_adjunta || '') ||
       Number(formObj.orden_plazo_valor) !== Number(dbObj.orden_plazo_valor || 0) ||
@@ -193,19 +205,30 @@ export default function AperturasDetalle({ idRegistro }) {
     );
   };
 
+  const [quoteDetails, setQuoteDetails] = useState(null);
+
   // Cargar datos de las aperturas de este registro
   useEffect(() => {
     const fetchDetail = async () => {
       setLoading(true);
       try {
         const token = localStorage.getItem("access_token");
-        const res = await api.get(`cotizaciones/aperturas_por_registro/${activeIdRegistro}/`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
         
-        const list = Array.isArray(res.data) ? res.data : [res.data];
+        const [apRes, quoteRes] = await Promise.all([
+          api.get(`cotizaciones/aperturas_por_registro/${activeIdRegistro}/`, {
+            headers: { Authorization: `Bearer ${token}` }
+          }).catch(() => ({ data: [] })),
+          api.get(`cotizaciones/cotizacion_detalle/${activeIdRegistro}/`, {
+            headers: { Authorization: `Bearer ${token}` }
+          }).catch(() => ({ data: null }))
+        ]);
         
-        // Sync responsibles across all OCs in memory for the same quote
+        if (quoteRes.data) {
+          setQuoteDetails(quoteRes.data);
+        }
+
+        const list = Array.isArray(apRes.data) ? apRes.data : (apRes.data ? [apRes.data] : []);
+        
         const sharedResponsibles = list.find(a => a.responsables)?.responsables || "";
         const syncedList = list.map(a => ({ ...a, responsables: sharedResponsibles }));
         
@@ -289,6 +312,7 @@ export default function AperturasDetalle({ idRegistro }) {
 
   // Manejar cambios de input
   const handleChange = (idApertura, field, val) => {
+    let updatedFormRef = null;
     setFormsState(prev => {
       const current = prev[idApertura];
       if (!current) return prev;
@@ -317,16 +341,39 @@ export default function AperturasDetalle({ idRegistro }) {
         updatedForm.uti_des = Number(field === 'total_orden' ? val : updatedForm.total_orden) - costSum;
       }
 
+      // Calcular Fecha de Entrega Real dinámicamente en el formulario
+      if (field === 'fecha_orden' || field === 'orden_plazo_valor' || field === 'orden_plazo_unidad') {
+        const fo = field === 'fecha_orden' ? val : updatedForm.fecha_orden;
+        const op_val = field === 'orden_plazo_valor' ? val : updatedForm.orden_plazo_valor;
+        const op_uni = field === 'orden_plazo_unidad' ? val : updatedForm.orden_plazo_unidad;
+        
+        if (fo && op_val !== undefined && op_val !== null) {
+          const days = Number(op_uni) === 1 ? Number(op_val) : (Number(op_uni) === 2 ? Number(op_val) * 7 : Number(op_val) * 30);
+          try {
+            const dateObj = new Date(fo);
+            dateObj.setDate(dateObj.getDate() + days);
+            updatedForm.fecha_entrega = dateObj;
+          } catch (e) {
+            console.error("Error setting date", e);
+          }
+        }
+      }
+
+      updatedFormRef = updatedForm;
       return {
         ...prev,
         [idApertura]: updatedForm
       };
     });
+
+    if (updatedFormRef) {
+      autoSaveForm(idApertura, updatedFormRef);
+    }
   };
 
   const quote = useMemo(() => {
-    return visibleAperturas[0]?.id_registro || aperturas[0]?.id_registro || {};
-  }, [visibleAperturas, aperturas]);
+    return quoteDetails || visibleAperturas[0]?.id_registro || aperturas[0]?.id_registro || {};
+  }, [quoteDetails, visibleAperturas, aperturas]);
 
   useEffect(() => {
     const codeToShow = quote?.codigo || quote?.numero;
@@ -564,6 +611,7 @@ export default function AperturasDetalle({ idRegistro }) {
   };
 
   const handleToggleSuministroGroup = (idApertura, groupCode) => {
+    let updatedFormRef = null;
     setFormsState(prev => {
       const current = prev[idApertura];
       if (!current) return prev;
@@ -589,14 +637,20 @@ export default function AperturasDetalle({ idRegistro }) {
         doc: nextDoc
       });
 
+      updatedFormRef = updatedForm;
       return {
         ...prev,
         [idApertura]: updatedForm
       };
     });
+
+    if (updatedFormRef) {
+      autoSaveForm(idApertura, updatedFormRef);
+    }
   };
 
   const handleToggleServicioGroup = (idApertura, serviceId) => {
+    let updatedFormRef = null;
     setFormsState(prev => {
       const current = prev[idApertura];
       if (!current) return prev;
@@ -622,11 +676,16 @@ export default function AperturasDetalle({ idRegistro }) {
         ti1: nextTi1
       });
 
+      updatedFormRef = updatedForm;
       return {
         ...prev,
         [idApertura]: updatedForm
       };
     });
+
+    if (updatedFormRef) {
+      autoSaveForm(idApertura, updatedFormRef);
+    }
   };
 
   // Subir Orden de Compra PDF/Excel/Word para una OC específica
@@ -693,6 +752,33 @@ export default function AperturasDetalle({ idRegistro }) {
     }
   };
 
+  const handleReprocesarOc = async (idApertura) => {
+    setUploadingOcId(idApertura);
+    const procToast = toast.info("Re-procesando y actualizando lectura de OC (OCR)...", { autoClose: false });
+    try {
+      const token = localStorage.getItem("access_token");
+      const res = await api.post(`cotizaciones/apertura_detalle/${idApertura}/reprocesar_oc/`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.dismiss(procToast);
+      if (res.data.ok && res.data.apertura) {
+        const updatedAp = res.data.apertura;
+        setFormsState(prev => ({
+          ...prev,
+          [idApertura]: initialFormState(updatedAp)
+        }));
+        setAperturas(prev => prev.map(a => a.id_apertura === idApertura ? updatedAp : a));
+        toast.success(res.data.message || "Orden de compra re-procesada y vinculada correctamente.");
+      }
+    } catch (err) {
+      toast.dismiss(procToast);
+      console.error("Error al re-procesar OC:", err);
+      toast.error(err.response?.data?.error || "Error al intentar re-procesar la Orden de Compra.");
+    } finally {
+      setUploadingOcId(null);
+    }
+  };
+
   const handleVerOrden = (idApertura, tieneFisico, urlAdjunta) => {
     let url = "";
     let name = "";
@@ -728,6 +814,66 @@ export default function AperturasDetalle({ idRegistro }) {
     }
   };
 
+  const saveTimeoutRef = useRef({});
+
+  const autoSaveForm = (idApertura, updatedForm) => {
+    if (saveTimeoutRef.current[idApertura]) {
+      clearTimeout(saveTimeoutRef.current[idApertura]);
+    }
+    saveTimeoutRef.current[idApertura] = setTimeout(async () => {
+      try {
+        const token = localStorage.getItem("access_token");
+        const costSumObj = 
+          Number(updatedForm.orden_compra_equipos) +
+          Number(updatedForm.orden_compra_materiales) +
+          Number(updatedForm.orden_compra_hh) +
+          Number(updatedForm.orden_compra_entrega) +
+          Number(updatedForm.orden_compra_costo_servicios) +
+          Number(updatedForm.orden_compra_otros);
+
+        const calculatedUtility = Number(updatedForm.total_orden) - costSumObj;
+
+        const payload = {
+          numero_orden: updatedForm.numero_orden || "",
+          fecha_orden: updatedForm.fecha_orden ? (updatedForm.fecha_orden instanceof Date ? updatedForm.fecha_orden.toISOString().split('T')[0] : updatedForm.fecha_orden) : null,
+          fecha_recepcion: updatedForm.fecha_factura ? (updatedForm.fecha_factura instanceof Date ? updatedForm.fecha_factura.toISOString().split('T')[0] : updatedForm.fecha_factura) : null,
+          fecha_factura: updatedForm.fecha_factura ? (updatedForm.fecha_factura instanceof Date ? updatedForm.fecha_factura.toISOString().split('T')[0] : updatedForm.fecha_factura) : null,
+          total_orden: Number(updatedForm.total_orden || 0),
+          orden_plazo: Number(updatedForm.orden_plazo_valor || 0),
+          orden_plazo_valor: Number(updatedForm.orden_plazo_valor || 0),
+          orden_plazo_unidad: updatedForm.orden_plazo_unidad || 1,
+          fecha_real_entrega: updatedForm.fecha_entrega ? (updatedForm.fecha_entrega instanceof Date ? updatedForm.fecha_entrega.toISOString().split('T')[0] : updatedForm.fecha_entrega) : null,
+          fecha_entrega: updatedForm.fecha_entrega ? (updatedForm.fecha_entrega instanceof Date ? updatedForm.fecha_entrega.toISOString().split('T')[0] : updatedForm.fecha_entrega) : null,
+          orden_devengo_mes: updatedForm.mes_entrega || null,
+          mes_entrega: updatedForm.mes_entrega || null,
+          orden_compra_estado: updatedForm.estado_orden || 1,
+          estado_orden: updatedForm.estado_orden || 1,
+          prio: updatedForm.prio || '0',
+          envio: updatedForm.envio || 1,
+          doc: updatedForm.doc !== undefined ? updatedForm.doc : null,
+          ti1: updatedForm.ti1 !== undefined ? updatedForm.ti1 : null,
+          orden_compra_equipos: Number(updatedForm.orden_compra_equipos || 0),
+          orden_compra_materiales: Number(updatedForm.orden_compra_materiales || 0),
+          orden_compra_hh: Number(updatedForm.orden_compra_hh || 0),
+          orden_compra_entrega: Number(updatedForm.orden_compra_entrega || 0),
+          orden_compra_costo_servicios: Number(updatedForm.orden_compra_costo_servicios || 0),
+          orden_compra_otros: Number(updatedForm.orden_compra_otros || 0),
+          uti_des: Number(calculatedUtility.toFixed(2))
+        };
+
+        const res = await api.patch(`cotizaciones/apertura_detalle/${idApertura}/`, payload, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (res.data) {
+          setAperturas(prev => prev.map(a => a.id_apertura === idApertura ? res.data : a));
+        }
+      } catch (err) {
+        console.error("Error al auto-guardar apertura:", err);
+      }
+    }, 800);
+  };
+
   // Borrar toda la Orden de Compra confirmada
   const handleDeleteAperturaConfirmada = async (idApertura) => {
     try {
@@ -738,16 +884,12 @@ export default function AperturasDetalle({ idRegistro }) {
       toast.success("Orden de compra eliminada correctamente.");
       
       const restAperturas = aperturas.filter(a => a.id_apertura !== idApertura);
-      if (restAperturas.length > 0) {
-        setAperturas(restAperturas);
-        setFormsState(prev => {
-          const next = { ...prev };
-          delete next[idApertura];
-          return next;
-        });
-      } else {
-        navigate('/sigecom/comercial/aperturas');
-      }
+      setAperturas(restAperturas);
+      setFormsState(prev => {
+        const next = { ...prev };
+        delete next[idApertura];
+        return next;
+      });
     } catch (err) {
       console.error("Error al eliminar la apertura:", err);
       toast.error(err.response?.data?.error || "Error al intentar eliminar la orden de compra.");
@@ -764,12 +906,12 @@ export default function AperturasDetalle({ idRegistro }) {
           <span className="text-[10px] font-black text-gray-800 uppercase tracking-tight">Eliminar Registro</span>
         </div>
         <div className="px-4 py-3">
-          <p className="text-[11px] text-gray-600 leading-tight">¿Estás seguro de que deseas remover esta orden de compra? Los cambios se aplicarán permanentemente al hacer clic en "Guardar Cambios".</p>
+          <p className="text-[11px] text-gray-600 leading-tight">¿Estás seguro de que deseas eliminar permanentemente esta orden de compra?</p>
         </div>
         <div className="flex items-center justify-end gap-3 px-4 pb-3">
           <button onClick={closeToast} className="whitespace-nowrap text-[9px] font-black text-gray-400 hover:text-gray-600 uppercase tracking-widest transition-colors">Cancelar</button>
           <button
-            onClick={() => { handleDeleteAperturaLocal(idApertura); closeToast(); }}
+            onClick={() => { handleDeleteAperturaConfirmada(idApertura); closeToast(); }}
             className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white text-[9px] font-black rounded-xl uppercase shadow-md shadow-red-200 hover:bg-red-700 transition-all active:scale-95 whitespace-nowrap"
           >
             <span>Confirmar Eliminación</span>
@@ -999,21 +1141,6 @@ export default function AperturasDetalle({ idRegistro }) {
     );
   }
 
-  if (aperturas.length === 0) {
-    return (
-      <div className="w-full p-8 text-center bg-white border rounded-2xl shadow-sm">
-        <Icon name="alert-triangle" className="h-8 w-8 text-amber-500 mx-auto mb-3" />
-        <h3 className="text-sm font-black text-gray-900 uppercase">Apertura no encontrada</h3>
-        <button
-          onClick={() => navigate('/sigecom/comercial/aperturas')}
-          className="mt-4 px-4 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider rounded-xl hover:bg-slate-800 transition-colors"
-        >
-          Volver a comercial
-        </button>
-      </div>
-    );
-  }
-
   const clientName = quote.cliente_nombre || quote.id_cliente?.nombre || quote.representante_nombre || "S/N";
 
   return (
@@ -1039,31 +1166,8 @@ export default function AperturasDetalle({ idRegistro }) {
                   <h1 className="text-2xl font-black text-gray-900 tracking-tight leading-none uppercase">
                     {quote.codigo || 'APERTURA'}
                   </h1>
-
-                  {isDirty && (
-                    <div className="flex items-center px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-100 border border-amber-200 text-amber-700 uppercase tracking-widest shadow-sm animate-pulse">
-                      Falta Guardar
-                    </div>
-                  )}
                 </div>
               </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {isDirty && (
-                <button
-                  onClick={handleSaveAll}
-                  disabled={saving}
-                  className="flex items-center px-4 py-2 bg-emerald-50 border border-emerald-200 rounded-xl text-[10px] font-black text-emerald-700 hover:bg-emerald-100 hover:border-emerald-300 hover:shadow-sm transition-all h-[42px] uppercase group disabled:opacity-50"
-                >
-                  {saving ? (
-                    <div className="h-3.5 w-3.5 mr-2 border-2 border-emerald-700 border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <Icon name="save" className="h-3.5 w-3.5 mr-2 text-emerald-600 group-hover:scale-110 transition-transform" />
-                  )}
-                  {saving ? "Guardando..." : "Guardar Cambios"}
-                </button>
-              )}
             </div>
           </div>
         </div>
@@ -1193,7 +1297,7 @@ export default function AperturasDetalle({ idRegistro }) {
                 <tr>
                   <th className="w-[16%] py-3.5 text-left pl-4 font-extrabold text-slate-700">No. Orden</th>
                   <th className="w-[12%] py-3.5 font-semibold">Emisión</th>
-                  <th className="w-[14%] py-3.5 font-bold text-indigo-950">Suministros</th> {/* 📦 UNIFICADO */}
+                  <th className="w-[14%] py-3.5 font-bold text-indigo-950">Suministros</th>
                   <th className="w-[12%] py-3.5 font-semibold">H.H. Propios</th>
                   <th className="w-[12%] py-3.5 font-semibold">Costo Serv.</th>
                   <th className="w-[10%] py-3.5 font-semibold">Otros</th>
@@ -1215,7 +1319,6 @@ export default function AperturasDetalle({ idRegistro }) {
                     Number(f.orden_compra_otros);
                   const utility = Number(f.total_orden) - costSum;
 
-                  // Sumatoria en caliente para la celda unificada de Suministros
                   const totalSuministrosRow = Number(f.orden_compra_equipos || 0) + Number(f.orden_compra_materiales || 0);
 
                   const renderAmount = (val) => {
@@ -1226,15 +1329,12 @@ export default function AperturasDetalle({ idRegistro }) {
 
                   return (
                     <tr key={ap.id_apertura} className="hover:bg-slate-50/50 transition-colors h-11 group">
-                      {/* No. Orden */}
                       <td className="text-left pl-4 text-slate-900 font-bold tracking-tight">
                         <div className="flex items-center gap-2">
                           <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
                           <span className="truncate" title={f.numero_orden}>{f.numero_orden || 'S/N'}</span>
                         </div>
                       </td>
-
-                      {/* Fecha */}
                       <td className="text-slate-500 font-normal">
                         {f.fecha_orden 
                           ? (f.fecha_orden instanceof Date 
@@ -1242,16 +1342,10 @@ export default function AperturasDetalle({ idRegistro }) {
                               : new Date(f.fecha_orden).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' }))
                           : '—'}
                       </td>
-
-                      {/* Celda Única: SUMINISTROS (Equipos + Materiales) */}
                       <td className="bg-indigo-50/10 font-semibold">{renderAmount(totalSuministrosRow)}</td>
-
-                      {/* Demás Celdas */}
                       <td>{renderAmount(f.orden_compra_hh)}</td>
                       <td>{renderAmount(f.orden_compra_costo_servicios)}</td>
                       <td>{renderAmount(f.orden_compra_otros)}</td>
-
-                      {/* Utilidad */}
                       <td>
                         <span className={cn(
                           "inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold tracking-tight border",
@@ -1262,8 +1356,6 @@ export default function AperturasDetalle({ idRegistro }) {
                           {currencySymbol} {Number(utility).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </td>
-
-                      {/* Importe Fuerte */}
                       <td className="text-right pr-4 text-slate-950 font-extrabold text-[11.5px]">
                         {currencySymbol} {Number(f.total_orden || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
@@ -1271,22 +1363,16 @@ export default function AperturasDetalle({ idRegistro }) {
                   );
                 })}
                 
-                {/* FILA DE TOTALES ASOCIADOS CONSOLIDADOS */}
                 <tr className="bg-slate-50/80 font-black text-slate-900 border-t border-slate-200 text-[11px] h-12 shadow-[inset_0_1px_0_rgba(0,0,0,0.05)]">
                   <td colSpan={2} className="text-right text-[10px] text-slate-500 font-extrabold tracking-wider pr-2">
                     RESUMEN CONSOLIDADO :
                   </td>
-                  
-                  {/* Total Unificado Suministros (Equipos + Materiales globales) */}
                   <td className="text-indigo-950 font-bold bg-indigo-50/30">
                     {currencySymbol} {Number((totals.costEquipos || 0) + (totals.costMateriales || 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
-
                   <td>{currencySymbol} {Number(totals.costHH || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   <td>{currencySymbol} {Number(totals.costServicios || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   <td>{currencySymbol} {Number(totals.costOtros || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                  
-                  {/* Utilidad Consolidada Destacada */}
                   <td>
                     <span className={cn(
                       "inline-flex items-center px-2.5 py-1 rounded-lg text-[10.5px] font-black shadow-sm text-white",
@@ -1295,8 +1381,6 @@ export default function AperturasDetalle({ idRegistro }) {
                       {currencySymbol} {Number(totals.utility || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </td>
-
-                  {/* Importe Total Indigo */}
                   <td className="text-right pr-4 text-indigo-700 font-black text-xs">
                     {currencySymbol} {Number(totals.totalOrden || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
@@ -1320,6 +1404,7 @@ export default function AperturasDetalle({ idRegistro }) {
               type="file" 
               id="new-oc-file-input"
               className="hidden" 
+              accept=".pdf"
               onChange={handleCrearNuevaOCConArchivo} 
             />
             <button
@@ -1348,18 +1433,16 @@ export default function AperturasDetalle({ idRegistro }) {
             const isCardDirty = isFormDirty(f, ap);
             const isExpanded = ocExpanded[ap.id_apertura] !== false;
             
-            const stateBadgeStyle = f.envio === 2 ? "bg-emerald-50 text-emerald-700 border-emerald-100" :
-                                    f.envio === 3 ? "bg-blue-50 text-blue-700 border-blue-100" :
-                                    f.envio === 4 ? "bg-red-50 text-red-700 border-red-100" :
+            const stateBadgeStyle = f.estado_orden === 1 ? "bg-emerald-50 text-emerald-700 border-emerald-100" :
+                                    f.estado_orden === 4 ? "bg-red-50 text-red-700 border-red-100" :
                                     "bg-amber-50 text-amber-700 border-amber-100";
 
             const priorityBadgeStyle = f.prio === '1' ? "bg-amber-50 text-amber-800 border-amber-100" :
                                        f.prio === '2' ? "bg-red-50 text-red-800 border-red-100" :
                                        "bg-slate-50 text-slate-600 border-slate-200";
 
-            const currentEstadoOrdenNombre = f.envio === 2 ? "APROBADA" :
-                                             f.envio === 3 ? "FACTURADA" :
-                                             f.envio === 4 ? "ANULADA" : "PENDIENTE";
+            const currentEstadoOrdenNombre = f.estado_orden === 1 ? "ADJUDICADO" :
+                                             f.estado_orden === 4 ? "ANULADO" : "PENDIENTE";
 
             const currentPrioridadNombre = f.prio === '1' ? "URGENTE" :
                                            f.prio === '2' ? "CRÍTICA" : "NORMAL";
@@ -1394,23 +1477,9 @@ export default function AperturasDetalle({ idRegistro }) {
                       OC: {f.numero_orden || <span className="text-slate-400 italic font-normal">Sin Número ({index + 1})</span>}
                     </span>
                     
-                    {isCardDirty && (
-                      <span className="text-[8px] font-bold bg-amber-50 border border-amber-200 text-amber-700 px-2 py-0.5 rounded-md uppercase tracking-wider animate-pulse">
-                        Cambios sin Guardar
-                      </span>
-                    )}
-
                     <div className={cn("flex items-center px-2 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-wider border shadow-sm", stateBadgeStyle)}>
                       <Icon name="refresh-cw" className="h-2 w-2 mr-1 animate-spin-slow" />
                       {currentEstadoOrdenNombre}
-                    </div>
-
-                    <div className={cn("flex items-center px-2 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-wider border shadow-sm", priorityBadgeStyle)}>
-                      <span className={cn("flex h-1 w-1 rounded-full mr-1.5", 
-                        f.prio === '1' ? "bg-amber-500" :
-                        f.prio === '2' ? "bg-red-500 animate-ping" : "bg-slate-400"
-                      )} />
-                      {currentPrioridadNombre}
                     </div>
                   </div>
 
@@ -1420,6 +1489,7 @@ export default function AperturasDetalle({ idRegistro }) {
                       type="file" 
                       id={`file-input-${ap.id_apertura}`}
                       className="hidden" 
+                      accept=".pdf"
                       onChange={(e) => handleFileUpload(e, ap.id_apertura)} 
                     />
 
@@ -1615,14 +1685,13 @@ export default function AperturasDetalle({ idRegistro }) {
                       <div className="space-y-1">
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Estado de Cobro</label>
                         <select
-                          value={f.envio || 1}
-                          onChange={(e) => handleChange(ap.id_apertura, 'envio', parseInt(e.target.value, 10))}
+                          value={f.estado_orden || 1}
+                          onChange={(e) => handleChange(ap.id_apertura, 'estado_orden', parseInt(e.target.value, 10))}
                           className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-[11px] font-bold focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all cursor-pointer text-slate-700 shadow-sm"
                         >
-                          <option value={1}>PENDIENTE</option>
-                          <option value={2}>APROBADA</option>
-                          <option value={3}>FACTURADA</option>
-                          <option value={4}>ANULADA</option>
+                          <option value={1}>ADJUDICADO</option>
+                          <option value={2}>PENDIENTE</option>
+                          <option value={4}>ANULADO</option>
                         </select>
                       </div>
                     </div>
@@ -1667,15 +1736,16 @@ export default function AperturasDetalle({ idRegistro }) {
 
                           <div className="space-y-3">
                             {(() => {
-                              if (sortedGruposSuministros.length === 0) {
+                              const checkedGruposSuministros = sortedGruposSuministros.filter(g => isSuministroChecked(f.doc, g.codigo_grupo));
+                              if (checkedGruposSuministros.length === 0) {
                                 return (
                                   <div className="text-center py-5 border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
-                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">No hay suministros en esta cotización</span>
+                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">No hay suministros vinculados a esta OC</span>
                                   </div>
                                 );
                               }
-                              return sortedGruposSuministros.map((grupo) => {
-                                const isChecked = isSuministroChecked(f.doc, grupo.codigo_grupo);
+                              return checkedGruposSuministros.map((grupo) => {
+                                const isChecked = true;
                                 const isExpanded = gruposExpandidos[grupo.codigo_grupo] !== false;
                                 const totalGrupo = (grupo.items || []).reduce((acc, curr) => acc + (Number(curr.venta_total) || 0), 0) * (grupo.cantidad || 1);
                                 const costGrupo = (grupo.items || []).reduce((acc, curr) => acc + (Number(curr.costo_total) || 0), 0) * (grupo.cantidad || 1);
@@ -1692,7 +1762,7 @@ export default function AperturasDetalle({ idRegistro }) {
                                       <div className="flex items-center gap-2.5">
                                         <div 
                                           onClick={() => toggleGrupo(grupo.codigo_grupo)}
-                                          className="flex items-center gap-2 cursor-pointer select-none"
+                                          className="flex items-center gap-2 cursor-pointer"
                                         >
                                           <Icon 
                                             name="chevron-down" 
@@ -1821,17 +1891,18 @@ export default function AperturasDetalle({ idRegistro }) {
                           </div>
 
                           {(() => {
-                            if (sortedGruposServicios.length === 0) {
+                            const checkedGruposServicios = sortedGruposServicios.filter(g => isServicioChecked(f.ti1, g.id_servicio));
+                            if (checkedGruposServicios.length === 0) {
                               return (
                                 <div className="text-center py-5 border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
-                                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">No hay servicios en esta cotización</span>
+                                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">No hay servicios vinculados a esta OC</span>
                                 </div>
                               );
                             }
                             return (
                               <div className="space-y-3">
-                                {sortedGruposServicios.map((grupo) => {
-                                  const isChecked = isServicioChecked(f.ti1, grupo.id_servicio);
+                                {checkedGruposServicios.map((grupo) => {
+                                  const isChecked = true;
                                   const isExpanded = gruposExpandidos[`srv-${grupo.id_servicio}`] !== false;
                                   
                                   let srvCost = 0;
@@ -1865,7 +1936,7 @@ export default function AperturasDetalle({ idRegistro }) {
                                         <div className="flex items-center gap-2.5">
                                           <div 
                                             onClick={() => toggleGrupo(`srv-${grupo.id_servicio}`)}
-                                            className="flex items-center gap-2 cursor-pointer select-none"
+                                            className="flex items-center gap-2 cursor-pointer"
                                           >
                                             <Icon 
                                               name="chevron-down" 
@@ -1928,7 +1999,7 @@ export default function AperturasDetalle({ idRegistro }) {
                                               <div key={subgrupo.id_servicio} className="border border-slate-150 rounded-lg overflow-hidden bg-white shadow-xs">
                                                 <div
                                                   onClick={() => toggleGrupo(subKey)}
-                                                  className="cursor-pointer px-4 py-2 bg-slate-50/80 hover:bg-slate-100/50 flex justify-between items-center transition-colors border-b border-slate-100 select-none"
+                                                  className="cursor-pointer px-4 py-2 bg-slate-50/80 hover:bg-slate-100/50 flex justify-between items-center transition-colors border-b border-slate-100"
                                                 >
                                                   <div className="flex items-center gap-2">
                                                     <div className={`transition-transform duration-200 ${isSubExpanded ? 'rotate-0' : '-rotate-90'}`}>

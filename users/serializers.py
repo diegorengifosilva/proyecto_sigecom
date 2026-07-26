@@ -75,10 +75,14 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 # Area
 class AreasSerializer(serializers.ModelSerializer):
     std = serializers.CharField(allow_null=True, required=False, allow_blank=True)
+    codigo = serializers.SerializerMethodField()
 
     class Meta:
         model = Area
         fields = "__all__"
+
+    def get_codigo(self, obj):
+        return obj.id_area
 
 # Cargo
 class CargosSerializer(serializers.ModelSerializer):

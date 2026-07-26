@@ -449,7 +449,7 @@ def obtener_siguiente_id_marca():
         candidate += 1
     return candidate
 
-@api_view(["GET", "POST"])
+@api_view(["GET", "POST", "PUT", "DELETE"])
 @permission_classes([IsAuthenticated])
 def lista_tipo_marca(request):
     if request.method == "GET":
@@ -491,7 +491,46 @@ def lista_tipo_marca(request):
         serializer = TipoMarcaSerializer(nueva_marca)
         return Response({"ok": True, "registro": serializer.data}, status=status.HTTP_201_CREATED)
 
-@api_view(["GET", "POST"])
+    elif request.method == "PUT":
+        id_marca = request.data.get("id_marca") or request.data.get("id")
+        nombre = request.data.get("nombre", "").strip().upper()
+        if not id_marca or not nombre:
+            return Response({"ok": False, "error": "El id de la marca y el nombre son requeridos"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            marca = TipoMarca.objects.get(pk=id_marca)
+            marca.nombre = nombre
+            if "activo" in request.data:
+                val_activo = request.data.get("activo")
+                marca.activo = "1" if val_activo in [True, 1, "1", "true", "True"] else "0"
+            marca.save()
+            try:
+                from cotizaciones_api.services.legacy_sync import disparar_sincronizacion_marca_legado
+                disparar_sincronizacion_marca_legado(marca.id_marca)
+            except Exception as sync_err:
+                print("Error disparando sincronización de marca:", sync_err)
+            serializer = TipoMarcaSerializer(marca)
+            return Response({"ok": True, "registro": serializer.data}, status=status.HTTP_200_OK)
+        except TipoMarca.DoesNotExist:
+            return Response({"ok": False, "error": "Marca no encontrada"}, status=status.HTTP_404_NOT_FOUND)
+
+    elif request.method == "DELETE":
+        id_marca = request.data.get("id_marca") or request.query_params.get("id_marca") or request.data.get("id") or request.query_params.get("id")
+        if not id_marca:
+            return Response({"ok": False, "error": "El id de la marca es requerido"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            marca = TipoMarca.objects.get(pk=id_marca)
+            marca.activo = "0"
+            marca.save()
+            try:
+                from cotizaciones_api.services.legacy_sync import disparar_eliminacion_marca_legado
+                disparar_eliminacion_marca_legado(marca.id_marca)
+            except Exception as sync_err:
+                print("Error disparando eliminación de marca:", sync_err)
+            return Response({"ok": True, "message": "Marca desactivada correctamente"}, status=status.HTTP_200_OK)
+        except TipoMarca.DoesNotExist:
+            return Response({"ok": False, "error": "Marca no encontrada"}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(["GET", "POST", "PUT", "DELETE"])
 @permission_classes([IsAuthenticated])
 def lista_tipo_personal(request):
     """
@@ -557,7 +596,7 @@ def lista_tipo_personal(request):
                 disparar_sincronizacion_tipo_personal_legado(nuevo_personal.id_personal)
             except Exception as sync_err:
                 print("Error disparando sincronización de TipoPersonal:", sync_err)
-
+ 
             id_registro = request.data.get("id_registro")
             if id_registro:
                 try:
@@ -572,10 +611,74 @@ def lista_tipo_personal(request):
                         )
                 except Exception as ex:
                     print("Error creating tracking log for personal:", ex)
-
+ 
             serializer = TipoPersonalSerializer(nuevo_personal)
             return Response({"ok": True, "registro": serializer.data}, status=status.HTTP_201_CREATED)
+ 
+        except Exception as e:
+            return Response({"ok": False, "error": str(e)}, status=500)
+ 
+    elif request.method == "PUT":
+        try:
+            id_personal = request.data.get("id_personal") or request.data.get("id")
+            if not id_personal:
+                return Response({"ok": False, "error": "El id_personal es requerido"}, status=400)
+            
+            try:
+                personal = TipoPersonal.objects.get(pk=id_personal)
+            except TipoPersonal.DoesNotExist:
+                return Response({"ok": False, "error": "Tipo de personal no encontrado"}, status=404)
+            
+            if "nombre" in request.data:
+                personal.nombre = request.data.get("nombre").strip().upper()
+            if "costo_min" in request.data:
+                personal.costo_min = request.data.get("costo_min")
+            if "costo_max" in request.data:
+                personal.costo_max = request.data.get("costo_max")
+            if "id_area" in request.data:
+                from users.models import Area
+                try:
+                    personal.id_area = Area.objects.get(pk=request.data.get("id_area"))
+                except Area.DoesNotExist:
+                    return Response({"ok": False, "error": "El Área especificada no existe"}, status=400)
+            if "activo" in request.data:
+                val_activo = request.data.get("activo")
+                personal.activo = 1 if val_activo in [True, 1, "1", "true", "True"] else 0
+            
+            personal.save()
+            
+            try:
+                from cotizaciones_api.services.legacy_sync import disparar_sincronizacion_tipo_personal_legado
+                disparar_sincronizacion_tipo_personal_legado(personal.id_personal)
+            except Exception as sync_err:
+                print("Error disparando sincronización de TipoPersonal:", sync_err)
+                
+            serializer = TipoPersonalSerializer(personal)
+            return Response({"ok": True, "registro": serializer.data}, status=200)
+        except Exception as e:
+            return Response({"ok": False, "error": str(e)}, status=500)
 
+    elif request.method == "DELETE":
+        try:
+            id_personal = request.data.get("id_personal") or request.query_params.get("id_personal") or request.data.get("id") or request.query_params.get("id")
+            if not id_personal:
+                return Response({"ok": False, "error": "El id_personal es requerido"}, status=400)
+            
+            try:
+                personal = TipoPersonal.objects.get(pk=id_personal)
+                codigo = personal.codigo
+                personal.activo = 0
+                personal.save()
+                
+                try:
+                    from cotizaciones_api.services.legacy_sync import disparar_eliminacion_tipo_personal_legado
+                    disparar_eliminacion_tipo_personal_legado(codigo)
+                except Exception as sync_err:
+                    print("Error disparando eliminación de TipoPersonal:", sync_err)
+                    
+                return Response({"ok": True, "message": "Tipo de personal desactivado correctamente"}, status=200)
+            except TipoPersonal.DoesNotExist:
+                return Response({"ok": False, "error": "Tipo de personal no encontrado"}, status=404)
         except Exception as e:
             return Response({"ok": False, "error": str(e)}, status=500)
 
@@ -594,7 +697,7 @@ def lista_tipo_personal(request):
             "error": str(e)
         }, status=500)
 
-@api_view(["GET", "POST"])
+@api_view(["GET", "POST", "PUT", "DELETE"])
 @permission_classes([IsAuthenticated])
 def lista_tgasto_detalle(request):
     """
@@ -676,6 +779,59 @@ def lista_tgasto_detalle(request):
             serializer = TipoGastoDetalleSerializer(nuevo_gasto)
             return Response({"ok": True, "registro": serializer.data}, status=status.HTTP_201_CREATED)
 
+        except Exception as e:
+            return Response({"ok": False, "error": str(e)}, status=500)
+
+    elif request.method == "PUT":
+        try:
+            id_gasto_detalle = request.data.get("id_gasto_detalle") or request.data.get("id")
+            if not id_gasto_detalle:
+                return Response({"ok": False, "error": "El id_gasto_detalle es requerido"}, status=400)
+            
+            try:
+                gasto = TipoGastoDetalle.objects.get(pk=id_gasto_detalle)
+            except TipoGastoDetalle.DoesNotExist:
+                return Response({"ok": False, "error": "Tipo de gasto no encontrado"}, status=404)
+            
+            if "nombre" in request.data:
+                gasto.nombre = request.data.get("nombre").strip().upper()
+            if "activo" in request.data:
+                val_activo = request.data.get("activo")
+                gasto.activo = 1 if val_activo in [True, 1, "1", "true", "True"] else 0
+            gasto.save()
+            
+            try:
+                from cotizaciones_api.services.legacy_sync import disparar_sincronizacion_gasto_detalle_legado
+                disparar_sincronizacion_gasto_detalle_legado(gasto.id_gasto_detalle)
+            except Exception as sync_err:
+                print("Error disparando sincronización de TipoGastoDetalle:", sync_err)
+                
+            serializer = TipoGastoDetalleSerializer(gasto)
+            return Response({"ok": True, "registro": serializer.data}, status=200)
+        except Exception as e:
+            return Response({"ok": False, "error": str(e)}, status=500)
+
+    elif request.method == "DELETE":
+        try:
+            id_gasto_detalle = request.data.get("id_gasto_detalle") or request.query_params.get("id_gasto_detalle") or request.data.get("id") or request.query_params.get("id")
+            if not id_gasto_detalle:
+                return Response({"ok": False, "error": "El id_gasto_detalle es requerido"}, status=400)
+            
+            try:
+                gasto = TipoGastoDetalle.objects.get(pk=id_gasto_detalle)
+                codigo = gasto.codigo
+                gasto.activo = 0
+                gasto.save()
+                
+                try:
+                    from cotizaciones_api.services.legacy_sync import disparar_eliminacion_gasto_detalle_legado
+                    disparar_eliminacion_gasto_detalle_legado(codigo)
+                except Exception as sync_err:
+                    print("Error disparando eliminación de TipoGastoDetalle:", sync_err)
+                    
+                return Response({"ok": True, "message": "Tipo de gasto desactivado correctamente"}, status=200)
+            except TipoGastoDetalle.DoesNotExist:
+                return Response({"ok": False, "error": "Tipo de gasto no encontrado"}, status=404)
         except Exception as e:
             return Response({"ok": False, "error": str(e)}, status=500)
 
@@ -982,7 +1138,7 @@ def lista_productos(request):
         except Exception as e:
             return Response({"ok": False, "error": str(e)}, status=500)
 
-@api_view(["GET", "POST", "PUT"])
+@api_view(["GET", "POST", "PUT", "DELETE"])
 @permission_classes([IsAuthenticated])
 def lista_notas(request):
     # --- GET: Listar todas las notas activas ---
@@ -1013,7 +1169,11 @@ def lista_notas(request):
         id_nota = request.data.get("id_nota")
         try:
             nota = Nota.objects.get(pk=id_nota)
-            serializer = NotaSerializer(nota, data=request.data, partial=True)
+            # El frontend envía 'activo' como booleano, en BD es int(11)
+            data = request.data.copy()
+            if "activo" in data:
+                data["activo"] = 1 if data["activo"] in [True, 1, "1", "true", "True"] else 0
+            serializer = NotaSerializer(nota, data=data, partial=True)
             if serializer.is_valid():
                 serializer.save()
                 return Response({
@@ -1026,6 +1186,19 @@ def lista_notas(request):
                 "ok": False, 
                 "error": "Nota técnica no encontrada"
             }, status=404)
+
+    # --- DELETE: Desactivar nota ---
+    elif request.method == "DELETE":
+        id_nota = request.data.get("id_nota") or request.query_params.get("id_nota")
+        if not id_nota:
+            return Response({"ok": False, "error": "El id_nota es requerido"}, status=400)
+        try:
+            nota = Nota.objects.get(pk=id_nota)
+            nota.activo = 0
+            nota.save()
+            return Response({"ok": True, "message": "Nota desactivada correctamente"}, status=200)
+        except Nota.DoesNotExist:
+            return Response({"ok": False, "error": "Nota no encontrada"}, status=404)
 
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])

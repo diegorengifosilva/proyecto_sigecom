@@ -1,7 +1,7 @@
 # cotizaciones_api/signals.py
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
-from cotizaciones_api.models import Cotizacion, CotizacionSuministro, CotizacionServicio, CotizacionMensaje, CotizacionSeguimiento, CotizacionCondicionGeneral
+from cotizaciones_api.models import Cotizacion, CotizacionSuministro, CotizacionServicio, CotizacionMensaje, CotizacionSeguimiento, CotizacionCondicionGeneral, CotizacionApertura
 from core.models import Cliente, Representante, TipoMarca, TipoPersonal, TipoGastoDetalle, Producto
 from users.models import Usuario
 from cotizaciones_api.services.legacy_sync import (
@@ -23,6 +23,8 @@ from cotizaciones_api.services.legacy_sync import (
     disparar_eliminacion_producto_legado,
     disparar_sincronizacion_condicion_legada,
     disparar_eliminacion_condicion_legada,
+    disparar_sincronizacion_apertura_legada,
+    disparar_eliminacion_apertura_legada,
 )
 
 
@@ -232,4 +234,24 @@ def on_condicion_post_delete(sender, instance, **kwargs):
     """
     if instance.id_registro_id:
         disparar_eliminacion_condicion_legada(instance.id_registro_id)
+
+
+@receiver(post_save, sender=CotizacionApertura)
+def on_apertura_post_save(sender, instance, created, **kwargs):
+    """
+    Escucha la creación/actualización de la apertura y dispara
+    la sincronización en segundo plano con la base legado.
+    """
+    if instance.id_apertura:
+        disparar_sincronizacion_apertura_legada(instance.id_apertura)
+
+
+@receiver(post_delete, sender=CotizacionApertura)
+def on_apertura_post_delete(sender, instance, **kwargs):
+    """
+    Escucha la eliminación de la apertura y dispara
+    la eliminación en segundo plano en la base legado.
+    """
+    if instance.id_apertura:
+        disparar_eliminacion_apertura_legada(instance.id_apertura)
 

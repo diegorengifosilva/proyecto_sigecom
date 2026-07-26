@@ -222,7 +222,7 @@ const handleDecimalChange = (e, callback) => {
     callback(val);
     return;
   }
-  const regex = /^-?\d*\.?\d{0,2}$/;
+  const regex = /^-?\d*\.?\d*$/;
   if (regex.test(val)) {
     callback(val);
   }
@@ -884,17 +884,34 @@ const EditableGroupRow = ({
     next.costo_con_envio = Number(costoConEnvio.toFixed(2));
 
     let porcentajeUtil = Number(next.porcentaje_utilidad || 0);
+
+    // Safeguard: cap utility percentage at 100%
+    if (porcentajeUtil > 100) {
+      porcentajeUtil = 100;
+      next.porcentaje_utilidad = 100;
+    }
+
     let utilidadUnit = (costoConEnvio * porcentajeUtil) / 100;
 
     if (fieldModificado === 'utilidad') {
       utilidadUnit = Number(next.utilidad || 0);
+      
+      // Safeguard: cap utility amount at costoConEnvio
+      if (utilidadUnit > costoConEnvio) {
+        utilidadUnit = costoConEnvio;
+        next.utilidad = costoConEnvio;
+      }
+      
       porcentajeUtil = costoConEnvio > 0 ? (utilidadUnit / costoConEnvio) * 100 : 0;
       next.porcentaje_utilidad = Number(porcentajeUtil.toFixed(2));
+    } else if (fieldModificado === 'porcentaje_utilidad') {
+      next.utilidad = Number(utilidadUnit.toFixed(2));
     } else {
       next.utilidad = Number(utilidadUnit.toFixed(2));
+      next.porcentaje_utilidad = Number(porcentajeUtil.toFixed(2));
     }
 
-    const ventaPrecio = costoConEnvio + next.utilidad;
+    const ventaPrecio = costoConEnvio + Number(next.utilidad || 0);
     next.precio_venta = Number(ventaPrecio.toFixed(2));
     next.venta_total = Number((ventaPrecio * cantidad).toFixed(2));
     next.costo_total = Number((costoPrecio * cantidad).toFixed(2));
@@ -908,31 +925,46 @@ const EditableGroupRow = ({
     const dias = next.categoria === "06" ? 1 : Number(next.cantidad_dias || 0);
     const horas = Number(next.horas || 8);
     
-    if (next.categoria === "04") {
+    if (next.categoria === "04" || next.categoria === "06") {
       const costo = Number(next.costo_hombre_dia || 0);
-      const pct = Number(next.porcentaje || 0);
-      const costoTotal = cantidad * dias * costo;
-      const utilidad = costoTotal * (pct / 100);
+      const isCat04 = next.categoria === "04";
+      const costoTotal = isCat04 ? (cantidad * dias * costo) : (cantidad * 1 * costo);
       
-      next.utilidad = Number(utilidad.toFixed(2));
+      let pct = Number(next.porcentaje || 0);
+      if (pct > 100) {
+        pct = 100;
+        next.porcentaje = 100;
+      }
+      
+      let utilidad = costoTotal * (pct / 100);
+      
+      if (fieldModificado === 'utilidad') {
+        utilidad = Number(next.utilidad || 0);
+        if (utilidad > costoTotal) {
+          utilidad = costoTotal;
+          next.utilidad = costoTotal;
+        }
+        pct = costoTotal > 0 ? (utilidad / costoTotal) * 100 : 0;
+        next.porcentaje = Number(pct.toFixed(2));
+      } else if (fieldModificado === 'porcentaje') {
+        next.utilidad = Number(utilidad.toFixed(2));
+      } else {
+        next.utilidad = Number(utilidad.toFixed(2));
+        next.porcentaje = Number(pct.toFixed(2));
+      }
+      
+      if (!isCat04) {
+        next.cantidad_dias = 1;
+      }
+      
       next.cotizado_hombre_dia = Number((costo * (1 + pct / 100)).toFixed(2));
-      next.cotizado_total = Number((costoTotal + utilidad).toFixed(2));
+      next.cotizado_total = Number((costoTotal + Number(next.utilidad || 0)).toFixed(2));
     } else if (next.categoria === "05") {
       const precio = Number(next.cotizado_hombre_dia || 0);
       next.porcentaje = 0;
       next.utilidad = 0;
       next.costo_hombre_dia = precio;
       next.cotizado_total = Number((cantidad * dias * precio).toFixed(2));
-    } else if (next.categoria === "06") {
-      const costo = Number(next.costo_hombre_dia || 0);
-      const pct = Number(next.porcentaje || 0);
-      const costoTotal = cantidad * 1 * costo;
-      const utilidad = costoTotal * (pct / 100);
-      
-      next.cantidad_dias = 1;
-      next.utilidad = Number(utilidad.toFixed(2));
-      next.cotizado_hombre_dia = Number((costo * (1 + pct / 100)).toFixed(2));
-      next.cotizado_total = Number((costoTotal + utilidad).toFixed(2));
     }
     return next;
   };
@@ -955,14 +987,33 @@ const EditableGroupRow = ({
 
   const handleNewItemChange = (field, value) => {
     setNewItem(prev => {
+      let valNum = Number(value || 0);
+      if (field === 'porcentaje_utilidad' && valNum > 100) {
+        toast.warning("El porcentaje de utilidad no puede superar el 100%. Se limitó al máximo.", "Límite de Utilidad");
+      }
       const updated = { ...prev, [field]: value };
+      const costoConEnvio = Number(updated.costo_precio || 0) + Number(updated.costo_envio || 0);
+      if (field === 'utilidad' && valNum > costoConEnvio && costoConEnvio > 0) {
+        toast.warning("El monto de utilidad no puede superar el costo del ítem (100%). Se limitó al máximo.", "Límite de Utilidad");
+      }
       return recalculateItem(updated, field, tempData.costoEnvio || 0, 0);
     });
   };
 
   const handleManoObraFieldChange = (field, value) => {
     setNewManoObraItem(prev => {
+      let valNum = Number(value || 0);
+      if (field === 'porcentaje' && valNum > 100) {
+        toast.warning("El porcentaje de utilidad no puede superar el 100%. Se limitó al máximo.", "Límite de Utilidad");
+      }
       let updated = { ...prev, [field]: value };
+      const formHombres = Number(updated.cantidad_hombres || 0);
+      const formDias = Number(updated.cantidad_dias || 0);
+      const formCosto = Number(updated.costo_hombre_dia || 0);
+      const costoTotal = formHombres * formDias * formCosto;
+      if (field === 'utilidad' && valNum > costoTotal && costoTotal > 0) {
+        toast.warning("El monto de utilidad no puede superar el costo total del ítem (100%). Se limitó al máximo.", "Límite de Utilidad");
+      }
       return recalculateServiceItem(updated, field);
     });
   };
@@ -976,7 +1027,17 @@ const EditableGroupRow = ({
 
   const handleOtrosFieldChange = (field, value) => {
     setNewOtrosItem(prev => {
+      let valNum = Number(value || 0);
+      if (field === 'porcentaje' && valNum > 100) {
+        toast.warning("El porcentaje de utilidad no puede superar el 100%. Se limitó al máximo.", "Límite de Utilidad");
+      }
       let updated = { ...prev, [field]: value };
+      const formHombres = Number(updated.cantidad_hombres || 0);
+      const formCosto = Number(updated.costo_hombre_dia || 0);
+      const costoTotal = formHombres * 1 * formCosto;
+      if (field === 'utilidad' && valNum > costoTotal && costoTotal > 0) {
+        toast.warning("El monto de utilidad no puede superar el costo total del ítem (100%). Se limitó al máximo.", "Límite de Utilidad");
+      }
       return recalculateServiceItem(updated, field);
     });
   };
@@ -1062,13 +1123,13 @@ const EditableGroupRow = ({
     const max = parseFloat(newManoObraItem.costo_max || 0);
     
     if (min > 0 && finalCosto < min) {
-      finalCosto = min;
-      setManoObraCostError(`Ajustado al mínimo: ${formatMoneySymbolSafe(min)}`);
-      setTimeout(() => setManoObraCostError(""), 4000);
+      handleManoObraFieldChange('costo_hombre_dia', min);
+      toast.warning(`El costo debe estar en el rango de ${formatMoneySymbolSafe(min)} a ${formatMoneySymbolSafe(max)}. Se ajustó al mínimo.`, "Límite de Costo");
+      return;
     } else if (max > 0 && finalCosto > max) {
-      finalCosto = max;
-      setManoObraCostError(`Ajustado al máximo: ${formatMoneySymbolSafe(max)}`);
-      setTimeout(() => setManoObraCostError(""), 4000);
+      handleManoObraFieldChange('costo_hombre_dia', max);
+      toast.warning(`El costo debe estar en el rango de ${formatMoneySymbolSafe(min)} a ${formatMoneySymbolSafe(max)}. Se ajustó al máximo.`, "Límite de Costo");
+      return;
     }
 
     const itemToAdd = {
@@ -1560,6 +1621,7 @@ const EditableGroupRow = ({
                                 idArea={idArea}
                                 idRegistro={idRegistro}
                                 catalogoVersion={catalogoVersion}
+                                tipoMoneda={tipoMoneda}
                                 onTriggerCreatePersonal={(name) => handleTriggerCreatePersonal(name, 'new', handlePersonalCreatedLocal, handlePersonalCancelLocal)}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') {
@@ -1696,11 +1758,11 @@ const EditableGroupRow = ({
                                   if (min > 0 && val < min) {
                                     val = min;
                                     modified = true;
-                                    toast.info(`Costo ajustado al mínimo permitido: ${formatMoneySymbolSafe(min)}`);
+                                    toast.warning(`El costo debe estar en el rango de ${formatMoneySymbolSafe(min)} a ${formatMoneySymbolSafe(max)}. Se ajustó al mínimo.`, "Límite de Costo");
                                   } else if (max > 0 && val > max) {
                                     val = max;
                                     modified = true;
-                                    toast.info(`Costo ajustado al máximo permitido: ${formatMoneySymbolSafe(max)}`);
+                                    toast.warning(`El costo debe estar en el rango de ${formatMoneySymbolSafe(min)} a ${formatMoneySymbolSafe(max)}. Se ajustó al máximo.`, "Límite de Costo");
                                   }
                                   if (modified) {
                                     handleManoObraFieldChange('costo_hombre_dia', val);
@@ -1710,15 +1772,51 @@ const EditableGroupRow = ({
                             </td>
                             <td className="px-3 py-1.5">
                               <div className="flex flex-col gap-1 items-center justify-center text-center">
-                                <span className="text-[11px] font-bold text-slate-700">
-                                  {formatMoneySymbolSafe(Number(newManoObraItem.utilidad || 0))}
-                                </span>
+                                <div className="relative flex items-center justify-center w-full">
+                                  <span className="absolute left-1.5 text-[9px] text-slate-400">
+                                    {(tipoMoneda === 'S' || tipoMoneda === 'PEN') ? 'S/' : '$'}
+                                  </span>
+                                  <input
+                                    type="text"
+                                    className="w-full text-[11px] border border-slate-300 text-right pr-1 pl-4 rounded py-0.5 font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                                    value={newManoObraItem.utilidad === undefined || newManoObraItem.utilidad === null ? "" : newManoObraItem.utilidad}
+                                    onChange={(e) => handleDecimalChange(e, (val) => handleManoObraFieldChange('utilidad', val))}
+                                    onBlur={(e) => {
+                                      const num = parseFloat(e.target.value);
+                                      if (!isNaN(num)) {
+                                        const formHombres = Number(newManoObraItem.cantidad_hombres || 0);
+                                        const formDias = Number(newManoObraItem.cantidad_dias || 0);
+                                        const formCosto = Number(newManoObraItem.costo_hombre_dia || 0);
+                                        const costoTotal = formHombres * formDias * formCosto;
+                                        if (num > costoTotal && costoTotal > 0) {
+                                          toast.warning("El monto de utilidad no puede superar el costo total del ítem (100%). Se limitó al máximo.", "Límite de Utilidad");
+                                        }
+                                        handleManoObraFieldChange('utilidad', Number(num.toFixed(2)));
+                                      }
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        handleAddManoObraItem();
+                                      }
+                                    }}
+                                  />
+                                </div>
                                 <div className="relative flex items-center justify-center w-full">
                                   <input
                                     type="text"
                                     className="w-full text-[10px] border border-slate-300 text-center rounded px-1 py-0.5 font-medium text-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
                                     value={newManoObraItem.porcentaje === undefined || newManoObraItem.porcentaje === null ? "" : newManoObraItem.porcentaje}
                                     onChange={(e) => handleDecimalChange(e, (val) => handleManoObraFieldChange('porcentaje', val))}
+                                    onBlur={(e) => {
+                                      const num = parseFloat(e.target.value);
+                                      if (!isNaN(num)) {
+                                        if (num > 100) {
+                                          toast.warning("El porcentaje de utilidad no puede superar el 100%. Se limitó al máximo.", "Límite de Utilidad");
+                                        }
+                                        handleManoObraFieldChange('porcentaje', Number(num.toFixed(2)));
+                                      }
+                                    }}
                                     onKeyDown={(e) => {
                                       if (e.key === 'Enter') {
                                         e.preventDefault();
@@ -2136,15 +2234,50 @@ const EditableGroupRow = ({
                             </td>
                             <td className="px-3 py-1.5">
                               <div className="flex flex-col gap-1 items-center justify-center text-center">
-                                <span className="text-[11px] font-bold text-slate-700">
-                                  {formatMoneySymbolSafe(Number(newOtrosItem.utilidad || 0))}
-                                </span>
+                                <div className="relative flex items-center justify-center w-full">
+                                  <span className="absolute left-1.5 text-[9px] text-slate-400">
+                                    {(tipoMoneda === 'S' || tipoMoneda === 'PEN') ? 'S/' : '$'}
+                                  </span>
+                                  <input
+                                    type="text"
+                                    className="w-full text-[11px] border border-slate-300 text-right pr-1 pl-4 rounded py-0.5 font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                                    value={newOtrosItem.utilidad === undefined || newOtrosItem.utilidad === null ? "" : newOtrosItem.utilidad}
+                                    onChange={(e) => handleDecimalChange(e, (val) => handleOtrosFieldChange('utilidad', val))}
+                                    onBlur={(e) => {
+                                      const num = parseFloat(e.target.value);
+                                      if (!isNaN(num)) {
+                                        const formHombres = Number(newOtrosItem.cantidad_hombres || 0);
+                                        const formCosto = Number(newOtrosItem.costo_hombre_dia || 0);
+                                        const costoTotal = formHombres * 1 * formCosto;
+                                        if (num > costoTotal && costoTotal > 0) {
+                                          toast.warning("El monto de utilidad no puede superar el costo total del ítem (100%). Se limitó al máximo.", "Límite de Utilidad");
+                                        }
+                                        handleOtrosFieldChange('utilidad', Number(num.toFixed(2)));
+                                      }
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        handleAddOtrosItem();
+                                      }
+                                    }}
+                                  />
+                                </div>
                                 <div className="relative flex items-center justify-center w-full">
                                   <input
                                     type="text"
                                     className="w-full text-[10px] border border-slate-300 text-center rounded px-1 py-0.5 font-medium text-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
                                     value={newOtrosItem.porcentaje === undefined || newOtrosItem.porcentaje === null ? "" : newOtrosItem.porcentaje}
                                     onChange={(e) => handleDecimalChange(e, (val) => handleOtrosFieldChange('porcentaje', val))}
+                                    onBlur={(e) => {
+                                      const num = parseFloat(e.target.value);
+                                      if (!isNaN(num)) {
+                                        if (num > 100) {
+                                          toast.warning("El porcentaje de utilidad no puede superar el 100%. Se limitó al máximo.", "Límite de Utilidad");
+                                        }
+                                        handleOtrosFieldChange('porcentaje', Number(num.toFixed(2)));
+                                      }
+                                    }}
                                     onKeyDown={(e) => {
                                       if (e.key === 'Enter') {
                                         e.preventDefault();
@@ -2400,6 +2533,12 @@ const EditableGroupRow = ({
                             }
                             value={newItem.costo_precio === undefined || newItem.costo_precio === null ? "" : newItem.costo_precio}
                             onChange={(e) => handleDecimalChange(e, (val) => handleNewItemChange('costo_precio', val))}
+                            onBlur={(e) => {
+                              const num = parseFloat(e.target.value);
+                              if (!isNaN(num)) {
+                                handleNewItemChange('costo_precio', Number(num.toFixed(2)));
+                              }
+                            }}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
                                 e.preventDefault();
@@ -2419,15 +2558,41 @@ const EditableGroupRow = ({
                         {/* Utilidad */}
                         <td className="px-4 py-1.5">
                           <div className="flex flex-col gap-1 items-center justify-center text-center">
-                            <span className="text-[11px] font-bold text-gray-700">
-                              {formatMoneySymbolSafe(Number(newItem.utilidad || 0))}
-                            </span>
+                            <div className="relative flex items-center justify-center w-full">
+                              <span className="absolute left-1 text-[9px] text-gray-400">
+                                {(data?.tipo_moneda === 'S' || data?.tipo_moneda === 'PEN') ? 'S/' : '$'}
+                              </span>
+                              <input
+                                type="text"
+                                className="w-full text-[10px] border border-gray-300 text-center rounded pl-4 pr-1 py-0.5 font-bold text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                                value={newItem.utilidad === undefined || newItem.utilidad === null ? "" : newItem.utilidad}
+                                onChange={(e) => handleDecimalChange(e, (val) => handleNewItemChange('utilidad', val))}
+                                onBlur={(e) => {
+                                  const num = parseFloat(e.target.value);
+                                  if (!isNaN(num)) {
+                                    handleNewItemChange('utilidad', Number(num.toFixed(2)));
+                                  }
+                                }}
+                                onKeyDown={e => {
+                                  if (e.key === "Enter" && !e.ctrlKey && !e.metaKey) {
+                                    e.preventDefault();
+                                    handleAddItem();
+                                  }
+                                }}
+                              />
+                            </div>
                             <div className="relative flex items-center justify-center w-full">
                               <input
                                 type="text"
                                 className="w-full text-[10px] border border-gray-300 text-center rounded px-1 py-0.5 font-medium text-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
                                 value={newItem.porcentaje_utilidad === undefined || newItem.porcentaje_utilidad === null ? "" : newItem.porcentaje_utilidad}
                                 onChange={(e) => handleDecimalChange(e, (val) => handleNewItemChange('porcentaje_utilidad', val))}
+                                onBlur={(e) => {
+                                  const num = parseFloat(e.target.value);
+                                  if (!isNaN(num)) {
+                                    handleNewItemChange('porcentaje_utilidad', Number(num.toFixed(2)));
+                                  }
+                                }}
                                 onKeyDown={e => {
                                   if (e.key === "Enter" && !e.ctrlKey && !e.metaKey) {
                                     e.preventDefault();
@@ -2605,6 +2770,10 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       // Sincronizar estado local inmediatamente para evitar F5
       setData(prev => prev ? { ...prev, estado_envio: 2 } : prev);
       setOriginalData(prev => prev ? { ...prev, estado_envio: 2 } : prev);
+    } else if (action === "revertir-envio") {
+      // Sincronizar estado local inmediatamente para retornar a pendiente
+      setData(prev => prev ? { ...prev, estado_envio: 1 } : prev);
+      setOriginalData(prev => prev ? { ...prev, estado_envio: 1 } : prev);
     }
   });
   const pasarACotizacion = useMutation({
@@ -4226,19 +4395,34 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     next.costo_con_envio = Number(costoConEnvio.toFixed(2));
 
     let porcentajeUtil = Number(next.porcentaje_utilidad || 0);
+
+    // Safeguard: cap utility percentage at 100%
+    if (porcentajeUtil > 100) {
+      porcentajeUtil = 100;
+      next.porcentaje_utilidad = 100;
+    }
+
     let utilidadUnit = (costoConEnvio * porcentajeUtil) / 100;
 
     if (fieldModificado === 'utilidad') {
       utilidadUnit = Number(next.utilidad || 0);
+      
+      // Safeguard: cap utility amount at costoConEnvio
+      if (utilidadUnit > costoConEnvio) {
+        utilidadUnit = costoConEnvio;
+        next.utilidad = costoConEnvio;
+      }
+      
       porcentajeUtil = costoConEnvio > 0 ? (utilidadUnit / costoConEnvio) * 100 : 0;
       next.porcentaje_utilidad = Number(porcentajeUtil.toFixed(2));
     } else if (fieldModificado === 'porcentaje_utilidad') {
       next.utilidad = Number(utilidadUnit.toFixed(2));
     } else {
       next.utilidad = Number(utilidadUnit.toFixed(2));
+      next.porcentaje_utilidad = Number(porcentajeUtil.toFixed(2));
     }
 
-    const ventaPrecio = costoConEnvio + next.utilidad;
+    const ventaPrecio = costoConEnvio + Number(next.utilidad || 0);
     next.precio_venta = Number(ventaPrecio.toFixed(2));
     next.venta_total = Number((ventaPrecio * cantidad).toFixed(2));
     next.costo_total = Number((costoPrecio * cantidad).toFixed(2));
@@ -4248,7 +4432,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
 
   const handleRowChange = (field, value, mode, groupCode = null) => {
     let cleanedValue = value;
-    if (['cantidad', 'costo_precio', 'porcentaje_utilidad', 'porcentaje_envio', 'tiempo_entrega', 'costo_envio'].includes(field)) {
+    if (['cantidad', 'costo_precio', 'porcentaje_utilidad', 'porcentaje_envio', 'tiempo_entrega', 'costo_envio', 'utilidad'].includes(field)) {
       if (typeof value === 'string' && value.length > 1 && value.startsWith('0') && value[1] !== '.') {
         cleanedValue = value.replace(/^0+/, '');
         if (cleanedValue === '') cleanedValue = '0';
@@ -4279,7 +4463,15 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       }
 
       setEditForm(prev => {
+        let valNum = Number(cleanedValue || 0);
+        if (field === 'porcentaje_utilidad' && valNum > 100) {
+          toast.warning("El porcentaje de utilidad no puede superar el 100%. Se limitó al máximo.", "Límite de Utilidad");
+        }
         const updated = { ...prev, [field]: cleanedValue };
+        const costoConEnvio = Number(updated.costo_precio || 0) + Number(updated.costo_envio || 0);
+        if (field === 'utilidad' && valNum > costoConEnvio && costoConEnvio > 0) {
+          toast.warning("El monto de utilidad no puede superar el costo del ítem (100%). Se limitó al máximo.", "Límite de Utilidad");
+        }
         return recalculateRowValues(updated, field, groupCostoEnvio, totalCostoItems);
       });
     } else {
@@ -4306,7 +4498,15 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
             precio_venta: 0,
             venta_total: 0
           };
+          let valNum = Number(cleanedValue || 0);
+          if (field === 'porcentaje_utilidad' && valNum > 100) {
+            toast.warning("El porcentaje de utilidad no puede superar el 100%. Se limitó al máximo.", "Límite de Utilidad");
+          }
           const updated = { ...current, [field]: cleanedValue };
+          const costoConEnvio = Number(updated.costo_precio || 0) + Number(updated.costo_envio || 0);
+          if (field === 'utilidad' && valNum > costoConEnvio && costoConEnvio > 0) {
+            toast.warning("El monto de utilidad no puede superar el costo del ítem (100%). Se limitó al máximo.", "Límite de Utilidad");
+          }
           const addCost = Number(updated.costo_precio || 0);
           const addQty = Number(updated.cantidad || 0);
           totalCostoItems = existingCosto + (addCost * addQty);
@@ -4598,7 +4798,10 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
   const [gruposExpandidos, setGruposExpandidos] = useState({});
 
   const toggleGrupo = (grupoId) => {
-    setGruposExpandidos(prev => ({ ...prev, [grupoId]: !prev[grupoId] }));
+    setGruposExpandidos(prev => {
+      const current = prev[grupoId] !== false;
+      return { ...prev, [grupoId]: !current };
+    });
   };
 
   const [nuevoGrupoTemp, setNuevoGrupoTemp] = useState({ activo: false, tipo: null, nombre: '', cantidad: 1 });
@@ -4663,13 +4866,32 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
   const [serviciosExpandidos, setServiciosExpandidos] = useState({});
   const [subgruposExpandidos, setSubgruposExpandidos] = useState({});
   const [inlineDescError, setInlineDescError] = useState({ subgrupoId: null, message: "" });
+  const [servicioDetalleExpandido, setServicioDetalleExpandido] = useState({});
+  const quillRefs = useRef({});
+
+  const handleInsertNota = (notaTexto, idServicio) => {
+    if (!notaTexto) return;
+    const quillRef = quillRefs.current[idServicio];
+    if (quillRef) {
+      const quill = quillRef.getEditor();
+      const range = quill.getSelection() || { index: quill.getLength() };
+      quill.insertText(range.index, `${notaTexto}\n`, { bold: false });
+      quill.setSelection(range.index + notaTexto.length + 1);
+    }
+  };
 
   const toggleServicioGrupo = (idServicio) => {
-    setServiciosExpandidos(prev => ({ ...prev, [idServicio]: !prev[idServicio] }));
+    setServiciosExpandidos(prev => {
+      const current = prev[idServicio] !== false;
+      return { ...prev, [idServicio]: !current };
+    });
   };
 
   const toggleSubgrupo = (subgrupoKey) => {
-    setSubgruposExpandidos(prev => ({ ...prev, [subgrupoKey]: !prev[subgrupoKey] }));
+    setSubgruposExpandidos(prev => {
+      const current = prev[subgrupoKey] !== false;
+      return { ...prev, [subgrupoKey]: !current };
+    });
   };
 
   const [editingGroupServicioHeader, setEditingGroupServicioHeader] = useState(null); // { id_servicio, campo }
@@ -5730,11 +5952,33 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     const max = parseFloat(form.costo_max || 0);
 
     if (min > 0 && finalCosto < min) {
-      finalCosto = min;
-      toast.info(`Costo ajustado al mínimo permitido: ${formatMoneySymbol(min)}`);
+      toast.warning(`El costo debe estar en el rango de ${formatMoneySymbol(min)} a ${formatMoneySymbol(max)}. Se ajustó al mínimo.`, "Límite de Costo");
+      const finalHombres = Number(form.cantidad_hombres || 0);
+      const finalDias = Number(form.cantidad_dias || 0);
+      const newCostoTotal = finalHombres * finalDias * min;
+      const finalPorcentaje = Number(form.porcentaje || 0);
+      const newUtil = newCostoTotal * (finalPorcentaje / 100);
+      
+      setEditingServicioForm({
+        ...form,
+        costo_hombre_dia: min,
+        utilidad: Number(newUtil.toFixed(2))
+      });
+      return;
     } else if (max > 0 && finalCosto > max) {
-      finalCosto = max;
-      toast.info(`Costo ajustado al máximo permitido: ${formatMoneySymbol(max)}`);
+      toast.warning(`El costo debe estar en el rango de ${formatMoneySymbol(min)} a ${formatMoneySymbol(max)}. Se ajustó al máximo.`, "Límite de Costo");
+      const finalHombres = Number(form.cantidad_hombres || 0);
+      const finalDias = Number(form.cantidad_dias || 0);
+      const newCostoTotal = finalHombres * finalDias * max;
+      const finalPorcentaje = Number(form.porcentaje || 0);
+      const newUtil = newCostoTotal * (finalPorcentaje / 100);
+      
+      setEditingServicioForm({
+        ...form,
+        costo_hombre_dia: max,
+        utilidad: Number(newUtil.toFixed(2))
+      });
+      return;
     }
 
     const hookForm = {
@@ -5901,6 +6145,13 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
 
   const handleStartEditingItemInline = (item, fieldName = null) => {
     setEditingItemServicioId(item.id_servicio);
+    const formHombres = Number(item.cantidad_hombres || 0);
+    const formDias = item.categoria === "06" ? 1 : Number(item.cantidad_dias || 0);
+    const formCosto = Number(item.costo_hombre_dia || 0);
+    const formPorcentaje = Number(item.porcentaje || 0);
+    const calculatedCostoTotal = formHombres * formDias * formCosto;
+    const calculatedUtilidad = calculatedCostoTotal * (formPorcentaje / 100);
+
     setEditingServicioForm({
       id_servicio: item.id_servicio,
       codigo_item: item.codigo_item,
@@ -5910,7 +6161,10 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       horas: item.horas,
       costo_hombre_dia: item.costo_hombre_dia,
       cotizado_hombre_dia: item.cotizado_hombre_dia || item.costo_hombre_dia,
-      porcentaje: item.porcentaje
+      porcentaje: item.porcentaje,
+      utilidad: calculatedUtilidad.toFixed(2),
+      costo_min: item.costo_min || 0,
+      costo_max: item.costo_max || 0
     });
     setActiveEditServicioField(fieldName);
   };
@@ -5924,7 +6178,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       <motion.div
         layout
         key={grupo.codigo_grupo || `grupo-${gIdx}`}
-        className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm"
+        className="bg-white border border-gray-200 rounded-lg overflow-visible shadow-sm"
       >
         {/* Cabecera del Grupo */}
         <div
@@ -5971,7 +6225,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 />
               ) : (
                 <span 
-                  className="font-black text-gray-800 text-[12px] uppercase tracking-wide cursor-pointer select-none"
+                  className="font-black text-gray-800 text-[12px] uppercase tracking-wide cursor-pointer"
                   onDoubleClick={(e) => {
                     e.stopPropagation();
                     setEditingGroupHeader({ codigo_grupo: grupo.codigo_grupo, campo: 'nombre' });
@@ -6013,7 +6267,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 />
               ) : (
                 <span 
-                  className="text-[11.5px] font-black text-indigo-700 cursor-pointer select-none"
+                  className="text-[11.5px] font-black text-indigo-700 cursor-pointer"
                   onDoubleClick={(e) => {
                     e.stopPropagation();
                     setEditingGroupHeader({ codigo_grupo: grupo.codigo_grupo, campo: 'cantidad' });
@@ -6055,7 +6309,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 ) : (
                   <span 
                     id={`span-envio-${grupo.codigo_grupo}`}
-                    className="text-[11.5px] font-black text-blue-700 cursor-pointer select-none"
+                    className="text-[11.5px] font-black text-blue-700 cursor-pointer"
                     onDoubleClick={(e) => {
                       e.stopPropagation();
                       setEditingGroupHeader({ codigo_grupo: grupo.codigo_grupo, campo: 'costo_envio' });
@@ -6300,9 +6554,18 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                           <td className="px-3 py-1.5">
                             <div className="flex flex-col gap-1 items-center justify-center text-center">
                               {/* Monto de utilidad (Ahora ARRIBA) */}
-                              <span className="text-[11px] font-bold text-gray-700">
-                                {formatMoneySymbol(Number(currentForm.utilidad || 0))}
-                              </span>
+                              <div className="relative flex items-center justify-center w-full">
+                                <span className="absolute left-1.5 text-[9px] text-gray-400">
+                                  {(data?.tipo_moneda === 'S' || data?.tipo_moneda === 'PEN') ? 'S/' : '$'}
+                                </span>
+                                <input
+                                  type="text"
+                                  className="w-full text-[11px] border border-gray-300 text-right pr-1 pl-4 rounded py-0.5 font-bold text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                                  value={currentForm.utilidad === undefined || currentForm.utilidad === null ? "" : currentForm.utilidad}
+                                  onChange={(e) => handleDecimalChange(e, (val) => handleRowChange("utilidad", val, "add", grupo.codigo_grupo))}
+                                  onFocus={(e) => e.target.select()}
+                                />
+                              </div>
                               <div className="relative flex items-center justify-center w-full">
                                 <input
                                   type="number"
@@ -6806,9 +7069,23 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           {/* UTILIDAD */}
           <td className="px-2 py-1">
             <div className="flex flex-col gap-1 items-center justify-center text-center">
-              <span className="text-[10.5px] font-bold text-gray-700">
-                {formatMoneySymbol(calculatedUtilidad)}
-              </span>
+              <div className="relative flex items-center justify-center w-full">
+                <span className="absolute left-1.5 text-[9px] text-gray-400">
+                  {(data?.tipo_moneda === 'S' || data?.tipo_moneda === 'PEN') ? 'S/' : '$'}
+                </span>
+                <input
+                  type="text"
+                  className="w-full text-[10.5px] border border-gray-300 text-right pr-1 pl-4 rounded py-0.5 font-bold text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                  value={form.utilidad === undefined || form.utilidad === null ? calculatedUtilidad.toFixed(2) : form.utilidad}
+                  onChange={(e) => handleDecimalChange(e, (val) => {
+                    const num = parseFloat(val) || 0;
+                    const costoTotal = Number(form.cantidad_hombres || 0) * Number(form.cantidad_dias || 0) * Number(form.costo_hombre_dia || 0);
+                    const pct = costoTotal > 0 ? (num / costoTotal) * 100 : 0;
+                    setForm({ utilidad: val, porcentaje: Number(pct.toFixed(2)) });
+                  })}
+                  onFocus={(e) => e.target.select()}
+                />
+              </div>
               <div className="relative flex items-center justify-center w-full">
                 <input
                   type="number"
@@ -7039,9 +7316,23 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           {/* UTILIDAD */}
           <td className="px-2 py-1">
             <div className="flex flex-col gap-1 items-center justify-center text-center">
-              <span className="text-[10.5px] font-bold text-gray-700">
-                {formatMoneySymbol(calculatedUtilidad)}
-              </span>
+              <div className="relative flex items-center justify-center w-full">
+                <span className="absolute left-1.5 text-[9px] text-gray-400">
+                  {(data?.tipo_moneda === 'S' || data?.tipo_moneda === 'PEN') ? 'S/' : '$'}
+                </span>
+                <input
+                  type="text"
+                  className="w-full text-[10.5px] border border-gray-300 text-right pr-1 pl-4 rounded py-0.5 font-bold text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                  value={form.utilidad === undefined || form.utilidad === null ? calculatedUtilidad.toFixed(2) : form.utilidad}
+                  onChange={(e) => handleDecimalChange(e, (val) => {
+                    const num = parseFloat(val) || 0;
+                    const costoTotal = Number(form.cantidad_hombres || 0) * Number(form.costo_hombre_dia || 0);
+                    const pct = costoTotal > 0 ? (num / costoTotal) * 100 : 0;
+                    setForm({ utilidad: val, porcentaje: Number(pct.toFixed(2)) });
+                  })}
+                  onFocus={(e) => e.target.select()}
+                />
+              </div>
               <div className="relative flex items-center justify-center w-full">
                 <input
                   type="number"
@@ -7074,6 +7365,13 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
 
   const renderGrupoServicio = (grupo, gIdx, dndListeners = {}, dndAttributes = {}) => {
     const isExpanded = serviciosExpandidos[grupo.id_servicio] !== false;
+    const isDetailExpanded = !!servicioDetalleExpandido[grupo.id_servicio];
+    const setIsDetailExpanded = (val) => {
+      setServicioDetalleExpandido(prev => ({
+        ...prev,
+        [grupo.id_servicio]: val
+      }));
+    };
     const itemsTotales = (grupo.subgrupos || []).reduce((acc, sg) => acc + (sg.items || []).length, 0);
 
     const totalCotizadoGrupo = (grupo.subgrupos || []).reduce((acc, sg) => {
@@ -7143,7 +7441,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 />
               ) : (
                 <span 
-                  className="font-black text-gray-800 text-[12px] uppercase tracking-wide cursor-pointer select-none"
+                  className="font-black text-gray-800 text-[12px] uppercase tracking-wide cursor-pointer"
                   onDoubleClick={(e) => {
                     if (isReadOnly) return;
                     e.stopPropagation();
@@ -7185,7 +7483,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 />
               ) : (
                 <span 
-                  className="text-[11.5px] font-black text-indigo-700 cursor-pointer select-none"
+                  className="text-[11.5px] font-black text-indigo-700 cursor-pointer"
                   onDoubleClick={(e) => {
                     if (isReadOnly) return;
                     e.stopPropagation();
@@ -7237,6 +7535,139 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
               transition={{ duration: 0.2 }}
             >
               <div className="p-4 space-y-4 bg-gray-50/20">
+                {/* Detalle del Servicio Collapsible Block */}
+                <div className={cn(
+                  "mb-4 bg-white border border-gray-200 rounded-xl shadow-sm transition-all duration-300",
+                  isDetailExpanded ? "overflow-visible" : "overflow-hidden"
+                )}>
+                  {/* Collapsible Header */}
+                  <div
+                    onClick={() => setIsDetailExpanded(!isDetailExpanded)}
+                    className="w-full px-4 py-2.5 flex justify-between items-center bg-slate-50 border-b border-gray-150 hover:bg-slate-100/50 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-4 text-teal-800 flex-grow mr-4">
+                      <div className="flex items-center gap-2">
+                        <Icon name="file-text" className="h-4 w-4 text-[#0d767e]" />
+                        <span className="text-[11px] font-black uppercase tracking-wider text-slate-700 whitespace-nowrap">
+                          Detalle del Servicio
+                        </span>
+                      </div>
+                      
+                      {/* Integrated Toolbar */}
+                      {isDetailExpanded && (
+                        <div 
+                          id={`srv-quill-toolbar-${grupo.id_servicio}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="flex items-center bg-transparent border-none p-0 ql-toolbar ql-snow"
+                        >
+                          <span className="ql-formats">
+                            <button className="ql-bold" title="Negrita" />
+                            <button className="ql-italic" title="Cursiva" />
+                          </span>
+                          <span className="ql-formats">
+                            <button className="ql-list" value="ordered" title="Numeración" />
+                            <button className="ql-list" value="bullet" title="Viñetas" />
+                          </span>
+                          <span className="ql-formats">
+                            <button className="ql-indent" value="-1" title="Disminuir Sangría" />
+                            <button className="ql-indent" value="+1" title="Aumentar Sangría" />
+                          </span>
+                          <span className="ql-formats">
+                            <button className="ql-blockquote" title="Cita" />
+                          </span>
+
+                          {notasComunes && notasComunes.length > 0 && (
+                            <span className="ql-formats select-none pointer-events-auto !mr-0">
+                              <div className="w-64">
+                                <NotasAutocomplete
+                                  notasComunes={notasComunes}
+                                  onSelect={(notaTexto) => handleInsertNota(notaTexto, grupo.id_servicio)}
+                                />
+                              </div>
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                      {grupo.detalle && grupo.detalle.replace(/<[^>]*>/g, '').trim().length > 0 ? (
+                        <span className="text-[9px] font-black text-[#0d767e] bg-teal-50 border border-teal-150 px-2 py-0.5 rounded-full uppercase">
+                          Con Contenido
+                        </span>
+                      ) : (
+                        <span className="text-[9px] font-black text-gray-400 bg-gray-50 border border-gray-150 px-2 py-0.5 rounded-full uppercase">
+                          Vacío
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setIsDetailExpanded(!isDetailExpanded)}
+                        className="p-1 hover:bg-slate-200/60 rounded-md transition-colors"
+                      >
+                        <Icon
+                          name={isDetailExpanded ? "chevron-up" : "chevron-down"}
+                          className="h-4 w-4 text-slate-500"
+                        />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Quill Editor Block */}
+                  <AnimatePresence initial={false}>
+                    {isDetailExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="p-4 bg-white border-t border-gray-100 overflow-visible"
+                      >
+                        <div className="quill-modern-container border border-slate-200 rounded-xl shadow-sm bg-white text-left overflow-visible">
+                          <style>{`
+                            #srv-quill-toolbar-${grupo.id_servicio}.ql-toolbar.ql-snow {
+                              display: flex !important;
+                              align-items: center !important;
+                              border: none !important;
+                              background: transparent !important;
+                              padding: 0 !important;
+                            }
+                            #srv-quill-toolbar-${grupo.id_servicio}.ql-toolbar.ql-snow .ql-formats {
+                              margin-right: 6px !important;
+                              display: flex !important;
+                              align-items: center !important;
+                            }
+                            #srv-quill-toolbar-${grupo.id_servicio}.ql-toolbar.ql-snow button {
+                              width: 26px !important;
+                              height: 26px !important;
+                              padding: 3px !important;
+                            }
+                          `}</style>
+                          <ReactQuill
+                            ref={(el) => { if (el) quillRefs.current[grupo.id_servicio] = el; }}
+                            value={grupo.detalle || ""}
+                            onChange={(content) => {
+                              setGruposServicios(prev => {
+                                const next = JSON.parse(JSON.stringify(prev));
+                                if (next[grupo.id_servicio]) {
+                                  next[grupo.id_servicio].detalle = content;
+                                }
+                                return next;
+                              });
+                            }}
+                            theme="snow"
+                            readOnly={isReadOnly}
+                            modules={{
+                              toolbar: {
+                                container: `#srv-quill-toolbar-${grupo.id_servicio}`
+                              }
+                            }}
+                            placeholder="Escriba aquí los detalles y especificaciones del servicio con negrita, guiones, etc..."
+                          />
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
                 {subgruposOrdenados.map((sg) => {
                   const sgKey = `${grupo.id_servicio}-${sg.tipoCodigo}`;
                   const isSgExpanded = subgruposExpandidos[sgKey] !== false;
@@ -7245,7 +7676,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                   const sortedItems = sg.items || [];
 
                   return (
-                    <div key={sg.id || sgKey} className="bg-white border border-gray-150 rounded-lg overflow-hidden shadow-xs">
+                    <div key={sg.id || sgKey} className="bg-white border border-gray-150 rounded-lg overflow-visible shadow-xs">
                       <div
                         onClick={() => {
                           if (editingSubgrupoId !== sg.id_servicio) {
@@ -7287,7 +7718,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                             />
                           ) : (
                             <span
-                              className="text-[10px] font-black text-gray-700 tracking-wider uppercase cursor-pointer select-none"
+                              className="text-[10px] font-black text-gray-700 tracking-wider uppercase cursor-pointer"
                               onDoubleClick={(e) => {
                                 if (isReadOnly) return;
                                 e.stopPropagation();
@@ -7402,10 +7833,12 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                                         activeEditServicioField={activeEditServicioField}
                                         setActiveEditServicioField={setActiveEditServicioField}
                                         handleTriggerCreatePersonal={handleTriggerCreatePersonal}
-                                        renderInlinePersonalCreateForm={renderInlinePersonalCreateForm}
                                         handleTriggerCreateGasto={handleTriggerCreateGasto}
+                                        renderInlinePersonalCreateForm={renderInlinePersonalCreateForm}
                                         renderInlineGastoCreateForm={renderInlineGastoCreateForm}
                                         catalogoVersion={catalogoVersion}
+                                        numReg={numReg}
+                                        tipoMoneda={data?.tipo_moneda}
                                       />
                                     ))}
                                   </SortableContext>
@@ -7956,10 +8389,48 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                   {!esOportunidad && (
                     <div className="relative flex items-center">
                       {data?.estado_envio === 2 ? (
-                        // Estado ENVIADO: Badge estático premium y deshabilitado
-                        <div className="flex items-center px-3 py-1 rounded-full text-[9px] font-black bg-emerald-100 border border-emerald-200 text-emerald-700 uppercase tracking-widest shadow-sm">
-                          <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse" />
-                          Enviado
+                        // Estado ENVIADO: Botón interactivo para revertir a Pendiente
+                        <div className="relative flex items-center group/confirm">
+                          <button
+                            onClick={() => {
+                              toast.info(({ closeToast }) => (
+                                <div className="flex flex-col min-w-[340px] overflow-hidden rounded-lg">
+                                  <div className="flex items-center gap-3 px-4 py-2 bg-rose-50/50 border-b border-rose-100">
+                                    <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-white shadow-sm border border-rose-100">
+                                      <Icon name="rotate-ccw" className="h-3.5 w-3.5 text-rose-600" />
+                                    </div>
+                                    <span className="text-[10px] font-black text-gray-800 uppercase tracking-tight">
+                                      Revertir Envío
+                                    </span>
+                                  </div>
+                                  <div className="px-4 py-3">
+                                    <p className="text-[11px] text-gray-600 leading-tight">
+                                      ¿Confirmar retornar esta cotización al estado <span className="font-bold text-gray-900 underline decoration-rose-200 underline-offset-2">PENDIENTE DE ENVÍO</span> para poder corregir datos?
+                                    </p>
+                                  </div>
+                                  <div className="flex items-center justify-end gap-3 px-4 pb-3">
+                                    <button onClick={closeToast} className="whitespace-nowrap text-[9px] font-black text-gray-400 hover:text-gray-600 uppercase tracking-widest transition-colors">Cancelar</button>
+                                    <button
+                                      onClick={() => { enviarCotizacionAprobacion.mutate({ id: data.id_registro, revert: true }); closeToast(); }}
+                                      className="flex items-center gap-2 px-4 py-2 bg-rose-600 text-white text-[9px] font-black rounded-xl uppercase shadow-md shadow-rose-200 hover:bg-rose-700 transition-all active:scale-95 whitespace-nowrap"
+                                    >
+                                      <span>Confirmar Reversión</span>
+                                      <Icon name="arrow-right" className="h-3 w-3 opacity-70" />
+                                    </button>
+                                  </div>
+                                </div>
+                              ), { position: "top-right", autoClose: false, closeOnClick: false, draggable: false, icon: false, className: "p-0 rounded-2xl border border-gray-100 shadow-2xl overflow-hidden !w-max !max-w-[400px]" });
+                            }}
+                            className="flex items-center px-3 py-1 rounded-full text-[9px] font-black bg-emerald-50 border border-emerald-200 text-emerald-700 uppercase tracking-widest hover:bg-emerald-600 hover:text-white hover:border-emerald-600 transition-all duration-200 shadow-sm cursor-pointer"
+                            disabled={enviarCotizacionAprobacion.isPending}
+                          >
+                            {enviarCotizacionAprobacion.isPending ? (
+                              <div className="h-2.5 w-2.5 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin mr-1.5" />
+                            ) : (
+                              <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-500 mr-1.5 group-hover/confirm:bg-white animate-pulse" />
+                            )}
+                            Enviado
+                          </button>
                         </div>
                       ) : (
                         // Estado PENDIENTE: Botón interactivo con Toast de Confirmación Premium
@@ -8013,13 +8484,13 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 {/* LÍNEA DE DATOS EDITABLES (Unificada y Responsiva) */}
                 <div className="relative flex flex-wrap items-center gap-1.5 mt-2 bg-slate-50/50 p-1 rounded-2xl border border-slate-100/80 w-fit max-w-full">
                   {/* CLIENTE (Editable Autocomplete) */}
-                  <div className="bg-white pl-2 pr-1 py-0.5 rounded-xl border border-gray-200/80 shadow-sm flex items-center transition-all hover:border-gray-300">
+                  <div className="bg-white px-2.5 py-1 rounded-xl border border-gray-200/80 shadow-sm flex items-center transition-all hover:border-gray-300">
                     <ClienteAutocomplete
                       value={data.cliente_nombre}
                       initialId={data.id_cliente}
                       isReadOnly={isReadOnly}
                       numReg={numReg}
-                      className="relative flex items-center px-1 py-0.5 rounded-lg hover:bg-gray-50 transition-all font-sans"
+                      className="relative flex items-center transition-all font-sans"
                       onSelect={(cliente) => {
                         const updated = {
                           ...data,
@@ -8051,14 +8522,14 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                   </div>
 
                   {/* REPRESENTANTE (Editable Autocomplete) */}
-                  <div className="bg-white pl-2 pr-1 py-0.5 rounded-xl border border-gray-200/80 shadow-sm flex items-center transition-all hover:border-gray-300">
+                  <div className="bg-white px-2.5 py-1 rounded-xl border border-gray-200/80 shadow-sm flex items-center transition-all hover:border-gray-300">
                     <RepresentanteAutocomplete
                       value={data.representante_nombre}
                       clienteId={data.id_cliente}
                       initialId={data.id_representante}
                       isReadOnly={isReadOnly}
                       numReg={numReg}
-                      className="relative flex items-center px-1 py-0.5 rounded-lg hover:bg-gray-50 transition-all font-sans"
+                      className="relative flex items-center transition-all font-sans"
                       onSelect={(enc) => {
                         const updated = {
                           ...data,
@@ -11715,6 +12186,8 @@ const SortableItemRow = ({
   const hoverTimer = useRef(null);
   const deleteConfirmRef = useRef(null);
   const rowRef = useRef(null);
+  const triggerRef = useRef(null);
+  const [coords, setCoords] = useState(null);
 
   const setMergedRef = (el) => {
     setNodeRef(el);
@@ -11815,15 +12288,26 @@ const SortableItemRow = ({
     };
   }, [showDeleteConfirm]);
 
+  const updateCoords = () => {
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setCoords({
+        top: rect.top + window.scrollY,
+        left: rect.left + window.scrollX
+      });
+    }
+  };
+
   const handleMouseEnter = () => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    updateCoords();
     setIsHovered(true);
   };
 
   const handleMouseLeave = () => {
     hoverTimer.current = setTimeout(() => {
       setIsHovered(false);
-    }, 150);
+    }, 250);
   };
 
   const proveedoresOptions = useMemo(() => {
@@ -12080,6 +12564,12 @@ const SortableItemRow = ({
             className="w-full text-[11px] border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-center"
             value={editForm.costo_precio === undefined || editForm.costo_precio === null ? '' : editForm.costo_precio}
             onChange={(e) => handleDecimalChange(e, (val) => handleRowChange('costo_precio', val, 'edit'))}
+            onBlur={(e) => {
+              const num = parseFloat(e.target.value);
+              if (!isNaN(num)) {
+                handleRowChange('costo_precio', Number(num.toFixed(2)), 'edit');
+              }
+            }}
             onFocus={(e) => e.target.select()}
             onKeyDown={handleKeyDown}
           />
@@ -12103,9 +12593,26 @@ const SortableItemRow = ({
         <td className="px-3 py-1">
           <div className="flex flex-col gap-1 items-center justify-center text-center">
             {/* Monto de utilidad (ARRIBA) */}
-            <span className="text-[11px] font-bold text-gray-700">
-              {formatMoneySymbol(Number(editForm.utilidad || 0))}
-            </span>
+            <div className="relative flex items-center justify-center w-full">
+              <span className="absolute left-1 text-[9px] text-gray-400">
+                {(tipoMoneda === 'S' || tipoMoneda === 'PEN') ? 'S/' : '$'}
+              </span>
+              <input
+                type="text"
+                data-field="utilidad"
+                className="w-full text-[10px] border border-gray-300 text-center rounded pl-4 pr-1 py-0.5 font-bold text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-center"
+                value={editForm.utilidad === undefined || editForm.utilidad === null ? '' : editForm.utilidad}
+                onChange={(e) => handleDecimalChange(e, (val) => handleRowChange('utilidad', val, 'edit'))}
+                onBlur={(e) => {
+                  const num = parseFloat(e.target.value);
+                  if (!isNaN(num)) {
+                    handleRowChange('utilidad', Number(num.toFixed(2)), 'edit');
+                  }
+                }}
+                onFocus={(e) => e.target.select()}
+                onKeyDown={handleKeyDown}
+              />
+            </div>
 
             {/* Porcentaje / Input (ABAJO) */}
             <div className="relative flex items-center justify-center w-full">
@@ -12115,6 +12622,12 @@ const SortableItemRow = ({
                 className="w-full text-[10px] border border-gray-300 text-center rounded px-1 py-0.5 font-medium text-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-center"
                 value={editForm.porcentaje_utilidad === undefined || editForm.porcentaje_utilidad === null ? '' : editForm.porcentaje_utilidad}
                 onChange={(e) => handleDecimalChange(e, (val) => handleRowChange('porcentaje_utilidad', val, 'edit'))}
+                onBlur={(e) => {
+                  const num = parseFloat(e.target.value);
+                  if (!isNaN(num)) {
+                    handleRowChange('porcentaje_utilidad', Number(num.toFixed(2)), 'edit');
+                  }
+                }}
                 onFocus={(e) => e.target.select()}
                 onKeyDown={handleKeyDown}
               />
@@ -12160,7 +12673,7 @@ const SortableItemRow = ({
                 <div className="flex flex-col gap-1">
                   <span className="font-bold text-gray-400 uppercase text-[9px]">U. Medida:</span>
                   <UnidadMedidaAutocomplete
-                    idMedida={editForm.id_medida || editForm.id_unidad}
+                    idMedida={editForm.id_medida || editForm.id_unidad || unidadesMedida.find(u => u.nombre?.toUpperCase() === editForm.tipo_unidad?.toUpperCase())?.id_medida}
                     unidadesMedida={unidadesMedida}
                     onSelect={(unit) => {
                       setEditForm(prev => ({
@@ -12201,29 +12714,6 @@ const SortableItemRow = ({
                       <option value={3}>Meses</option>
                     </select>
                   </div>
-                </div>
-                {/* Costo Envío */}
-                <div className="flex flex-col gap-1">
-                  <span className="font-bold text-gray-400 uppercase text-[9px]">Costo Envío Unit.:</span>
-                  <input
-                    type="text"
-                    className="w-full border border-gray-200 rounded px-2 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold text-gray-700 disabled:bg-gray-100 disabled:text-gray-400 bg-white"
-                    value={editForm.costo_envio === undefined || editForm.costo_envio === null ? "" : editForm.costo_envio}
-                    disabled={tipoVenta === "T"}
-                    onChange={(e) => handleDecimalChange(e, (val) => handleRowChange("costo_envio", val, "edit"))}
-                    placeholder="0.00"
-                  />
-                </div>
-                {/* Observación */}
-                <div className="flex flex-col gap-1">
-                  <span className="font-bold text-gray-400 uppercase text-[9px]">Observación:</span>
-                  <input
-                    type="text"
-                    className="w-full border border-gray-200 rounded px-2 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-indigo-500 text-gray-700"
-                    value={editForm.observacion || ""}
-                    onChange={e => handleRowChange("observacion", e.target.value.toUpperCase(), "edit")}
-                    placeholder="Observación..."
-                  />
                 </div>
 
                 {/* RESUMEN DE VENTA */}
@@ -12414,18 +12904,31 @@ const SortableItemRow = ({
       {/* % Utilidad */}
       <td 
         className="px-3 py-1 text-center"
-        onDoubleClick={(e) => {
-          if (!isReadOnly) {
-            e.stopPropagation();
-            startEditItem(item, 'porcentaje_utilidad');
-          }
-        }}
+        onDoubleClick={(e) => e.stopPropagation()}
       >
         <div className="flex flex-col items-center justify-center text-center gap-0.5">
-          <span className="text-[12.5px] font-extrabold text-slate-800">
+          <span 
+            className="text-[12.5px] font-extrabold text-slate-800 cursor-pointer select-none"
+            onDoubleClick={(e) => {
+              if (!isReadOnly) {
+                e.stopPropagation();
+                startEditItem(item, 'utilidad');
+              }
+            }}
+            title="Doble clic para editar monto de utilidad"
+          >
             {formatMoneySymbol(Number(item.utilidad || 0))}
           </span>
-          <span className="text-[10px] font-black text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded-full border border-indigo-100">
+          <span 
+            className="text-[10px] font-black text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded-full border border-indigo-100 cursor-pointer select-none"
+            onDoubleClick={(e) => {
+              if (!isReadOnly) {
+                e.stopPropagation();
+                startEditItem(item, 'porcentaje_utilidad');
+              }
+            }}
+            title="Doble clic para editar porcentaje de utilidad"
+          >
             {Number(item.porcentaje_utilidad || 0).toFixed(1)}%
           </span>
         </div>
@@ -12450,7 +12953,7 @@ const SortableItemRow = ({
       )}
       {/* Acciones */}
       <td 
-        className="px-3 py-1 align-middle text-center w-[60px] relative"
+        className={cn("px-3 py-1 align-middle text-center w-[60px] relative", isHovered && "z-[60]")}
         onDoubleClick={(e) => e.stopPropagation()}
       >
         <div onClick={e => e.stopPropagation()} className="flex justify-center items-center gap-1">
@@ -12461,90 +12964,103 @@ const SortableItemRow = ({
             onMouseLeave={handleMouseLeave}
           >
             <button
+              ref={triggerRef}
               type="button"
               className="p-1 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-all"
               title="Resumen de Venta"
             >
               <Icon name="trending-up" className="h-3.5 w-3.5" />
             </button>
-            {isHovered && (
-              <div className="absolute right-full mr-2 top-1/2 -translate-y-1/2 w-fit min-w-[320px] max-w-[450px] bg-white rounded-xl shadow-xl border border-gray-200 p-3.5 text-left text-xs space-y-3.5 z-50 animate-in fade-in zoom-in-95 duration-100 select-none">
-                <div className="flex items-center gap-1.5 text-slate-500 font-bold text-[10px] uppercase tracking-wider border-b border-gray-100 pb-1.5">
-                  <Icon name="info" className="h-3.5 w-3.5 text-slate-400" />
-                  <span>Especificaciones de Suministro</span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 text-[11px]">
-                  <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                    <span className="block font-bold text-gray-400 text-[9px] uppercase tracking-wide mb-0.5">U. Medida</span>
-                    <span className="font-bold text-gray-700 uppercase">{item.tipo_unidad || "UNI"}</span>
+            {isHovered && coords && createPortal(
+              <div 
+                style={{
+                  position: 'absolute',
+                  left: coords.left,
+                  top: coords.top,
+                  zIndex: 9999,
+                  pointerEvents: 'auto'
+                }}
+                onMouseEnter={handleMouseEnter}
+                onMouseLeave={handleMouseLeave}
+              >
+                <div className="absolute right-0 mr-2 top-0 w-fit min-w-[320px] max-w-[450px] bg-white rounded-xl shadow-xl border border-gray-200 p-3.5 text-left text-xs space-y-3.5 animate-in fade-in zoom-in-95 duration-100 select-text">
+                  <div className="flex items-center gap-1.5 text-slate-500 font-bold text-[10px] uppercase tracking-wider border-b border-gray-100 pb-1.5">
+                    <Icon name="info" className="h-3.5 w-3.5 text-slate-400" />
+                    <span>Especificaciones de Suministro</span>
                   </div>
-                  <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                    <span className="block font-bold text-gray-400 text-[9px] uppercase tracking-wide mb-0.5">Tiempo Entrega</span>
-                    <span className="font-bold text-gray-700">
-                      {item.tiempo_entrega ?? 0} {item.id_unidad_tiempo_entrega === 3 ? 'Meses' : item.id_unidad_tiempo_entrega === 2 ? 'Semanas' : 'Días'}
-                    </span>
-                  </div>
-                </div>
 
-                {item.observacion && (
-                  <div className="bg-slate-50 p-2 rounded-lg border border-slate-100 text-[11px]">
-                    <span className="block font-bold text-gray-400 text-[9px] uppercase tracking-wide mb-0.5">Observación</span>
-                    <span className="text-gray-600 italic font-medium">{item.observacion}</span>
-                  </div>
-                )}
-
-                {/* PANEL CÁLCULO MONETARIO */}
-                {(() => {
-                  const itemCantidad = Number(item.cantidad || 0);
-                  const itemCostoPrecio = Number(item.costo_precio || 0);
-                  const itemCostoEnvio = Number(item.costo_envio || 0);
-                  const itemCostoConEnvio = Number(item.costo_con_envio || 0);
-                  const itemPrecioVenta = Number(item.precio_venta || 0);
-                  const itemVentaTotal = Number(item.venta_total || 0);
-                  const itemUtilidad = Number(item.utilidad || 0);
-
-                  const costoTotal = itemCostoPrecio * itemCantidad;
-                  const costoConEnvioPorUnidad = itemCostoPrecio + itemCostoEnvio;
-                  const costoConEnvioTotal = itemCostoConEnvio * itemCantidad;
-                  const precioVentaUnit = itemPrecioVenta;
-                  const ventaTotal = itemVentaTotal;
-                  const utilidadTotal = itemUtilidad * itemCantidad;
-
-                  return (
-                    <div className="bg-emerald-50/40 border border-emerald-100 rounded-xl p-3 space-y-2 shadow-inner">
-                      <div className="flex items-center gap-1.5 text-emerald-800 font-extrabold text-[10px] uppercase tracking-wider">
-                        <Icon name="calculator" className="h-3.5 w-3.5" />
-                        <span>Resumen de Venta</span>
-                      </div>
-                      <div className="space-y-1 text-[11px]">
-                        <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-200/30">
-                          <span>Costo Total:</span>
-                          <span className="font-semibold text-gray-700">{formatMoney(costoTotal)}</span>
-                        </div>
-                        {isVenta && (
-                          <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-200/30">
-                            <span>Costo con Envío:</span>
-                            <span className="font-semibold text-gray-700">{formatMoney(costoConEnvioPorUnidad)}</span>
-                          </div>
-                        )}
-                        <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-200/30">
-                          <span>Precio Venta:</span>
-                          <span className="font-semibold text-gray-700">{formatMoney(precioVentaUnit)}</span>
-                        </div>
-                        <div className="flex justify-between items-center text-slate-800 py-0.5 border-b border-slate-200/50 font-bold">
-                          <span>Venta Total:</span>
-                          <span className="text-slate-900 font-black text-xs">{formatMoney(ventaTotal)}</span>
-                        </div>
-                        <div className="flex justify-between items-center text-emerald-900 pt-0.5 font-bold">
-                          <span>Utilidad Total:</span>
-                          <span className="text-emerald-600 font-black text-xs">{formatMoney(utilidadTotal)}</span>
-                        </div>
-                      </div>
+                  <div className="grid grid-cols-2 gap-2 text-[11px]">
+                    <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
+                      <span className="block font-bold text-gray-400 text-[9px] uppercase tracking-wide mb-0.5">U. Medida</span>
+                      <span className="font-bold text-gray-700 uppercase">{item.tipo_unidad || "UNI"}</span>
                     </div>
-                  );
-                })()}
-              </div>
+                    <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
+                      <span className="block font-bold text-gray-400 text-[9px] uppercase tracking-wide mb-0.5">Tiempo Entrega</span>
+                      <span className="font-bold text-gray-700">
+                        {item.tiempo_entrega ?? 0} {item.id_unidad_tiempo_entrega === 3 ? 'Meses' : item.id_unidad_tiempo_entrega === 2 ? 'Semanas' : 'Días'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {item.observacion && (
+                    <div className="bg-slate-50 p-2 rounded-lg border border-slate-100 text-[11px]">
+                      <span className="block font-bold text-gray-400 text-[9px] uppercase tracking-wide mb-0.5">Observación</span>
+                      <span className="text-gray-600 italic font-medium">{item.observacion}</span>
+                    </div>
+                  )}
+
+                  {/* PANEL CÁLCULO MONETARIO */}
+                  {(() => {
+                    const itemCantidad = Number(item.cantidad || 0);
+                    const itemCostoPrecio = Number(item.costo_precio || 0);
+                    const itemCostoEnvio = Number(item.costo_envio || 0);
+                    const itemCostoConEnvio = Number(item.costo_con_envio || 0);
+                    const itemPrecioVenta = Number(item.precio_venta || 0);
+                    const itemVentaTotal = Number(item.venta_total || 0);
+                    const itemUtilidad = Number(item.utilidad || 0);
+
+                    const costoTotal = itemCostoPrecio * itemCantidad;
+                    const costoConEnvioPorUnidad = itemCostoPrecio + itemCostoEnvio;
+                    const precioVentaUnit = itemPrecioVenta;
+                    const ventaTotal = itemVentaTotal;
+                    const utilidadTotal = itemUtilidad * itemCantidad;
+
+                    return (
+                      <div className="bg-emerald-50/40 border border-emerald-100 rounded-xl p-3 space-y-2 shadow-inner">
+                        <div className="flex items-center gap-1.5 text-emerald-800 font-extrabold text-[10px] uppercase tracking-wider">
+                          <Icon name="calculator" className="h-3.5 w-3.5" />
+                          <span>Resumen de Venta</span>
+                        </div>
+                        <div className="space-y-1 text-[11px]">
+                          <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-200/30">
+                            <span>Costo Total:</span>
+                            <span className="font-semibold text-gray-700">{formatMoney(costoTotal)}</span>
+                          </div>
+                          {isVenta && (
+                            <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-200/30">
+                              <span>Costo con Envío:</span>
+                              <span className="font-semibold text-gray-700">{formatMoney(costoConEnvioPorUnidad)}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-200/30">
+                            <span>Precio Venta:</span>
+                            <span className="font-semibold text-gray-700">{formatMoney(precioVentaUnit)}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-slate-800 py-0.5 border-b border-slate-200/50 font-bold">
+                            <span>Venta Total:</span>
+                            <span className="text-slate-900 font-black text-xs">{formatMoney(ventaTotal)}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-emerald-900 pt-0.5 font-bold">
+                            <span>Utilidad Total:</span>
+                            <span className="text-emerald-600 font-black text-xs">{formatMoney(utilidadTotal)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>,
+              document.body
             )}
           </div>
 
@@ -12619,6 +13135,8 @@ const SortableItemServicioRow = ({
   handleTriggerCreateGasto,
   renderInlineGastoCreateForm,
   catalogoVersion,
+  numReg,
+  tipoMoneda,
 }) => {
   const {
     attributes,
@@ -12718,6 +13236,7 @@ const SortableItemServicioRow = ({
         'input[data-field="cantidad_dias"]',
         'input[data-field="horas"]',
         'input[data-field="costo_hombre_dia"]',
+        'input[data-field="utilidad"]',
         'input[data-field="porcentaje"]'
       ];
     } else if (sg.tipoCodigo === "05") {
@@ -12734,6 +13253,7 @@ const SortableItemServicioRow = ({
         'input[data-field="descripcion_item"]',
         'input[data-field="cantidad_hombres"]',
         'input[data-field="costo_hombre_dia"]',
+        'input[data-field="utilidad"]',
         'input[data-field="porcentaje"]'
       ];
     }
@@ -12779,11 +13299,11 @@ const SortableItemServicioRow = ({
 
       let order = [];
       if (sg.tipoCodigo === "04") {
-        order = ['codigo_item', 'descripcion_item', 'cantidad_hombres', 'cantidad_dias', 'horas', 'costo_hombre_dia', 'porcentaje'];
+        order = ['codigo_item', 'descripcion_item', 'cantidad_hombres', 'cantidad_dias', 'horas', 'costo_hombre_dia', 'utilidad', 'porcentaje'];
       } else if (sg.tipoCodigo === "05") {
         order = ['codigo_item', 'descripcion_item', 'cantidad_hombres', 'cantidad_dias', 'cotizado_hombre_dia'];
       } else if (sg.tipoCodigo === "06") {
-        order = ['codigo_item', 'descripcion_item', 'cantidad_hombres', 'costo_hombre_dia', 'porcentaje'];
+        order = ['codigo_item', 'descripcion_item', 'cantidad_hombres', 'costo_hombre_dia', 'utilidad', 'porcentaje'];
       }
       
       const idx = order.indexOf(fieldName);
@@ -12918,7 +13438,19 @@ const SortableItemServicioRow = ({
               onKeyDown={handleKeyDown}
               className="w-full text-center text-[10.5px] border border-gray-300 text-center rounded px-1 py-0.5 font-bold bg-white"
               value={editingServicioForm.cantidad_hombres === undefined || editingServicioForm.cantidad_hombres === null ? "" : editingServicioForm.cantidad_hombres}
-              onChange={(e) => setEditingServicioForm({ ...editingServicioForm, cantidad_hombres: parseInt(e.target.value) || 0 })}
+              onChange={(e) => {
+                const qty = parseInt(e.target.value) || 0;
+                const finalDias = Number(editingServicioForm.cantidad_dias || 0);
+                const finalCosto = Number(editingServicioForm.costo_hombre_dia || 0);
+                const costoTotal = qty * finalDias * finalCosto;
+                const finalPorcentaje = Number(editingServicioForm.porcentaje || 0);
+                const newUtil = costoTotal * (finalPorcentaje / 100);
+                setEditingServicioForm({
+                  ...editingServicioForm,
+                  cantidad_hombres: qty,
+                  utilidad: Number(newUtil.toFixed(2))
+                });
+              }}
               onFocus={(e) => e.target.select()}
             />
           </td>
@@ -12929,7 +13461,19 @@ const SortableItemServicioRow = ({
               onKeyDown={handleKeyDown}
               className="w-full text-center text-[10.5px] border border-gray-300 text-center rounded px-1 py-0.5 font-semibold bg-white"
               value={editingServicioForm.cantidad_dias === undefined || editingServicioForm.cantidad_dias === null ? "" : editingServicioForm.cantidad_dias}
-              onChange={(e) => setEditingServicioForm({ ...editingServicioForm, cantidad_dias: parseInt(e.target.value) || 0 })}
+              onChange={(e) => {
+                const days = parseInt(e.target.value) || 0;
+                const finalHombres = Number(editingServicioForm.cantidad_hombres || 0);
+                const finalCosto = Number(editingServicioForm.costo_hombre_dia || 0);
+                const costoTotal = finalHombres * days * finalCosto;
+                const finalPorcentaje = Number(editingServicioForm.porcentaje || 0);
+                const newUtil = costoTotal * (finalPorcentaje / 100);
+                setEditingServicioForm({
+                  ...editingServicioForm,
+                  cantidad_dias: days,
+                  utilidad: Number(newUtil.toFixed(2))
+                });
+              }}
               onFocus={(e) => e.target.select()}
             />
           </td>
@@ -12951,15 +13495,108 @@ const SortableItemServicioRow = ({
               onKeyDown={handleKeyDown}
               className="w-full text-[10.5px] border border-gray-300 text-right rounded px-1 py-0.5 bg-white"
               value={editingServicioForm.costo_hombre_dia === undefined || editingServicioForm.costo_hombre_dia === null ? "" : editingServicioForm.costo_hombre_dia}
-              onChange={(e) => handleDecimalChange(e, (val) => setEditingServicioForm({ ...editingServicioForm, costo_hombre_dia: val }))}
+              onChange={(e) => handleDecimalChange(e, (val) => {
+                const finalHombres = Number(editingServicioForm.cantidad_hombres || 0);
+                const finalDias = Number(editingServicioForm.cantidad_dias || 0);
+                const valNum = Number(val || 0);
+                const newCostoTotal = finalHombres * finalDias * valNum;
+                const finalPorcentaje = Number(editingServicioForm.porcentaje || 0);
+                const newUtil = newCostoTotal * (finalPorcentaje / 100);
+                setEditingServicioForm({ 
+                  ...editingServicioForm, 
+                  costo_hombre_dia: val,
+                  utilidad: Number(newUtil.toFixed(2))
+                });
+              })}
+              onBlur={(e) => {
+                const num = parseFloat(e.target.value);
+                if (!isNaN(num)) {
+                  const min = parseFloat(editingServicioForm.costo_min || 0);
+                  const max = parseFloat(editingServicioForm.costo_max || 0);
+                  let val = num;
+                  if (min > 0 && val < min) {
+                    val = min;
+                    toast.warning(`El costo debe estar en el rango de ${formatMoneySymbol(min)} a ${formatMoneySymbol(max)}. Se ajustó al mínimo.`, "Límite de Costo");
+                  } else if (max > 0 && val > max) {
+                    val = max;
+                    toast.warning(`El costo debe estar en el rango de ${formatMoneySymbol(min)} a ${formatMoneySymbol(max)}. Se ajustó al máximo.`, "Límite de Costo");
+                  }
+                  
+                  const finalHombres = Number(editingServicioForm.cantidad_hombres || 0);
+                  const finalDias = Number(editingServicioForm.cantidad_dias || 0);
+                  const newCostoTotal = finalHombres * finalDias * val;
+                  const finalPorcentaje = Number(editingServicioForm.porcentaje || 0);
+                  const newUtil = newCostoTotal * (finalPorcentaje / 100);
+                  
+                  setEditingServicioForm({
+                    ...editingServicioForm,
+                    costo_hombre_dia: Number(val.toFixed(2)),
+                    utilidad: Number(newUtil.toFixed(2))
+                  });
+                }
+              }}
               onFocus={(e) => e.target.select()}
             />
           </td>
           <td className="px-2 py-1">
             <div className="flex flex-col gap-1 items-center justify-center text-center">
-              <span className="text-[10.5px] font-bold text-gray-700">
-                {formatMoneySymbol(calculatedUtilidad)}
-              </span>
+              {/* Utility amount input */}
+              <div className="relative flex items-center justify-center w-full">
+                <span className="absolute left-1.5 text-[9px] text-gray-400">
+                {(tipoMoneda === 'S' || tipoMoneda === 'PEN') ? 'S/' : '$'}
+                </span>
+                <input
+                  type="text"
+                  data-field="utilidad"
+                  onKeyDown={handleKeyDown}
+                  className="w-full text-[11px] border border-gray-300 text-right pr-1 pl-4 rounded py-0.5 font-bold text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                  value={editingServicioForm.utilidad === undefined || editingServicioForm.utilidad === null ? "" : editingServicioForm.utilidad}
+                  onChange={(e) => {
+                    handleDecimalChange(e, (val) => {
+                      const finalHombres = Number(editingServicioForm.cantidad_hombres || 0);
+                      const finalDias = Number(editingServicioForm.cantidad_dias || 0);
+                      const finalCosto = Number(editingServicioForm.costo_hombre_dia || 0);
+                      const costoTotal = finalHombres * finalDias * finalCosto;
+                      
+                      let valNum = Number(val || 0);
+                      if (valNum > costoTotal && costoTotal > 0) {
+                        toast.warning("El monto de utilidad no puede superar el costo total del ítem (100%). Se limitó al máximo.", "Límite de Utilidad");
+                        valNum = costoTotal;
+                        val = costoTotal.toFixed(2);
+                      }
+                      
+                      const computedPct = costoTotal > 0 ? (valNum / costoTotal) * 100 : 0;
+                      setEditingServicioForm({
+                        ...editingServicioForm,
+                        utilidad: val,
+                        porcentaje: Number(computedPct.toFixed(2))
+                      });
+                    });
+                  }}
+                  onBlur={(e) => {
+                    const num = parseFloat(e.target.value);
+                    if (!isNaN(num)) {
+                      const finalHombres = Number(editingServicioForm.cantidad_hombres || 0);
+                      const finalDias = Number(editingServicioForm.cantidad_dias || 0);
+                      const finalCosto = Number(editingServicioForm.costo_hombre_dia || 0);
+                      const costoTotal = finalHombres * finalDias * finalCosto;
+                      
+                      let valNum = num;
+                      if (valNum > costoTotal && costoTotal > 0) {
+                        valNum = costoTotal;
+                      }
+                      const computedPct = costoTotal > 0 ? (valNum / costoTotal) * 100 : 0;
+                      setEditingServicioForm({
+                        ...editingServicioForm,
+                        utilidad: Number(valNum.toFixed(2)),
+                        porcentaje: Number(computedPct.toFixed(2))
+                      });
+                    }
+                  }}
+                  onFocus={(e) => e.target.select()}
+                />
+              </div>
+              
               <div className="relative flex items-center justify-center w-full">
                 <input
                   type="text"
@@ -12967,7 +13604,47 @@ const SortableItemServicioRow = ({
                   onKeyDown={handleKeyDown}
                   className="w-full text-[10px] border border-gray-300 text-center rounded px-1 py-0.5 font-medium text-gray-500 bg-white"
                   value={editingServicioForm.porcentaje === undefined || editingServicioForm.porcentaje === null ? "" : editingServicioForm.porcentaje}
-                  onChange={(e) => handleDecimalChange(e, (val) => setEditingServicioForm({ ...editingServicioForm, porcentaje: val }))}
+                  onChange={(e) => handleDecimalChange(e, (val) => {
+                    let valNum = Number(val || 0);
+                    if (valNum > 100) {
+                      toast.warning("El porcentaje de utilidad no puede superar el 100%. Se limitó al máximo.", "Límite de Utilidad");
+                      valNum = 100;
+                      val = 100;
+                    }
+                    
+                    const finalHombres = Number(editingServicioForm.cantidad_hombres || 0);
+                    const finalDias = Number(editingServicioForm.cantidad_dias || 0);
+                    const finalCosto = Number(editingServicioForm.costo_hombre_dia || 0);
+                    const costoTotal = finalHombres * finalDias * finalCosto;
+                    const computedUtil = costoTotal * (valNum / 100);
+                    
+                    setEditingServicioForm({
+                      ...editingServicioForm,
+                      porcentaje: val,
+                      utilidad: Number(computedUtil.toFixed(2))
+                    });
+                  })}
+                  onBlur={(e) => {
+                    const num = parseFloat(e.target.value);
+                    if (!isNaN(num)) {
+                      let valNum = num;
+                      if (valNum > 100) {
+                        valNum = 100;
+                      }
+                      
+                      const finalHombres = Number(editingServicioForm.cantidad_hombres || 0);
+                      const finalDias = Number(editingServicioForm.cantidad_dias || 0);
+                      const finalCosto = Number(editingServicioForm.costo_hombre_dia || 0);
+                      const costoTotal = finalHombres * finalDias * finalCosto;
+                      const computedUtil = costoTotal * (valNum / 100);
+                      
+                      setEditingServicioForm({
+                        ...editingServicioForm,
+                        porcentaje: Number(valNum.toFixed(2)),
+                        utilidad: Number(computedUtil.toFixed(2))
+                      });
+                    }
+                  }}
                   onFocus={(e) => e.target.select()}
                 />
                 <span className="absolute right-1 text-[9px] text-gray-400">%</span>
@@ -13192,9 +13869,61 @@ const SortableItemServicioRow = ({
             </td>
             <td className="px-2 py-1">
               <div className="flex flex-col gap-1 items-center justify-center text-center">
-                <span className="text-[10.5px] font-bold text-gray-700">
-                  {formatMoneySymbol(calculatedUtilidad)}
-                </span>
+                {/* Utility amount input */}
+                <div className="relative flex items-center justify-center w-full">
+                  <span className="absolute left-1.5 text-[9px] text-gray-400">
+                    {(tipoMoneda === 'S' || tipoMoneda === 'PEN') ? 'S/' : '$'}
+                  </span>
+                  <input
+                    type="text"
+                    data-field="utilidad"
+                    onKeyDown={handleKeyDown}
+                    className="w-full text-[11px] border border-gray-300 text-right pr-1 pl-4 rounded py-0.5 font-bold text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                    value={editingServicioForm.utilidad === undefined || editingServicioForm.utilidad === null ? "" : editingServicioForm.utilidad}
+                    onChange={(e) => {
+                      handleDecimalChange(e, (val) => {
+                        const finalHombres = Number(editingServicioForm.cantidad_hombres || 0);
+                        const finalCosto = Number(editingServicioForm.costo_hombre_dia || 0);
+                        const costoTotal = finalHombres * finalCosto;
+                        
+                        let valNum = Number(val || 0);
+                        if (valNum > costoTotal && costoTotal > 0) {
+                          toast.warning("El monto de utilidad no puede superar el costo total del ítem (100%). Se limitó al máximo.", "Límite de Utilidad");
+                          valNum = costoTotal;
+                          val = costoTotal.toFixed(2);
+                        }
+                        
+                        const computedPct = costoTotal > 0 ? (valNum / costoTotal) * 100 : 0;
+                        setEditingServicioForm({
+                          ...editingServicioForm,
+                          utilidad: val,
+                          porcentaje: Number(computedPct.toFixed(2))
+                        });
+                      });
+                    }}
+                    onBlur={(e) => {
+                      const num = parseFloat(e.target.value);
+                      if (!isNaN(num)) {
+                        const finalHombres = Number(editingServicioForm.cantidad_hombres || 0);
+                        const finalCosto = Number(editingServicioForm.costo_hombre_dia || 0);
+                        const costoTotal = finalHombres * finalCosto;
+                        
+                        let valNum = num;
+                        if (valNum > costoTotal && costoTotal > 0) {
+                          valNum = costoTotal;
+                        }
+                        const computedPct = costoTotal > 0 ? (valNum / costoTotal) * 100 : 0;
+                        setEditingServicioForm({
+                          ...editingServicioForm,
+                          utilidad: Number(valNum.toFixed(2)),
+                          porcentaje: Number(computedPct.toFixed(2))
+                        });
+                      }
+                    }}
+                    onFocus={(e) => e.target.select()}
+                  />
+                </div>
+                
                 <div className="relative flex items-center justify-center w-full">
                   <input
                     type="text"
@@ -13202,7 +13931,45 @@ const SortableItemServicioRow = ({
                     onKeyDown={handleKeyDown}
                     className="w-full text-[10px] border border-gray-300 text-center rounded px-1 py-0.5 font-medium text-gray-500 bg-white"
                     value={editingServicioForm.porcentaje === undefined || editingServicioForm.porcentaje === null ? "" : editingServicioForm.porcentaje}
-                    onChange={(e) => handleDecimalChange(e, (val) => setEditingServicioForm({ ...editingServicioForm, porcentaje: val }))}
+                    onChange={(e) => handleDecimalChange(e, (val) => {
+                      let valNum = Number(val || 0);
+                      if (valNum > 100) {
+                        toast.warning("El porcentaje de utilidad no puede superar el 100%. Se limitó al máximo.", "Límite de Utilidad");
+                        valNum = 100;
+                        val = 100;
+                      }
+                      
+                      const finalHombres = Number(editingServicioForm.cantidad_hombres || 0);
+                      const finalCosto = Number(editingServicioForm.costo_hombre_dia || 0);
+                      const costoTotal = finalHombres * finalCosto;
+                      const computedUtil = costoTotal * (valNum / 100);
+                      
+                      setEditingServicioForm({
+                        ...editingServicioForm,
+                        porcentaje: val,
+                        utilidad: Number(computedUtil.toFixed(2))
+                      });
+                    })}
+                    onBlur={(e) => {
+                      const num = parseFloat(e.target.value);
+                      if (!isNaN(num)) {
+                        let valNum = num;
+                        if (valNum > 100) {
+                          valNum = 100;
+                        }
+                        
+                        const finalHombres = Number(editingServicioForm.cantidad_hombres || 0);
+                        const finalCosto = Number(editingServicioForm.costo_hombre_dia || 0);
+                        const costoTotal = finalHombres * finalCosto;
+                        const computedUtil = costoTotal * (valNum / 100);
+                        
+                        setEditingServicioForm({
+                          ...editingServicioForm,
+                          porcentaje: Number(valNum.toFixed(2)),
+                          utilidad: Number(computedUtil.toFixed(2))
+                        });
+                      }
+                    }}
                     onFocus={(e) => e.target.select()}
                   />
                   <span className="absolute right-1 text-[9px] text-gray-400">%</span>
@@ -13334,16 +14101,29 @@ const SortableItemServicioRow = ({
             </td>
             <td 
               className="px-3 py-1.5 text-center cursor-pointer"
-              onDoubleClick={(e) => {
-                if (!isReadOnly) {
-                  e.stopPropagation();
-                  handleStartEditingItemInline(item, 'porcentaje');
-                }
-              }}
+              onDoubleClick={(e) => e.stopPropagation()}
             >
-              <div className="flex flex-col items-center justify-center gap-0.5 whitespace-nowrap">
-                <span className="text-[12.5px] font-extrabold text-slate-800">{formatMoneySymbol(rowUtilidad)}</span>
-                <span className="text-[10px] font-black text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded-full border border-indigo-100">
+              <div className="flex flex-col items-center justify-center gap-0.5 whitespace-nowrap select-none">
+                <span 
+                  className="text-[12.5px] font-extrabold text-slate-800 hover:text-indigo-600 transition-colors"
+                  onDoubleClick={(e) => {
+                    if (!isReadOnly) {
+                      e.stopPropagation();
+                      handleStartEditingItemInline(item, 'utilidad');
+                    }
+                  }}
+                >
+                  {formatMoneySymbol(rowUtilidad)}
+                </span>
+                <span 
+                  className="text-[10px] font-black text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded-full border border-indigo-100 hover:bg-indigo-100 transition-colors"
+                  onDoubleClick={(e) => {
+                    if (!isReadOnly) {
+                      e.stopPropagation();
+                      handleStartEditingItemInline(item, 'porcentaje');
+                    }
+                  }}
+                >
                   {rowPorcentaje.toFixed(1)}%
                 </span>
               </div>
@@ -13496,16 +14276,29 @@ const SortableItemServicioRow = ({
             </td>
             <td 
               className="px-3 py-1.5 text-center cursor-pointer"
-              onDoubleClick={(e) => {
-                if (!isReadOnly) {
-                  e.stopPropagation();
-                  handleStartEditingItemInline(item, 'porcentaje');
-                }
-              }}
+              onDoubleClick={(e) => e.stopPropagation()}
             >
-              <div className="flex flex-col items-center justify-center gap-0.5 whitespace-nowrap">
-                <span className="text-[12.5px] font-extrabold text-slate-800">{formatMoneySymbol(rowUtilidad)}</span>
-                <span className="text-[10px] font-black text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded-full border border-indigo-100">
+              <div className="flex flex-col items-center justify-center gap-0.5 whitespace-nowrap select-none">
+                <span 
+                  className="text-[12.5px] font-extrabold text-slate-800 hover:text-indigo-600 transition-colors"
+                  onDoubleClick={(e) => {
+                    if (!isReadOnly) {
+                      e.stopPropagation();
+                      handleStartEditingItemInline(item, 'utilidad');
+                    }
+                  }}
+                >
+                  {formatMoneySymbol(rowUtilidad)}
+                </span>
+                <span 
+                  className="text-[10px] font-black text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded-full border border-indigo-100 hover:bg-indigo-100 transition-colors"
+                  onDoubleClick={(e) => {
+                    if (!isReadOnly) {
+                      e.stopPropagation();
+                      handleStartEditingItemInline(item, 'porcentaje');
+                    }
+                  }}
+                >
                   {rowPorcentaje.toFixed(1)}%
                 </span>
               </div>

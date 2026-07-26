@@ -2902,7 +2902,7 @@ export default function CotizacionNuevaModal({ open, onClose, cotizacion, modo, 
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-3 gap-3">
                   <InputField
                     inline
                     size="sm" type="date"
@@ -2975,7 +2975,7 @@ export default function CotizacionNuevaModal({ open, onClose, cotizacion, modo, 
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 2xl:grid-cols-2 gap-3">
                 <SelectField
                   inline
                   size="sm"

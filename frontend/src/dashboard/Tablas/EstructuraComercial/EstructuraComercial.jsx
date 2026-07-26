@@ -41,11 +41,12 @@ export default function EstructuraComercial() {
         return <TablaRepresentantes />;
       default:
         return (
-          <div className="flex-1 p-8 flex flex-col items-center justify-center text-slate-400">
+          <div className="flex-1 flex flex-col items-center justify-center text-slate-400 bg-white rounded-2xl border border-slate-200 shadow-sm p-8">
             <div className="bg-slate-100 p-4 rounded-full mb-4">
               {TABS.find(t => t.id === tabActiva)?.icon}
             </div>
-            <p className="text-sm font-medium">Contenedor para {tabActiva}</p>
+            <p className="text-xs font-black uppercase tracking-wider text-slate-700">Centros de Costo</p>
+            <p className="text-xs text-slate-400 mt-1 uppercase font-bold tracking-widest">Vista informativa de control financiero</p>
           </div>
         );
     }
@@ -55,80 +56,51 @@ export default function EstructuraComercial() {
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="min-h-screen w-full flex flex-col bg-white font-sans"
+      className="flex-1 flex flex-col lg:flex-row min-h-0 bg-slate-50/20 font-sans overflow-hidden"
     >
-      {/* HEADER TIPO JIRA */}
-      <div className="sticky top-0 z-30 bg-white border-b border-slate-200 px-6 pt-4 flex flex-col gap-1">
-        
-        {/* BREADCRUMB & TÍTULO */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div className="flex-1 min-w-0">
-            <nav className="flex items-center gap-2 text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-1">
-              <span>Configuración</span>
-              <span>/</span>
-              <span>Tablas Maestras</span>
-            </nav>
-
-            <div className="flex items-center gap-2">
-              <div className="bg-amber-500/10 text-amber-600 w-7 h-7 rounded-md flex items-center justify-center shrink-0">
-                <Database className="w-4 h-4" />
-              </div>
-              <h1 className="text-lg font-semibold text-slate-800 tracking-tight">
-                Estructura y Comercial
-              </h1>
-            </div>
-          </div>
-
-          {/* ACCIÓN GLOBAL */}
-          <div className="flex items-center gap-2">
-            <Button className="bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-medium px-4 h-8 rounded-md flex items-center gap-2 shadow-sm transition">
-              <Plus size={14} />
-              Crear Nuevo
-            </Button>
+      {/* PANEL IZQUIERDO (TABS DE ESTRUCTURA) */}
+      <div className="w-full lg:w-80 bg-white border-b lg:border-b-0 lg:border-r border-slate-200 p-6 flex flex-col shrink-0">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+              <Database size={16} className="text-amber-500" />
+              Estructura
+            </h2>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Tablas de Negocio</p>
           </div>
         </div>
 
-        {/* DESCRIPCIÓN DE LA SECCIÓN */}
-        <div className="mt-2 flex items-center gap-2 text-slate-500 text-xs pb-1">
-          <Info size={14} className="text-amber-500" />
-          <p>Estas tablas definen la estructura organizacional y los actores comerciales principales.</p>
-        </div>
-
-        {/* SUBNAV (TABS) */}
-        <div className="flex items-center gap-2 mt-4 overflow-x-auto no-scrollbar">
+        <div className="flex-1 overflow-y-auto space-y-1 pr-1">
           {TABS.map((tab) => {
-            const isActive = tabActiva === tab.id;
+            const isSelected = tabActiva === tab.id;
             return (
-              <button
+              <div
                 key={tab.id}
                 onClick={() => setTabActiva(tab.id)}
-                className={`group relative flex items-center gap-2 px-3 pb-3 text-sm font-medium transition-all outline-none ${
-                  isActive ? "text-cyan-600" : "text-slate-600 hover:bg-slate-50"
+                className={`group flex items-center gap-3 p-3.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                  isSelected
+                    ? "bg-slate-900 border-slate-900 text-white shadow-md shadow-slate-100/50"
+                    : "bg-white hover:bg-slate-50 border-slate-150 text-slate-700"
                 }`}
               >
-                <span className={`${isActive ? "text-cyan-600" : "text-slate-400 group-hover:text-slate-600"}`}>
+                <span className={isSelected ? "text-cyan-400" : "text-slate-400"}>
                   {tab.icon}
                 </span>
-                <span>{tab.label}</span>
-
-                {isActive && (
-                  <motion.div
-                    layoutId="activeTabMaestra"
-                    className="absolute bottom-0 left-0 right-0 h-[3px] bg-cyan-600 rounded-t-full"
-                    transition={{ type: "spring", bounce: 0.2, duration: 0.4 }}
-                  />
-                )}
-              </button>
+                <div className="flex-1 min-w-0">
+                  <span className="block truncate">{tab.label}</span>
+                  <span className={`block text-[9px] font-medium leading-none mt-0.5 ${isSelected ? "text-slate-400" : "text-slate-500"}`}>
+                    {tab.desc}
+                  </span>
+                </div>
+              </div>
             );
           })}
         </div>
       </div>
 
-      {/* CONTENIDO DINÁMICO */}
-      <div className="flex-1 min-h-0 overflow-hidden bg-slate-50/30 p-6">
-        <div className="h-full bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden flex flex-col">
-          {renderContent()}
-        </div>
+      {/* PANEL DERECHO (CONTENIDO DE TABLA SELECCIONADA) */}
+      <div className="flex-1 p-6 flex flex-col min-w-0 overflow-hidden">
+        {renderContent()}
       </div>
     </motion.div>
   );

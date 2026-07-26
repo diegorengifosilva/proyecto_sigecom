@@ -20,6 +20,7 @@ urlpatterns = [
     path('lista_aperturas/', views.lista_aperturas, name='lista_aperturas'),
     path('apertura_detalle/<int:id_apertura>/', views.apertura_detalle, name='apertura_detalle'),
     path('apertura_detalle/<int:id_apertura>/subir_oc/', views.subir_oc_apertura, name='subir_oc_apertura'),
+    path('apertura_detalle/<int:id_apertura>/reprocesar_oc/', views.reprocesar_oc_apertura, name='reprocesar_oc_apertura'),
     path('ocfiles/ver/<int:id_apertura>/', views.ver_oc_pdf, name='ver_oc_pdf'),
     path('aperturas_por_registro/<int:id_registro>/', views.aperturas_por_registro, name='aperturas_por_registro'),
     path('aperturas_por_registro/<int:id_registro>/nueva_oc/', views.crear_nueva_oc, name='crear_nueva_oc'),

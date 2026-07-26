@@ -52,9 +52,26 @@ export const useCotizacionAcciones = (numReg, onActionSuccess) => {
 
   // 3. Eliminar Cotización
   const eliminarCotizacion = useMutation({
-    mutationFn: () => api.delete(`cotizaciones/eliminar/${numReg}/`),
-    onSuccess: () => {
-      toast.delete("La cotización ha sido eliminada del sistema", "Registro Eliminado");
+    mutationFn: (tipoParam) => {
+      const path = window.location.pathname;
+      let tipo = typeof tipoParam === 'string' ? tipoParam : null;
+      if (!tipo) {
+        if (path.includes("/oportunidades")) tipo = "oportunidad";
+        else if (path.includes("/aperturas")) tipo = "apertura";
+        else tipo = "cotizacion";
+      }
+      return api.delete(`cotizaciones/eliminar/${numReg}/?tipo=${tipo}`);
+    },
+    onSuccess: (data, variables) => {
+      const path = window.location.pathname;
+      let tipo = typeof variables === 'string' ? variables : null;
+      if (!tipo) {
+        if (path.includes("/oportunidades")) tipo = "oportunidad";
+        else if (path.includes("/aperturas")) tipo = "apertura";
+        else tipo = "cotizacion";
+      }
+
+      toast.delete("El registro ha sido eliminado del sistema", "Registro Eliminado");
       // Refresca las listas de cotizaciones, oportunidades y aperturas
       queryClient.invalidateQueries({ queryKey: ["cotizaciones"], refetchType: "none" });
       queryClient.invalidateQueries({ queryKey: ["oportunidades"], refetchType: "none" });
@@ -63,7 +80,6 @@ export const useCotizacionAcciones = (numReg, onActionSuccess) => {
 
       if (onActionSuccess) onActionSuccess("eliminar");
 
-      const path = window.location.pathname;
       if (path.includes("/oportunidades")) {
         navigate("/sigecom/comercial/oportunidades");
       } else if (path.includes("/aperturas")) {
@@ -72,7 +88,7 @@ export const useCotizacionAcciones = (numReg, onActionSuccess) => {
         navigate("/sigecom/comercial/cotizaciones");
       }
     },
-    onError: () => toast.error("No se pudo eliminar la cotización seleccionada", "Error al Eliminar"),
+    onError: () => toast.error("No se pudo eliminar el registro seleccionado", "Error al Eliminar"),
   });
 
   // 4. Lógica de Guardado
@@ -93,10 +109,12 @@ export const useCotizacionAcciones = (numReg, onActionSuccess) => {
 
   // 5. Enviar Cotización Aprobación
   const enviarCotizacionAprobacion = useMutation({
-    mutationFn: async (id) => {
+    mutationFn: async (arg) => {
+      const id = typeof arg === "object" ? arg.id : arg;
+      const revert = typeof arg === "object" ? !!arg.revert : false;
       const token = localStorage.getItem("access_token");
       const { data } = await api.patch(
-        `cotizaciones/enviar-aprobacion/${id}/`, 
+        `cotizaciones/enviar-aprobacion/${id}/${revert ? "?revert=true" : ""}`, 
         {}, 
         { 
           headers: { 
@@ -104,10 +122,11 @@ export const useCotizacionAcciones = (numReg, onActionSuccess) => {
           } 
         }
       );
-      return data;
+      return { data, revert };
     },
-    onSuccess: (responseData) => {
-      toast.success(responseData.message || "Cotización enviada al cliente exitosamente");
+    onSuccess: (resData) => {
+      const { data: responseData, revert } = resData;
+      toast.success(responseData.message || (revert ? "Estado cambiado a Pendiente de Envío exitosamente" : "Cotización enviada al cliente exitosamente"));
       queryClient.invalidateQueries({ queryKey: ["cotizacion", numReg] });
       queryClient.invalidateQueries({ queryKey: ["cotizacion-detalle", numReg] });
       queryClient.invalidateQueries({ queryKey: ["cotizaciones"], refetchType: "none" });
@@ -115,7 +134,7 @@ export const useCotizacionAcciones = (numReg, onActionSuccess) => {
       queryClient.invalidateQueries({ queryKey: ["aperturas"], refetchType: "none" });
       queryClient.invalidateQueries({ queryKey: ["cotizaciones-aprobacion"], refetchType: "none" });
       
-      if (onActionSuccess) onActionSuccess("enviar-aprobacion", responseData);
+      if (onActionSuccess) onActionSuccess(revert ? "revertir-envio" : "enviar-aprobacion", responseData);
     },
     onError: (error) => {
       const errorMsg = error.response?.data?.error || "Hubo un error al procesar el envío";

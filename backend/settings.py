@@ -130,6 +130,7 @@ DATABASES = {
         "PASSWORD": "270509",
         "HOST": "127.0.0.1",
         "PORT": "3306",
+        "TIME_ZONE": "America/Lima",
         "OPTIONS": {
             "charset": "utf8mb4",
             "conv": dict_conv,
@@ -143,6 +144,7 @@ DATABASES = {
         "PASSWORD": "270509",
         "HOST": "127.0.0.1",
         "PORT": "3306",
+        "TIME_ZONE": "America/Lima",
         "OPTIONS": {
             "charset": "utf8mb4",
             "conv": dict_conv,
