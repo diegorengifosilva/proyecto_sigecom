@@ -6,6 +6,12 @@ echo ===================================================
 cd /d "%~dp0"
 set "PATH=C:\Program Files\GTK3-Runtime Win64\bin;%PATH%"
 
+netstat -ano | find "3307" > nul
+if %errorlevel% neq 0 (
+    echo Iniciando MariaDB en puerto 3307...
+    start "MariaDB SIGECOM" /min "C:\mariadb\bin\mysqld.exe" --datadir=C:\mariadb\data --port=3307 --standalone
+    timeout /t 3 > nul
+)
 
 echo [1/2] Iniciando Backend Django...
 start "Backend SIGECOM 5.0" cmd /k "env\Scripts\activate && python manage.py runserver 0.0.0.0:8000"

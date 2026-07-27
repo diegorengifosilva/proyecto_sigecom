@@ -14,32 +14,32 @@ const Icon = ({ name, className }) => {
 };
 
 const NAV_ITEMS = [
-  { path: "/sigecom/home", label: "Dashboard", icon: "LayoutDashboard" },
-  { path: "/sigecom/comercial", label: "Comercial", icon: "FileText" },
+  { path: "/home", label: "Dashboard", icon: "LayoutDashboard" },
+  { path: "/comercial", label: "Comercial", icon: "FileText" },
   {
-    path: "/sigecom/logistica",
+    path: "/logistica",
     label: "Logística",
     icon: "ClipboardList",
     subItems: [
-      { path: "/sigecom/logistica/tablas", label: "Tablas" }
+      { path: "/logistica/tablas", label: "Tablas" }
     ]
   },
-  { path: "/sigecom/proyectos", label: "Proyectos", icon: "Briefcase" },
-  { path: "/sigecom/compras", label: "Compras", icon: "ShoppingCart" },
-  { path: "/sigecom/almacen", label: "Almacén", icon: "Package" },
-  { path: "/sigecom/finanzas", label: "Finanzas", icon: "DollarSign" },
+  { path: "/proyectos", label: "Proyectos", icon: "Briefcase" },
+  { path: "/compras", label: "Compras", icon: "ShoppingCart" },
+  { path: "/almacen", label: "Almacén", icon: "Package" },
+  { path: "/finanzas", label: "Finanzas", icon: "DollarSign" },
   {
-    path: "/sigecom/maestro/catalogo",
+    path: "/maestro/catalogo",
     label: "Maestro",
     icon: "Database",
     subItems: [
-      { path: "/sigecom/maestro/catalogo", label: "Marcas y Productos" },
-      { path: "/sigecom/maestro/estructura", label: "Estructura y Comercial" },
-      { path: "/sigecom/maestro/parametros", label: "Parámetros y Notas" },
-      { path: "/sigecom/maestro/gastos", label: "Gastos y Personal" }
+      { path: "/maestro/catalogo", label: "Marcas y Productos" },
+      { path: "/maestro/estructura", label: "Estructura y Comercial" },
+      { path: "/maestro/parametros", label: "Parámetros y Notas" },
+      { path: "/maestro/gastos", label: "Gastos y Personal" }
     ]
   },
-  { path: "/sigecom/audit", label: "Auditoría", icon: "ShieldCheck" },
+  { path: "/audit", label: "Auditoría", icon: "ShieldCheck" },
 ];
 
 export default function DashboardLayout() {
@@ -434,7 +434,7 @@ export default function DashboardLayout() {
             <nav className="flex items-center overflow-hidden">
               <ol className="flex items-center space-x-2 text-sm text-gray-500 min-w-0">
                 <li className="hidden sm:block">
-                  <NavLink to="/sigecom/home" className="hover:text-indigo-600 transition-colors">
+                  <NavLink to="/home" className="hover:text-indigo-600 transition-colors">
                     <LucideIcons.Home className="h-4 w-4" />
                   </NavLink>
                 </li>

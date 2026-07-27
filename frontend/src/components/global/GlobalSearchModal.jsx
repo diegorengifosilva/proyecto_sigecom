@@ -28,7 +28,7 @@ export default function GlobalSearchModal({ open, onClose }) {
     {
       label: "Aprobación Cotización",
       description: "Aprobar solicitudes",
-      to: "/sigecom/comercial",
+      to: "/comercial",
     },
   ];
 

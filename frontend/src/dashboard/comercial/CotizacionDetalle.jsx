@@ -2560,7 +2560,7 @@ const EditableGroupRow = ({
                           <div className="flex flex-col gap-1 items-center justify-center text-center">
                             <div className="relative flex items-center justify-center w-full">
                               <span className="absolute left-1 text-[9px] text-gray-400">
-                                {(data?.tipo_moneda === 'S' || data?.tipo_moneda === 'PEN') ? 'S/' : '$'}
+                                {(tipoMoneda === 'S' || tipoMoneda === 'PEN') ? 'S/' : '$'}
                               </span>
                               <input
                                 type="text"
@@ -2791,7 +2791,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       queryClient.invalidateQueries({ queryKey: ["cotizaciones"] });
       queryClient.invalidateQueries({ queryKey: ["oportunidades"] });
       queryClient.invalidateQueries({ queryKey: ["cotizacion", numReg] });
-      navigate(`/sigecom/comercial/cotizaciones/${numReg}`, { replace: true });
+      navigate(`/comercial/cotizaciones/${numReg}`, { replace: true });
     },
     onError: (err) => {
       const errMsg = err.response?.data?.error || "Error al realizar la transición";
@@ -2813,7 +2813,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       queryClient.invalidateQueries({ queryKey: ["cotizaciones"] });
       queryClient.invalidateQueries({ queryKey: ["aperturas"] });
       queryClient.invalidateQueries({ queryKey: ["cotizacion", numReg] });
-      navigate(`/sigecom/comercial/aperturas/${numReg}`, { replace: true });
+      navigate(`/comercial/aperturas/${numReg}`, { replace: true });
     },
     onError: (err) => {
       const errMsg = err.response?.data?.error || "Error al realizar la transición";
@@ -8289,7 +8289,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
         <h3 className="text-lg font-black text-gray-900 uppercase tracking-tight">Error de Carga</h3>
         <p className="text-sm text-gray-500 mt-2">No se pudo encontrar la información solicitada o el servidor no respondió correctamente.</p>
         <button
-          onClick={() => navigate(esOportunidad ? '/sigecom/comercial/oportunidades' : '/sigecom/comercial/cotizaciones')}
+          onClick={() => navigate(esOportunidad ? '/comercial/oportunidades' : '/comercial/cotizaciones')}
           className="mt-6 px-6 py-2.5 bg-gray-900 text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-gray-800 transition-all"
         >
           Volver al Listado
@@ -8310,7 +8310,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
             <div className="flex items-center">
               {/* Botón Atrás */}
               <button
-                onClick={() => navigate(esOportunidad ? '/sigecom/comercial/oportunidades' : '/sigecom/comercial/cotizaciones')}
+                onClick={() => navigate(esOportunidad ? '/comercial/oportunidades' : '/comercial/cotizaciones')}
                 className="mr-5 p-2.5 bg-gray-50 rounded-xl text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all border border-gray-100 group"
               >
                 <Icon name="arrow-left" className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />

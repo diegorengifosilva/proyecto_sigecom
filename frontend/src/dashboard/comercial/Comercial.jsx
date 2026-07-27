@@ -432,7 +432,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
         queryClient.invalidateQueries({ queryKey: ["cotizaciones"] });
         queryClient.invalidateQueries({ queryKey: ["oportunidades"] });
         queryClient.invalidateQueries({ queryKey: ["aperturas"] });
-        navigate(`/sigecom/comercial/cotizaciones/${id_registro_nuevo}`);
+        navigate(`/comercial/cotizaciones/${id_registro_nuevo}`);
       } else {
         toast.error("No se pudo generar la copia");
       }
@@ -458,7 +458,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
         queryClient.invalidateQueries({ queryKey: ["cotizaciones"] });
         queryClient.invalidateQueries({ queryKey: ["oportunidades"] });
         queryClient.invalidateQueries({ queryKey: ["aperturas"] });
-        navigate(`/sigecom/comercial/cotizaciones/${id_registro_nuevo}`);
+        navigate(`/comercial/cotizaciones/${id_registro_nuevo}`);
       } else {
         toast.error("No se pudo crear la nueva versión");
       }
@@ -499,7 +499,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
       toast.success("La cotización ha pasado a estado Apertura", "Transición Exitosa");
       queryClient.invalidateQueries({ queryKey: ["cotizaciones"] });
       queryClient.invalidateQueries({ queryKey: ["aperturas"] });
-      navigate(`/sigecom/comercial/aperturas/${item.id_registro}`, { replace: true });
+      navigate(`/comercial/aperturas/${item.id_registro}`, { replace: true });
     } catch (error) {
       console.error(error);
       const errMsg = error.response?.data?.error || "Error al realizar la transición";
@@ -520,7 +520,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
       toast.success("La oportunidad ha pasado a estado Cotización", "Transición Exitosa");
       queryClient.invalidateQueries({ queryKey: ["cotizaciones"] });
       queryClient.invalidateQueries({ queryKey: ["oportunidades"] });
-      navigate(`/sigecom/comercial/cotizaciones/${item.id_registro}`, { replace: true });
+      navigate(`/comercial/cotizaciones/${item.id_registro}`, { replace: true });
     } catch (error) {
       console.error(error);
       const errMsg = error.response?.data?.error || "Error al realizar la transición";
@@ -1227,7 +1227,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
         {/* 1. OPORTUNIDADES */}
         <button
           type="button"
-          onClick={() => navigate("/sigecom/comercial/oportunidades")}
+          onClick={() => navigate("/comercial/oportunidades")}
           className={`w-full text-left bg-white p-3 rounded-2xl border transition-all duration-300 relative overflow-hidden group shadow-sm cursor-pointer active:scale-[0.98] ${currentTab === "oportunidades"
               ? "border-indigo-500 ring-2 ring-indigo-500/10 shadow-md"
               : "border-gray-100 hover:border-indigo-300 hover:shadow-md"
@@ -1273,7 +1273,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
         {/* 2. COTIZACIONES */}
         <button
           type="button"
-          onClick={() => navigate("/sigecom/comercial/cotizaciones")}
+          onClick={() => navigate("/comercial/cotizaciones")}
           className={`w-full text-left bg-white p-3 rounded-2xl border transition-all duration-300 relative overflow-hidden group shadow-sm cursor-pointer active:scale-[0.98] ${currentTab === "cotizaciones"
               ? "border-blue-500 ring-2 ring-blue-500/10 shadow-md"
               : "border-gray-100 hover:border-blue-300 hover:shadow-md"
@@ -1319,7 +1319,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
         {/* 3. APERTURAS */}
         <button
           type="button"
-          onClick={() => navigate("/sigecom/comercial/aperturas")}
+          onClick={() => navigate("/comercial/aperturas")}
           className={`w-full text-left bg-white p-3 rounded-2xl border transition-all duration-300 relative overflow-hidden group shadow-sm cursor-pointer active:scale-[0.98] ${
             currentTab === "aperturas"
               ? "border-amber-500 ring-2 ring-amber-500/10 shadow-md"
@@ -1366,7 +1366,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
         {/* 4. PROGRAMACIÓN */}
         <button
           type="button"
-          onClick={() => navigate("/sigecom/comercial/programacion")}
+          onClick={() => navigate("/comercial/programacion")}
           className={`w-full text-left bg-white p-3 rounded-2xl border transition-all duration-300 relative overflow-hidden group shadow-sm cursor-pointer active:scale-[0.98] ${currentTab === "programacion"
               ? "border-emerald-500 ring-2 ring-emerald-500/10 shadow-md"
               : "border-gray-100 hover:border-emerald-300 hover:shadow-md"
@@ -2023,7 +2023,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
             pageSize={pageSize}
             totalPages={totalPages}
             onPageChange={setCurrentPage}
-            onRowClick={(id) => navigate(`/sigecom/comercial/cotizaciones/${id}`)}
+            onRowClick={(id) => navigate(`/comercial/cotizaciones/${id}`)}
             onRowContextMenu={handleRowContextMenu}
             pinnedIds={pinnedIds}
           />
@@ -2036,7 +2036,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
             currentPage={currentPageOportunidades}
             pageSize={pageSize}
             onPageChange={setCurrentPageOportunidades}
-            onRowClick={(id) => navigate(`/sigecom/comercial/oportunidades/${id}`)}
+            onRowClick={(id) => navigate(`/comercial/oportunidades/${id}`)}
             onRowContextMenu={handleRowContextMenu}
             pinnedIds={pinnedIds}
           />
@@ -2049,7 +2049,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
             currentPage={currentPageApertura}
             pageSize={pageSize}
             onPageChange={setCurrentPageApertura}
-            onRowClick={(cotizacionId) => navigate(`/sigecom/comercial/aperturas/${cotizacionId}`)}
+            onRowClick={(cotizacionId) => navigate(`/comercial/aperturas/${cotizacionId}`)}
             onRowContextMenu={handleRowContextMenu}
             pinnedIds={pinnedIds}
           />

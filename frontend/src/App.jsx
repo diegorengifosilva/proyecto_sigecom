@@ -38,7 +38,7 @@ import * as Icons from "lucide-react";
 // Redirecciona rutas singulares legacy a sus plurales unificados
 const RedirectToPlural = ({ type }) => {
   const { numReg } = useParams();
-  return <Navigate to={`/sigecom/comercial/${type}/${numReg}`} replace />;
+  return <Navigate to={`/comercial/${type}/${numReg}`} replace />;
 };
 
 export default function App() {
@@ -56,7 +56,7 @@ export default function App() {
 
             {/* Base Protected Path */}
             <Route
-              path="/sigecom/*"
+              path="/*"
               element={
                 <ProtectedRoute>
                   <DashboardLayout />
@@ -127,8 +127,8 @@ export default function App() {
             </Route>
 
             {/* Redirects actualizados */}
-            <Route path="/" element={<Navigate to="/sigecom/comercial" replace />} />
-            <Route path="*" element={<Navigate to="/sigecom/comercial" replace />} />
+            <Route path="/" element={<Navigate to="/comercial" replace />} />
+            <Route path="*" element={<Navigate to="/comercial" replace />} />
           </Routes>
 
         </KeyboardProvider>

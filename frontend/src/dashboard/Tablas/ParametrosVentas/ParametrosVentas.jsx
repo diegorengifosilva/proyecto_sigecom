@@ -306,7 +306,7 @@ export default function ParametrosVentas() {
             </p>
             <div className="pt-2">
               <button 
-                onClick={() => window.location.href = "/sigecom/maestro/gastos?tab=personal"}
+                onClick={() => window.location.href = "/maestro/gastos?tab=personal"}
                 className="w-full py-2.5 px-4 bg-cyan-600 hover:bg-cyan-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md shadow-cyan-100 active:scale-98"
               >
                 Ir a Gastos y Personal

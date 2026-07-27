@@ -2154,7 +2154,7 @@ def subir_archivo(request):
         nombre_guardar = request.POST.get("nombre")  # <--- esto es lo nuevo
 
         if archivo:
-            ruta = r"C:\Users\VC-23031\PROYECTOS\Adj"
+            ruta = r"C:\xampp\htdocs\vc\ocfiles"
             try:
                 # usa el nombre que enviaste desde React
                 with open(os.path.join(ruta, nombre_guardar), "wb+") as destino:
@@ -2170,7 +2170,7 @@ def subir_archivo(request):
 
 @csrf_exempt
 def listar_adjuntos(request, num_reg):
-    carpeta = r"C:\Users\VC-23031\PROYECTOS\Adj"
+    carpeta = r"C:\xampp\htdocs\vc\ocfiles"
     try:
         archivos = []
         # Itera los archivos de la carpeta
@@ -2192,7 +2192,7 @@ def eliminar_archivo(request):
         if not nombre:
             return JsonResponse({"ok": False, "error": "Nombre no recibido"})
 
-        ruta = r"C:\Users\VC-23031\PROYECTOS\Adj"
+        ruta = r"C:\xampp\htdocs\vc\ocfiles"
         path = os.path.join(ruta, nombre)
 
         if not os.path.exists(path):

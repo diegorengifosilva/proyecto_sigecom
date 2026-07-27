@@ -36,7 +36,7 @@ export default function EntradaView() {
 
   const [openNueva, setOpenNueva] = useState(false);
 
-  const goToDetalle = (numReg) => navigate(`/sigecom/logistica/entradas/${numReg}`);
+  const goToDetalle = (numReg) => navigate(`/logistica/entradas/${numReg}`);
 
   const { data: almacenes = [] } = useQuery({
     queryKey: ["almacenes_new"],

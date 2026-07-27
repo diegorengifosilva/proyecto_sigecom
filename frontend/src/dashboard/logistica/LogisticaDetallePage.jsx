@@ -7,7 +7,7 @@ export default function LogisticaDetallePage({ operacion = "E" }) {
   const navigate = useNavigate();
   const location = useLocation();
   const listPath =
-    operacion === "E" ? "/sigecom/logistica/entradas" : "/sigecom/logistica/salidas";
+    operacion === "E" ? "/logistica/entradas" : "/logistica/salidas";
   const tipo = operacion === "E" ? "Entrada" : "Salida";
 
   useEffect(() => {

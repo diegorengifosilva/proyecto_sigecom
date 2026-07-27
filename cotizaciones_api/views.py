@@ -459,7 +459,7 @@ def lista_cotizaciones(request):
             tipo_nombre = c.id_tipo.nombre if c.id_tipo else None
             area_nombre = AREA_MAP.get(c.id_area, "Otros")
             
-            envio = 3 if c.estado_envio == 2 else 2
+            envio = 3 if c.estado_envio in (2, 3) else 2
             fecha_str = format_datetime(c.fecha)
             total_val = str(c.total_cotizacion) if isinstance(c.total_cotizacion, Decimal) else c.total_cotizacion
 
@@ -1290,7 +1290,7 @@ def listar_suministros(request, id_registro):
         import traceback
         tb_str = traceback.format_exc()
         try:
-            with open("c:/Users/VC-23031/PROYECTOS/SIGECOM_5/backend_error_suministros.log", "w", encoding="utf-8") as f:
+            with open("c:/proyecto_sigecom/backend_error_suministros.log", "w", encoding="utf-8") as f:
                 f.write(tb_str)
         except Exception:
             pass
@@ -1656,7 +1656,7 @@ def listar_servicios(request, id_registro):
 @permission_classes([IsAuthenticated])
 def gestionar_adjuntos(request, id_registro):
     # Mantenemos tu ruta física personalizada
-    ruta_carpeta = r"C:\Users\VC-23031\PROYECTOS\Adj"
+    ruta_carpeta = r"C:\xampp\htdocs\vc\ocfiles"
     
     # Validación de seguridad por estado congelado
     cot = Cotizacion.objects.filter(id_registro=id_registro).first()

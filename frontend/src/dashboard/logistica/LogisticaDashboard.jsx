@@ -6,9 +6,9 @@ import EntradaView from "./components/EntradaView";
 import SalidaView from "./components/SalidaView";
 
 const TABS = [
-  { id: "entrada", label: "Entradas", path: "/sigecom/logistica/entradas", icon: <ArrowDownCircle size={14} /> },
-  { id: "salida",  label: "Salidas",  path: "/sigecom/logistica/salidas",  icon: <ArrowUpCircle size={14} /> },
-  { id: "kardex",  label: "Kardex",   path: "/sigecom/logistica/kardex",   icon: <ClipboardList size={14} /> },
+  { id: "entrada", label: "Entradas", path: "/logistica/entradas", icon: <ArrowDownCircle size={14} /> },
+  { id: "salida",  label: "Salidas",  path: "/logistica/salidas",  icon: <ArrowUpCircle size={14} /> },
+  { id: "kardex",  label: "Kardex",   path: "/logistica/kardex",   icon: <ClipboardList size={14} /> },
 ];
 
 export default function LogisticaDashboard({ defaultTab = "entrada" }) {

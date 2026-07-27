@@ -187,7 +187,7 @@ class CotizacionTablaSerializer(serializers.ModelSerializer):
 
     # ── 3. Lógica de Métodos ──
     def get_envio(self, obj):
-        if obj.estado_envio == 2:
+        if obj.estado_envio in (2, 3):
             return 3
         return 2
 
@@ -498,7 +498,7 @@ class CotizacionModalSerializer(serializers.ModelSerializer):
 
     # ── Métodos de Lógica ──
     def get_envio(self, obj):
-        if obj.estado_envio == 2:
+        if obj.estado_envio in (2, 3):
             return 3
         return 2
 

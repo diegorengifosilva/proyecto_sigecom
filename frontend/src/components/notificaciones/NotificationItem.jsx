@@ -48,21 +48,21 @@ export default function NotificationItem({ notif, refresh, setOpen }) {
     if (notif.modulo === "comercial") {
       if (meta.id_registro) {
         if (meta.tipo_alerta === "limite_oportunidad") {
-          navigate(`/sigecom/comercial/oportunidades/${meta.id_registro}`);
+          navigate(`/comercial/oportunidades/${meta.id_registro}`);
         } else {
-          navigate(`/sigecom/comercial/cotizaciones/${meta.id_registro}`);
+          navigate(`/comercial/cotizaciones/${meta.id_registro}`);
         }
       } else {
-        navigate("/sigecom/comercial/cotizaciones");
+        navigate("/comercial/cotizaciones");
       }
     } else if (notif.modulo === "logistica") {
       if (meta.tipo_alerta === "nuevo_movimiento" && meta.num_reg) {
         const route_type = meta.operacion === "E" ? "entradas" : "salidas";
-        navigate(`/sigecom/logistica/${route_type}/${meta.num_reg}`);
+        navigate(`/logistica/${route_type}/${meta.num_reg}`);
       } else if (meta.tipo_alerta === "stock_critico") {
-        navigate("/sigecom/logistica/tablas");
+        navigate("/logistica/tablas");
       } else {
-        navigate("/sigecom/logistica/entradas");
+        navigate("/logistica/entradas");
       }
     }
   };

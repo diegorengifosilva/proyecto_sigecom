@@ -711,7 +711,7 @@ export default function CotizacionNuevaModal({ open, onClose, cotizacion, modo, 
       queryClient.invalidateQueries({ queryKey: ["seguimiento-cotizaciones"] });
 
       if (esNueva && targetNumReg) {
-        navigate(`/sigecom/comercial/oportunidades/${targetNumReg}`);
+        navigate(`/comercial/oportunidades/${targetNumReg}`);
       }
 
       if (onClose) onClose();

@@ -24,7 +24,7 @@ export const useCotizacionAcciones = (numReg, onActionSuccess) => {
       if (onActionSuccess) onActionSuccess("nueva-version", id_registro_nuevo);
 
       // Navega al detalle del nuevo registro generado directamente en cotizaciones
-      navigate(`/sigecom/comercial/cotizaciones/${id_registro_nuevo}`);
+      navigate(`/comercial/cotizaciones/${id_registro_nuevo}`);
     },
     onError: () => toast.error("No se pudo crear la nueva versión de la cotización", "Error de Nueva Versión"),
   });
@@ -45,7 +45,7 @@ export const useCotizacionAcciones = (numReg, onActionSuccess) => {
       if (onActionSuccess) onActionSuccess("copiar", id_registro_nuevo);
 
       // Navega a la copia recién creada directamente en cotizaciones
-      navigate(`/sigecom/comercial/cotizaciones/${id_registro_nuevo}`);
+      navigate(`/comercial/cotizaciones/${id_registro_nuevo}`);
     },
     onError: () => toast.error("No se pudo generar la copia de la cotización", "Error de Copia"),
   });
@@ -81,11 +81,11 @@ export const useCotizacionAcciones = (numReg, onActionSuccess) => {
       if (onActionSuccess) onActionSuccess("eliminar");
 
       if (path.includes("/oportunidades")) {
-        navigate("/sigecom/comercial/oportunidades");
+        navigate("/comercial/oportunidades");
       } else if (path.includes("/aperturas")) {
-        navigate("/sigecom/comercial/aperturas");
+        navigate("/comercial/aperturas");
       } else {
-        navigate("/sigecom/comercial/cotizaciones");
+        navigate("/comercial/cotizaciones");
       }
     },
     onError: () => toast.error("No se pudo eliminar el registro seleccionado", "Error al Eliminar"),

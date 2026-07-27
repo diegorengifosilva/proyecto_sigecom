@@ -36,7 +36,7 @@ export default function SalidaView() {
 
   const [openNueva, setOpenNueva] = useState(false);
 
-  const goToDetalle = (numReg) => navigate(`/sigecom/logistica/salidas/${numReg}`);
+  const goToDetalle = (numReg) => navigate(`/logistica/salidas/${numReg}`);
 
   const { data: almacenes = [] } = useQuery({
     queryKey: ["almacenes_new"],

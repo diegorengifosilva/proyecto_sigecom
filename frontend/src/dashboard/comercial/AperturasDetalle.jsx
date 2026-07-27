@@ -1155,7 +1155,7 @@ export default function AperturasDetalle({ idRegistro }) {
             <div className="flex items-center">
               {/* Botón Atrás */}
               <button
-                onClick={() => navigate('/sigecom/comercial/aperturas')}
+                onClick={() => navigate('/comercial/aperturas')}
                 className="mr-5 p-2.5 bg-gray-50 rounded-xl text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all border border-gray-100 group"
               >
                 <Icon name="arrow-left" className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
