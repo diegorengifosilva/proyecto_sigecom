@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
 import api from "@/services/api";
-import { BriefcaseBusiness, FilePlus, Eye, TrendingUp, DollarSign, BarChart3, Filter, Loader, Calculator, FileSpreadsheet, Wallet2, Landmark, Scale, Coins, User, MoreHorizontal, ClipboardCheck, LayoutDashboard, History, Globe, ListTodo, Layout, Plus, ArrowUpRight, Cpu, Award, FileText, FolderCheck, CalendarRange } from "lucide-react";
+import { BriefcaseBusiness, FilePlus, Eye, TrendingUp, DollarSign, BarChart3, Filter, Loader, Calculator, FileSpreadsheet, Wallet2, Landmark, Scale, Coins, User, MoreHorizontal, ClipboardCheck, LayoutDashboard, History, Globe, ListTodo, Layout, Plus, ArrowUpRight, Cpu, Award, FileText, FolderCheck, CalendarRange, Printer } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { toast } from "react-toastify";
@@ -25,13 +25,14 @@ import GraficoDinamico from "./analisis/GraficoDinamico";
 import AutomatizacionDashboard from "./automatizacion/AutomatizacionDashboard";
 import KpisResumen from "./resumen/KpisResumen";
 import KpisLogistica from "./resumen/KpisLogistica";
-import JarvisInsights from "./resumen/JarvisInsights";
+import VcAiInsights from "./resumen/VcAiInsights";
 import { FilterDropdown, ERPButton } from "@/components/ui/ERPComponents";
 
 export default function CotizacionesHome() {
   const { authUser: user, logout } = useAuth();
   const activeModule = "comercial";
   const [cotizaciones, setCotizaciones] = useState([]);
+  const [viewScope, setViewScope] = useState("global");
   const [stats, setStats] = useState({});
   const [loading, setLoading] = useState(true);
   const [filtro, setFiltro] = useState("Todos");
@@ -63,15 +64,89 @@ export default function CotizacionesHome() {
   });
   const [clientesMap, setClientesMap] = useState({});
   const {
-    data,
+    data: queryData,
     isLoading,
     isFetching,
     error,
   } = useQuery({
-    queryKey: ["cotizaciones", currentFilters],
-    queryFn: () => fetchCotizaciones(currentFilters),
-    keepPreviousData: true,
+    queryKey: ["cotizaciones", currentFilters, viewScope],
+    queryFn: () => fetchCotizaciones({ ...currentFilters, personal: viewScope === "personal" }),
   });
+
+  useEffect(() => {
+    if (queryData) {
+      setCotizaciones(queryData.cotizaciones || []);
+      setStats(queryData.stats || {});
+    }
+  }, [queryData]);
+
+  const {
+    data: cotizacionesAnualData,
+  } = useQuery({
+    queryKey: ["cotizacionesAnual", currentFilters.anno, viewScope],
+    queryFn: async () => {
+      try {
+        const token = localStorage.getItem("access_token");
+        const { data: resData } = await api.get("cotizaciones/lista_cotizaciones/", {
+          headers: { Authorization: `Bearer ${token}` },
+          params: {
+            anno: currentFilters.anno,
+            mes: "%",
+            personal: viewScope === "personal",
+            incluir_oportunidades: true,
+            num_regs: 10000
+          }
+        });
+        const list = resData.tabla || resData.results || [];
+        const cleaned = list.map(item => ({
+          ...item,
+          id_registro: item.id_registro || item.num_reg,
+          codigo: item.codigo || "",
+          fecha: item.fecha || item.cotif,
+          cliente: item.cliente_nombre || item.cliente || "-",
+          comercial_nombre: item.comercial_nombre || "-",
+          comercial_dni: item.comercial_dni || "",
+          id_comercial: item.id_comercial || null,
+          visita_tecnica: item.visita_tecnica || null,
+          fecha_limite: item.fecha_limite || null,
+          estado_nombre: item.estado?.trim() || "-",
+        }));
+        return {
+          cotizaciones: cleaned,
+          alertas: resData.alertas_agendadas || []
+        };
+      } catch (e) {
+        console.error(e);
+        return { cotizaciones: [], alertas: [] };
+      }
+    },
+    keepPreviousData: true
+  });
+
+  const {
+    data: aperturasAnualData,
+  } = useQuery({
+    queryKey: ["aperturasAnual", currentFilters.anno],
+    queryFn: async () => {
+      try {
+        const token = localStorage.getItem("access_token");
+        const { data: resData } = await api.get("cotizaciones/lista_aperturas/", {
+          headers: { Authorization: `Bearer ${token}` },
+          params: {
+            anno: currentFilters.anno,
+            mes: "%",
+            num_regs: 10000
+          }
+        });
+        return resData.tabla || resData.results || [];
+      } catch (e) {
+        console.error("Error cargando aperturas:", e);
+        return [];
+      }
+    },
+    keepPreviousData: true
+  });
+
   const { scrollY } = useScroll();
   const shadowOpacity = useTransform(scrollY, [0, 50], [0, 0.25]);
   const blurValue = useTransform(scrollY, [0, 100], [4, 8]);
@@ -94,9 +169,9 @@ export default function CotizacionesHome() {
 
       const dataLimpia = tabla.map((item) => ({
         ...item,
-        cliente: item.cliente?.trim() || "-",
-        area: item.area?.trim() || "-",
-        estado: item.estado?.trim() || "-",
+        cliente: item.cliente_nombre || item.cliente || "-",
+        area: item.area_nombre || item.area || "-",
+        estado: item.estado_nombre || item.estado || "-",
       }));
 
       dataLimpia.sort((a, b) => {
@@ -108,12 +183,12 @@ export default function CotizacionesHome() {
 
       setCotizaciones(dataLimpia);
       setStats(dashboard);
-      return dataLimpia;
+      return { cotizaciones: dataLimpia, stats: dashboard };
     } catch (e) {
       console.error("Error cargando cotizaciones:", e);
       if (e?.response?.status === 401) logout();
       toast.error("Error cargando las cotizaciones.");
-      return [];
+      return { cotizaciones: [], stats: {} };
     } finally {
       setLoading(false);
     }
@@ -175,13 +250,56 @@ export default function CotizacionesHome() {
     })
     .sort((a, b) => new Date(b.cotif) - new Date(a.cotif));
 
-  // Aplicamos el filtro de año y mes
+  // Aplicamos el filtro de año, mes y alcance personal
   const cotizacionesFiltradasPorFecha = cotizaciones.filter(c => {
     const fecha = new Date(c.fecha || c.cotif);
     const pasaAnno = !currentFilters.anno || fecha.getFullYear() === Number(currentFilters.anno);
     const pasaMes = currentFilters.mes === "%" || (fecha.getMonth() + 1 === Number(currentFilters.mes));
-    return pasaAnno && pasaMes;
+    
+    let pasaAlcance = true;
+    if (viewScope === "personal" && user) {
+      const userId = user.id_usuario || user.id || user.dni;
+      const cUserId = c.id_comercial;
+      pasaAlcance = String(cUserId) === String(userId) || 
+                    String(c.comercial_dni) === String(user.dni) || 
+                    (c.comercial_nombre && user.nombre_completo && c.comercial_nombre.trim().toLowerCase() === user.nombre_completo.trim().toLowerCase());
+    }
+    return pasaAnno && pasaMes && pasaAlcance;
   });
+
+  const todasCotizacionesFiltradasPorAlcance = useMemo(() => {
+    return cotizacionesAnualData?.cotizaciones || [];
+  }, [cotizacionesAnualData]);
+
+  const todasAlertasFiltradasPorAlcance = useMemo(() => {
+    const list = cotizacionesAnualData?.alertas || [];
+    return list.filter(al => {
+      let pasaAlcance = true;
+      if (viewScope === "personal" && user) {
+        const userId = user.id_usuario || user.id || user.dni;
+        const cUserId = al.id_comercial;
+        pasaAlcance = String(cUserId) === String(userId) || 
+                      String(al.id_comercial) === String(user.dni) || 
+                      (al.comercial_nombre && user.nombre_completo && al.comercial_nombre.trim().toLowerCase() === user.nombre_completo.trim().toLowerCase());
+      }
+      return pasaAlcance;
+    });
+  }, [cotizacionesAnualData, viewScope, user]);
+
+  const todasAperturasFiltradasPorAlcance = useMemo(() => {
+    const list = aperturasAnualData || [];
+    return list.filter(ap => {
+      let pasaAlcance = true;
+      if (viewScope === "personal" && user) {
+        const userId = user.id_usuario || user.id || user.dni;
+        const cUserId = ap.id_comercial;
+        pasaAlcance = String(cUserId) === String(userId) || 
+                      String(ap.id_registro?.comercial_dni) === String(user.dni) ||
+                      (ap.id_registro?.comercial_nombre && user.nombre_completo && ap.id_registro.comercial_nombre.trim().toLowerCase() === user.nombre_completo.trim().toLowerCase());
+      }
+      return pasaAlcance;
+    });
+  }, [aperturasAnualData, viewScope, user]);
 
   const totalFiltrado = cotizacionesFiltradasPorFecha.length;
 
@@ -282,6 +400,37 @@ export default function CotizacionesHome() {
     );
   };
 
+  const exportarReporte = async (tipo) => {
+    try {
+      const token = localStorage.getItem("access_token");
+      const url = tipo === "mensual" 
+        ? `dashboard/exportar/mensual/?anno=${currentFilters.anno}&mes=${currentFilters.mes}`
+        : `dashboard/exportar/anual/?anno=${currentFilters.anno}`;
+
+      toast.info("Generando reporte Excel...");
+      
+      const response = await api.get(url, {
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: 'blob'
+      });
+
+      const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const link = document.createElement('a');
+      link.href = window.URL.createObjectURL(blob);
+      const filename = tipo === "mensual" 
+        ? `SGC.REG-004 Seguimiento de OC ${currentFilters.anno || new Date().getFullYear()}.xlsx` 
+        : `reporte_anual_${currentFilters.anno || new Date().getFullYear()}.xlsx`;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      toast.success("¡Reporte descargado con éxito!");
+    } catch (err) {
+      console.error("Error exportando reporte", err);
+      toast.error("Ocurrió un error al generar el reporte Excel.");
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -289,32 +438,96 @@ export default function CotizacionesHome() {
       transition={{ duration: 0.5 }}
       className="min-h-screen w-full flex flex-col bg-slate-50/30 font-sans"
     >
+      <style dangerouslySetInnerHTML={{__html: `
+        @media print {
+          /* Ocultar elementos de navegación y acción no imprimibles */
+          aside, nav, header, button, .no-print, .select-none, [role="tablist"] {
+            display: none !important;
+          }
+          /* Estirar y forzar visibilidad en todos los niveles del DOM */
+          body, html, #root, .h-screen, .w-screen, .overflow-hidden, .overflow-auto, main, .flex-1, .min-h-screen {
+            background: white !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+            min-height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
+            position: static !important;
+          }
+          .p-6 {
+            padding: 0 !important;
+          }
+          .grid-cols-12 {
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 1.5rem !important;
+          }
+          .col-span-12, .lg:col-span-8, .xl:col-span-9, .lg:col-span-4, .xl:col-span-3 {
+            width: 100% !important;
+            max-width: 100% !important;
+          }
+          /* Mantener integridad de las secciones y gráficos */
+          section, .bg-white {
+            page-break-inside: avoid !important;
+            margin-bottom: 2rem !important;
+          }
+          /* Asegurar que Recharts se dibuje al 100% en PDF */
+          .recharts-responsive-container {
+            width: 100% !important;
+            height: 250px !important;
+          }
+        }
+      `}} />
       <div className="w-full space-y-5 md:space-y-6 flex flex-col p-6 w-full animate-in fade-in duration-500">
         
         {/* HEADER BLOCK */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          {/* IZQUIERDA */}
-          <div className="flex-1 min-w-0">
-            {/* Breadcrumb */}
-            <nav className="flex items-center gap-2 text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-1">
-              <span className="hover:text-indigo-600 cursor-pointer transition-colors">Dashboard</span>
-              <span>/</span>
-              <span>Comercial</span>
-            </nav>
-
-            {/* Título */}
-            <div className="flex items-center gap-2">
-              <div className="bg-indigo-600/10 text-indigo-700 w-7 h-7 rounded-md flex items-center justify-center shrink-0">
-                <BriefcaseBusiness className="w-4 h-4" />
-              </div>
-              <h1 className="text-lg md:text-2xl font-black text-gray-900 tracking-tight">
-                Inteligencia Comercial
-              </h1>
+          {/* Título y Selector de Alcance */}
+          <div className="flex flex-col md:flex-row md:items-center gap-3">
+            <h1 className="text-lg md:text-2xl font-black text-gray-900 tracking-tight">
+              Inteligencia Comercial
+            </h1>
+            
+            {/* Toggle de Alcance de Datos (Personal vs Global) */}
+            <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200/60 select-none">
+              <button
+                onClick={() => setViewScope("global")}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${
+                  viewScope === "global"
+                    ? "bg-white text-slate-800 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                <Globe size={11} />
+                Todo el Equipo
+              </button>
+              <button
+                onClick={() => setViewScope("personal")}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${
+                  viewScope === "personal"
+                    ? "bg-white text-indigo-600 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                <User size={11} />
+                Mis Indicadores
+              </button>
             </div>
           </div>
 
           {/* ACCIONES DINÁMICAS */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 select-none">
+            <button
+              onClick={() => window.print()}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200/80 hover:bg-slate-50 text-[10px] font-black uppercase tracking-wider rounded-xl shadow-sm text-slate-600 transition-colors"
+              title="Exportar Reporte Ejecutivo PDF"
+            >
+              <Printer size={12} className="text-slate-500" />
+              Reporte PDF
+            </button>
+
             <div className="shrink-0">
               <FilterDropdown
                 icon="Calendar"
@@ -322,13 +535,10 @@ export default function CotizacionesHome() {
                 onSelect={(val) => {
                   setCurrentFilters(prev => ({ ...prev, anno: val === "%" ? "%" : Number(val) }));
                 }}
-                options={[
-                  { v: "2024", n: "2024" },
-                  { v: "2025", n: "2025" },
-                  { v: "2026", n: "2026" },
-                  { v: "2027", n: "2027" },
-                  { v: "2028", n: "2028" }
-                ]}
+                options={Array.from({ length: new Date().getFullYear() - 2011 + 1 }, (_, i) => {
+                  const y = String(2011 + i);
+                  return { v: y, n: y };
+                }).reverse()}
                 onToggle={setIsDropdownOpen}
                 showSearch={true}
                 gridLayout={true}
@@ -378,29 +588,25 @@ export default function CotizacionesHome() {
             </div>
 
             <ERPButton
-              onClick={() => setOpenNueva(true)}
-              variant="primary"
-              icon={<FilePlus size={14} />}
-              className="h-8 py-0 px-3 text-[10px] uppercase tracking-widest"
+              onClick={() => exportarReporte("mensual")}
+              variant="outline"
+              icon={<FileSpreadsheet size={14} />}
+              className="h-8 py-0 px-3 text-[10px] uppercase tracking-widest text-[#1F4E78] border-[#1F4E78]/30 hover:bg-[#1F4E78]/5 gap-1 flex items-center"
             >
-              Nueva
+              Exportar Avance
             </ERPButton>
-
-            <button className="p-1.5 hover:bg-slate-100 rounded-md text-slate-500 transition">
-              <MoreHorizontal size={18} />
-            </button>
           </div>
         </div>
 
         {/* KPIs MULTIMODULARES DE NEGOCIO REALES */}
         {activeModule === "comercial" ? (
-          <KpisResumen anno={currentFilters.anno} mes={currentFilters.mes} />
+          <KpisResumen anno={currentFilters.anno} mes={currentFilters.mes} viewScope={viewScope} />
         ) : (
           <KpisLogistica anno={currentFilters.anno} mes={currentFilters.mes} />
         )}
 
-        {/* COMPONENTE DE INTELIGENCIA PREDICTIVA "JARVIS INSIGHTS" */}
-        <JarvisInsights activeModule={activeModule} anno={currentFilters.anno} mes={currentFilters.mes} />
+        {/* COMPONENTE DE INTELIGENCIA PREDICTIVA "V&C AI" */}
+        <VcAiInsights activeModule={activeModule} anno={currentFilters.anno} mes={currentFilters.mes} cotizaciones={cotizacionesFiltradasPorFecha} />
 
         {/* DISTRIBUCIÓN EN DOS COLUMNAS (ESTILO COTIZACION DETALLE) */}
         <div className="grid grid-cols-12 gap-6 w-full">
@@ -408,12 +614,17 @@ export default function CotizacionesHome() {
           {/* COLUMNA PRINCIPAL (IZQUIERDA - 8/12 en lg, 9/12 en xl) */}
           <div className="col-span-12 lg:col-span-8 xl:col-span-9 space-y-6 flex flex-col min-w-0">
             
-            {/* SECCIÓN 1: RESUMEN EJECUTIVO (OBJETIVOS / METAS SEMÁFORO) */}
+             {/* SECCIÓN 1: RESUMEN EJECUTIVO (OBJETIVOS / METAS SEMÁFORO) */}
             <div id="dashboard-resumen" className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4 scroll-mt-6">
               <ResumenDashboard 
                 module={activeModule}
                 anno={currentFilters.anno} 
                 mes={currentFilters.mes} 
+                cotizaciones={cotizacionesFiltradasPorFecha}
+                todasCotizaciones={todasCotizacionesFiltradasPorAlcance}
+                aperturas={todasAperturasFiltradasPorAlcance}
+                alertas={todasAlertasFiltradasPorAlcance}
+                viewScope={viewScope}
               />
             </div>
 
@@ -424,6 +635,7 @@ export default function CotizacionesHome() {
                 anno={currentFilters.anno} 
                 mes={currentFilters.mes} 
                 cotizaciones={cotizacionesFiltradasPorFecha} 
+                viewScope={viewScope}
               />
             </div>
 
@@ -434,6 +646,7 @@ export default function CotizacionesHome() {
                 cotizaciones={cotizacionesFiltradasPorFecha} 
                 anno={currentFilters.anno} 
                 mes={currentFilters.mes} 
+                viewScope={viewScope}
               />
             </div>
 

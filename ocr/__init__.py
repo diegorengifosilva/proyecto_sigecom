@@ -1,0 +1,1 @@
+# SIGECOM_5\ocr\__init__.py

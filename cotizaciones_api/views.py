@@ -199,12 +199,21 @@ def lista_cotizaciones(request):
         fecha_inicio = request.GET.get("fechaInicio")
         fecha_fin = request.GET.get("fechaFin")
 
+        personal = request.GET.get("personal", "false").lower() == "true"
+
         # ============================================================
-        # Query base (Excluyendo ID_ESTADO = 11: Oportunidad)
+        # Query base (Excluyendo ID_ESTADO = 11: Oportunidad, a menos que se solicite)
         # ============================================================
+        incluir_oportunidades = request.GET.get("incluir_oportunidades", "false").lower() == "true"
+
         qs = Cotizacion.objects.select_related(
-            'id_cliente', 'id_estado', 'id_comercial', 'id_tecnico', 'id_tipo'
-        ).exclude(id_estado=11)
+            'id_cliente', 'id_estado', 'id_comercial', 'id_tecnico', 'id_tipo',
+            'id_unidad_tiempo_entrega_suministros',
+            'id_unidad_tiempo_entrega_servicios',
+            'id_unidad_tiempo_validez'
+        )
+        if not incluir_oportunidades:
+            qs = qs.exclude(id_estado=11)
 
         # Filtros de Segmentación Estándar
         if anno_desde and anno_hasta and mes_desde and mes_hasta:
@@ -230,15 +239,29 @@ def lista_cotizaciones(request):
             qs = qs.filter(id_cliente=id_cliente)
         if id_representante:
             qs = qs.filter(id_representante=id_representante)
-        if id_area != "%":
-            qs = qs.filter(id_area=id_area)
+        if id_area and id_area != "%":
+            if "," in id_area:
+                areas = [int(a.strip()) for a in id_area.split(",") if a.strip().isdigit()]
+                qs = qs.filter(id_area__in=areas)
+            else:
+                try:
+                    qs = qs.filter(id_area=int(id_area))
+                except ValueError:
+                    pass
         if envio != "%":
             qs = qs.filter(estado_envio=envio)
 
         # Filtro de Estado múltiple/único (respetando la exclusión implícita)
-        if id_estado != "%":
-            estados = [e for e in id_estado.split(",") if e]
-            qs = qs.filter(id_estado__in=estados) if len(estados) > 1 else qs.filter(id_estado=estados[0])
+        if id_estado and id_estado != "%" and id_estado != "TODAS":
+            parts = [e.strip() for e in id_estado.split(",") if e.strip()]
+            if parts:
+                q_filter = Q()
+                for part in parts:
+                    if part.isdigit():
+                        q_filter |= Q(id_estado=int(part))
+                    else:
+                        q_filter |= Q(id_estado__nombre__iexact=part)
+                qs = qs.filter(q_filter)
 
         # Filtros de Responsables
         if comercial_search != "%":
@@ -329,7 +352,6 @@ def lista_cotizaciones(request):
         # Búsqueda Flexible
         if campo and valor not in (None, "", " "):
             if campo == "all":
-                from django.db.models import Q
                 from datetime import datetime
                 valor_clean = valor.lower().strip()
                 
@@ -390,6 +412,11 @@ def lista_cotizaciones(request):
                     valor_norm = unidecode(valor.lower().strip())
                     qs = qs.filter(**{f"{campo_real}__icontains": valor_norm})
 
+        # Guardamos el queryset sin filtro de personal para alertas
+        qs_sin_personal = qs
+        if personal:
+            qs = qs.filter(id_comercial=request.user)
+
         # ============================================================
         # Metrics Processing (Dashboard)
         # ============================================================
@@ -440,6 +467,41 @@ def lista_cotizaciones(request):
             8: "Seguridad"
         }
         
+        def calc_date(start_dt, val, code):
+            if not start_dt or val is None or not code:
+                return None
+            try:
+                f_date = start_dt.date() if hasattr(start_dt, "date") else start_dt
+                if not isinstance(f_date, date):
+                    return None
+                code_upper = str(code).upper()
+                if code_upper == 'D':
+                    return f_date + timedelta(days=val)
+                elif code_upper in ('S', 'W'):
+                    return f_date + timedelta(weeks=val)
+                elif code_upper == 'Q':
+                    return f_date + timedelta(days=val * 15)
+                elif code_upper == 'M':
+                    month = f_date.month - 1 + val
+                    year = f_date.year + month // 12
+                    month = month % 12 + 1
+                    day = min(f_date.day, calendar.monthrange(year, month)[1])
+                    return date(year, month, day)
+                elif code_upper == 'T':
+                    month = f_date.month - 1 + (val * 3)
+                    year = f_date.year + month // 12
+                    month = month % 12 + 1
+                    day = min(f_date.day, calendar.monthrange(year, month)[1])
+                    return date(year, month, day)
+                elif code_upper == 'A':
+                    year = f_date.year + val
+                    month = f_date.month
+                    day = min(f_date.day, calendar.monthrange(year, month)[1])
+                    return date(year, month, day)
+            except Exception:
+                pass
+            return None
+
         tabla_data = []
         ordered_qs = qs.order_by('-fecha', '-id_registro')
         from decimal import Decimal
@@ -448,6 +510,7 @@ def lista_cotizaciones(request):
             comercial_correo = c.id_comercial.correo if c.id_comercial else None
             comercial_movil_corporativo = c.id_comercial.movil_coorporativo if c.id_comercial else None
             comercial_movil_personal = c.id_comercial.movil_personal if c.id_comercial else None
+            comercial_dni = c.id_comercial.dni if c.id_comercial else None
 
             tecnico_nombre = c.id_tecnico.nombre_completo if c.id_tecnico else "Por asignar"
             tecnico_correo = c.id_tecnico.correo if c.id_tecnico else None
@@ -463,6 +526,14 @@ def lista_cotizaciones(request):
             fecha_str = format_datetime(c.fecha)
             total_val = str(c.total_cotizacion) if isinstance(c.total_cotizacion, Decimal) else c.total_cotizacion
 
+            sumi_code = c.id_unidad_tiempo_entrega_suministros.codigo if c.id_unidad_tiempo_entrega_suministros else None
+            serv_code = c.id_unidad_tiempo_entrega_servicios.codigo if c.id_unidad_tiempo_entrega_servicios else None
+            vali_code = c.id_unidad_tiempo_validez.codigo if c.id_unidad_tiempo_validez else None
+            
+            dt_sumi = calc_date(c.fecha, c.entrega_suministros, sumi_code)
+            dt_serv = calc_date(c.fecha, c.entrega_servicios, serv_code)
+            dt_vali = calc_date(c.fecha, c.validez_oferta, vali_code)
+
             tabla_data.append({
                 "id_registro": c.id_registro,
                 "codigo": c.codigo,
@@ -475,6 +546,7 @@ def lista_cotizaciones(request):
                 "comercial_correo": comercial_correo,
                 "comercial_movil_corporativo": comercial_movil_corporativo,
                 "comercial_movil_personal": comercial_movil_personal,
+                "comercial_dni": comercial_dni,
                 "tecnico_nombre": tecnico_nombre,
                 "tecnico_correo": tecnico_correo,
                 "tecnico_movil_corporativo": tecnico_movil_corporativo,
@@ -495,9 +567,50 @@ def lista_cotizaciones(request):
                 "validez_valor": c.validez_oferta,
                 "validez_unidad": c.id_unidad_tiempo_validez.nombre if c.id_unidad_tiempo_validez else None,
                 "fijar": c.fijar,
+                "visita_tecnica": format_datetime(c.visita_tecnica),
+                "fecha_limite": format_datetime(c.fecha_limite),
+                "id_comercial": c.id_comercial_id,
+                "id_tecnico": c.id_tecnico_id,
+                "fecha_entrega_suministros": format_datetime(dt_sumi),
+                "fecha_entrega_servicios": format_datetime(dt_serv),
+                "fecha_validez_oferta": format_datetime(dt_vali),
             })
 
-        return Response({"dashboard": dashboard_data, "tabla": tabla_data, "anno": anno})
+        # Recordatorios de Seguimiento agendados
+        alertas_qs = CotizacionMensaje.objects.filter(
+            id_registro__in=qs_sin_personal,
+            alerta="1",
+            activo="1"
+        )
+        if personal:
+            alertas_qs = alertas_qs.filter(Q(id_registro__id_comercial=request.user) | Q(id_usuario=request.user))
+        alertas_qs = alertas_qs.select_related('id_registro', 'id_registro__id_cliente', 'id_registro__id_comercial', 'id_usuario')
+
+        alertas_data = []
+        for alert in alertas_qs:
+            c_reg = alert.id_registro
+            c_cliente = c_reg.id_cliente
+            alertas_data.append({
+                "id_mensaje": alert.id_mensaje,
+                "id_registro": c_reg.id_registro,
+                "cotizacion_codigo": c_reg.codigo,
+                "cotizacion_referencia": c_reg.referencia,
+                "cliente_nombre": c_cliente.nombre if c_cliente else (c_reg.representante_nombre or "S/N"),
+                "comercial_nombre": alert.id_usuario.nombre_completo if alert.id_usuario else (c_reg.id_comercial.nombre_completo if c_reg.id_comercial else "Por asignar"),
+                "id_comercial": alert.id_usuario_id if alert.id_usuario else c_reg.id_comercial_id,
+                "mensaje": alert.mensaje,
+                "alerta_fecha": format_datetime(alert.alerta_fecha),
+                "completo": alert.completo,
+                "estado_nombre": c_reg.id_estado.nombre if c_reg.id_estado else "Sin Estado",
+                "id_estado": c_reg.id_estado_id,
+            })
+
+        return Response({
+            "dashboard": dashboard_data,
+            "tabla": tabla_data,
+            "alertas_agendadas": alertas_data,
+            "anno": anno
+        })
     except Exception as e:
         return Response({"error": f"Error en Dashboard Cotizaciones: {str(e)}"}, status=500)
 
@@ -2035,6 +2148,7 @@ def lista_oportunidades(request):
         mes_hasta = request.GET.get("mes_hasta")
         comercial_search = request.GET.get("comercial_search", "%")
         estado_oportunidad = request.GET.get("estado_oportunidad", "%") # 1, 2, 3 o 4
+        id_area = request.GET.get("area", "%")
 
         # Mapeo de campos flexibles enfocado en columnas de Oportunidades
         CAMPOS_BUSQUEDA = {
@@ -2053,6 +2167,8 @@ def lista_oportunidades(request):
         fecha_inicio = request.GET.get("fechaInicio")
         fecha_fin = request.GET.get("fechaFin")
 
+        personal = request.GET.get("personal", "false").lower() == "true"
+
         # ============================================================
         # 2) Query base mejorado (Histórico total basado en recepcion_solicitud)
         # ============================================================
@@ -2060,6 +2176,9 @@ def lista_oportunidades(request):
         qs = Cotizacion.objects.select_related(
             'id_cliente', 'id_comercial'
         ).filter(recepcion_solicitud__isnull=False)
+
+        if personal:
+            qs = qs.filter(id_comercial=request.user)
 
         # Filtro de Periodo Operacional
         if anno_desde and anno_hasta and mes_desde and mes_hasta:
@@ -2081,8 +2200,24 @@ def lista_oportunidades(request):
                 qs = qs.filter(mes=int(mes))
 
         # Filtro de Estado de Oportunidad interna (1=Pendiente, 2=No Cotizado, etc.)
-        if estado_oportunidad != "%":
-            qs = qs.filter(estado_oportunidad=int(estado_oportunidad))
+        if estado_oportunidad and estado_oportunidad != "%":
+            if "," in estado_oportunidad:
+                estados = [int(e.strip()) for e in estado_oportunidad.split(",") if e.strip().isdigit()]
+                qs = qs.filter(estado_oportunidad__in=estados)
+            else:
+                try:
+                    qs = qs.filter(estado_oportunidad=int(estado_oportunidad))
+                except ValueError:
+                    pass
+        if id_area and id_area != "%":
+            if "," in id_area:
+                areas = [int(a.strip()) for a in id_area.split(",") if a.strip().isdigit()]
+                qs = qs.filter(id_area__in=areas)
+            else:
+                try:
+                    qs = qs.filter(id_area=int(id_area))
+                except ValueError:
+                    pass
 
         # Filtro Responsable Comercial asignado
         if comercial_search != "%":
@@ -2203,6 +2338,7 @@ def lista_aperturas(request):
         id_estado_orden = request.GET.get("estado_orden", "%")  # Filtro por estado de orden (1, 2, 3...)
         prio = request.GET.get("prio", "%")
         envio = request.GET.get("envio", "%")
+        id_area = request.GET.get("area", "%")
 
         CAMPOS_BUSQUEDA = {
             "id_apertura": "id_apertura",
@@ -2228,7 +2364,8 @@ def lista_aperturas(request):
             'orden_plazo_unidad',
             'id_registro',
             'id_registro__id_cliente',
-            'id_registro__id_estado'
+            'id_registro__id_estado',
+            'id_registro__id_comercial'
         )
 
         # Filtros de Segmentación Estándar
@@ -2251,12 +2388,28 @@ def lista_aperturas(request):
                 qs = qs.filter(mes=int(mes))
         if id_cliente != "%":
             qs = qs.filter(id_registro__id_cliente_id=id_cliente)
-        if id_estado_orden != "%":
-            qs = qs.filter(estado_orden=int(id_estado_orden))
+        if id_estado_orden and id_estado_orden != "%":
+            if "," in id_estado_orden:
+                estados = [int(e.strip()) for e in id_estado_orden.split(",") if e.strip().isdigit()]
+                qs = qs.filter(estado_orden__in=estados)
+            else:
+                try:
+                    qs = qs.filter(estado_orden=int(id_estado_orden))
+                except ValueError:
+                    pass
         if prio != "%":
             qs = qs.filter(prio=str(prio))
         if envio != "%":
             qs = qs.filter(envio=int(envio))
+        if id_area and id_area != "%":
+            if "," in id_area:
+                areas = [int(a.strip()) for a in id_area.split(",") if a.strip().isdigit()]
+                qs = qs.filter(id_registro__id_area__in=areas)
+            else:
+                try:
+                    qs = qs.filter(id_registro__id_area=int(id_area))
+                except ValueError:
+                    pass
 
         if fecha_inicio:
             qs = qs.filter(fecha_orden__gte=fecha_inicio)
@@ -2424,6 +2577,9 @@ def lista_aperturas(request):
                     "id_area": ap.id_registro.id_area,
                     "area_nombre": AREA_MAP.get(ap.id_registro.id_area, "Otros"),
                     "fijar": ap.id_registro.fijar,
+                    "comercial_nombre": ap.id_registro.id_comercial.nombre_completo if ap.id_registro.id_comercial else "Por asignar",
+                    "comercial_dni": ap.id_registro.id_comercial.dni if ap.id_registro.id_comercial else "",
+                    "id_comercial": ap.id_registro.id_comercial_id,
                 }
             else:
                 id_registro_data = None
@@ -2438,6 +2594,7 @@ def lista_aperturas(request):
                 "mes": ap.mes,
                 "fecha_orden": format_datetime(ap.fecha_orden),
                 "fecha_factura": format_datetime(ap.fecha_factura),
+                "fecha_entrega": format_datetime(ap.fecha_entrega),
                 "numero_orden": ap.numero_orden,
                 "id_registro": id_registro_data,
                 "total_orden": total_orden_val,
@@ -2454,6 +2611,7 @@ def lista_aperturas(request):
                 "cliente_nombre": cliente_nombre,
                 "area_nombre": area_nombre,
                 "prio": ap.prio,
+                "id_comercial": ap.id_registro.id_comercial_id if ap.id_registro else None,
             })
 
         return Response({"dashboard": dashboard_data, "tabla": tabla_data, "anno": anno})
@@ -2532,7 +2690,11 @@ def apertura_detalle(request, id_apertura):
                 apertura.orden_plazo_valor = data['orden_plazo']
                 
             if 'orden_plazo_unidad' in data:
-                apertura.orden_plazo_unidad_id = data['orden_plazo_unidad']
+                val_unidad = data['orden_plazo_unidad']
+                if val_unidad in (0, '0', '', None):
+                    apertura.orden_plazo_unidad_id = None
+                else:
+                    apertura.orden_plazo_unidad_id = val_unidad
 
             if 'total_orden' in data:
                 apertura.total_orden = data['total_orden']
@@ -6115,6 +6277,22 @@ def pasar_a_apertura(request, id_registro):
                     responsables=""
                 )
             
+            # Crear la notificación de Adjudicado para el usuario comercial
+            try:
+                from notificaciones_api.models import Notificacion
+                if cotizacion.id_comercial:
+                    Notificacion.objects.create(
+                        usuario=cotizacion.id_comercial,
+                        tipo="informativo",
+                        id_modulo_id=1,
+                        titulo="Cotización Adjudicada",
+                        descripcion=f"La cotización {cotizacion.codigo or cotizacion.id_registro} ha sido Adjudicada. Se inició la Apertura de orden con presupuesto de S/. {cotizacion.total_cotizacion or 0}.",
+                        referencia_id=f"coti_adjudicada_{cotizacion.id_registro}",
+                        metadata={"id_registro": cotizacion.id_registro, "codigo": cotizacion.codigo, "tipo_alerta": "cotizacion_adjudicada"}
+                    )
+            except Exception as notif_err:
+                logger.error(f"Error al crear notificacion de adjudicacion: {notif_err}")
+            
             # Registrar en la trazabilidad (Seguimiento)
             CotizacionSeguimiento.objects.create(
                 id_registro=cotizacion,
@@ -7388,3 +7566,52 @@ def get_tipo_cambio_sunat(request):
         print("Error fetching SUNAT exchange rate:", str(e))
 
     return Response(fallback_data)
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def vistas_analisis_api(request):
+    from .models import VistaAnalisis
+    if request.method == "GET":
+        vistas = VistaAnalisis.objects.filter(id_usuario=request.user)
+        data = [{
+            "id_vista": v.id_vista,
+            "nombre": v.nombre,
+            "dimensions": v.dimensions,
+            "metrica": v.metrica,
+            "created_at": v.created_at.strftime("%Y-%m-%d %H:%M:%S") if v.created_at else None
+        } for v in vistas]
+        return Response(data)
+
+    elif request.method == "POST":
+        nombre = request.data.get("nombre")
+        dimensions = request.data.get("dimensions")
+        metrica = request.data.get("metrica")
+        
+        if not nombre or not dimensions or not metrica:
+            return Response({"error": "Faltan campos requeridos"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        vista = VistaAnalisis.objects.create(
+            nombre=nombre,
+            dimensions=dimensions,
+            metrica=metrica,
+            id_usuario=request.user
+        )
+        return Response({
+            "id_vista": vista.id_vista,
+            "nombre": vista.nombre,
+            "dimensions": vista.dimensions,
+            "metrica": vista.metrica
+        }, status=status.HTTP_201_CREATED)
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def vista_analisis_delete_api(request, id_vista):
+    from .models import VistaAnalisis
+    try:
+        vista = VistaAnalisis.objects.get(pk=id_vista, id_usuario=request.user)
+        vista.delete()
+        return Response({"message": "Vista eliminada correctamente"})
+    except VistaAnalisis.DoesNotExist:
+        return Response({"error": "La vista no existe o no tienes permiso para eliminarla"}, status=status.HTTP_404_NOT_FOUND)

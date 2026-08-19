@@ -26,6 +26,21 @@ const NAV_ITEMS = [
   },
   { path: "/proyectos", label: "Proyectos", icon: "Briefcase" },
   { path: "/compras", label: "Compras", icon: "ShoppingCart" },
+  {
+    path: "/caja-chica",
+    label: "Caja Chica",
+    icon: "Wallet",
+    subItems: [
+      { path: "/caja-chica", label: "Panel Principal" },
+      { path: "/caja-chica/solicitud", label: "Solicitud de Gasto" },
+      { path: "/caja-chica/atencion-solicitudes", label: "Atención de Solicitudes" },
+      { path: "/caja-chica/liquidaciones/presentar", label: "Liquidaciones" },
+      { path: "/caja-chica/gastos/aprobacion-liquidacion", label: "Aprobación de Liquidación" },
+      { path: "/caja-chica/movimientos/arqueo", label: "Arqueo de Caja" },
+      { path: "/caja-chica/registros/actividades", label: "Registro de Actividades" },
+      { path: "/caja-chica/reportes", label: "Reportes y Análisis" }
+    ]
+  },
   { path: "/almacen", label: "Almacén", icon: "Package" },
   { path: "/finanzas", label: "Finanzas", icon: "DollarSign" },
   {
@@ -48,6 +63,28 @@ export default function DashboardLayout() {
   const { authUser: user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Marcar notificación como leída si viene el parámetro marcar_leido_id en la URL
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const marcarLeidoId = params.get("marcar_leido_id");
+    if (marcarLeidoId) {
+      api.post(`/notificaciones/${marcarLeidoId}/marcar/`)
+        .then(() => {
+          // Limpiar el parámetro de la URL
+          params.delete("marcar_leido_id");
+          const searchStr = params.toString();
+          navigate({
+            pathname: location.pathname,
+            search: searchStr ? `?${searchStr}` : ""
+          }, { replace: true });
+        })
+        .catch(err => {
+          console.error("Error al marcar notificación leída desde URL:", err);
+        });
+    }
+  }, [location.search, location.pathname, navigate]);
+
   const [breadcrumbOverride, setBreadcrumbOverride] = useState(null);
   const [openMenus, setOpenMenus] = useState({});
 
@@ -107,10 +144,23 @@ export default function DashboardLayout() {
     }
   };
 
-  useEffect(() => {
-    // Clear override whenever location changes
-    setBreadcrumbOverride(null);
-  }, [location.pathname]);
+  const [customBreadcrumbs, setCustomBreadcrumbs] = useState(null);
+
+  const [prevPathname, setPrevPathname] = useState(location.pathname);
+  if (prevPathname !== location.pathname) {
+    setPrevPathname(location.pathname);
+    
+    // Evitar parpadeo/blanco al cambiar entre vistas del mismo registro comercial
+    const commercialDetailRegex = /^\/comercial\/(oportunidades|cotizaciones|aperturas)\/([^/]+)/;
+    const prevMatch = prevPathname.match(commercialDetailRegex);
+    const currMatch = location.pathname.match(commercialDetailRegex);
+    const isSameRecord = prevMatch && currMatch && prevMatch[2] === currMatch[2];
+    
+    if (!isSameRecord) {
+      setBreadcrumbOverride(null);
+      setCustomBreadcrumbs(null);
+    }
+  }
 
   useEffect(() => {
     const handleOverride = (e) => {
@@ -121,6 +171,17 @@ export default function DashboardLayout() {
     };
     window.addEventListener("sigecom-breadcrumb-label", handleOverride);
     return () => window.removeEventListener("sigecom-breadcrumb-label", handleOverride);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    const handleCustom = (e) => {
+      const { path, crumbs } = e.detail || {};
+      if (path === location.pathname) {
+        setCustomBreadcrumbs(crumbs);
+      }
+    };
+    window.addEventListener("sigecom-custom-breadcrumbs", handleCustom);
+    return () => window.removeEventListener("sigecom-custom-breadcrumbs", handleCustom);
   }, [location.pathname]);
 
   useEffect(() => {
@@ -438,20 +499,42 @@ export default function DashboardLayout() {
                     <LucideIcons.Home className="h-4 w-4" />
                   </NavLink>
                 </li>
-                {breadcrumbs.slice(1).map((crumb) => (
-                  <li key={crumb.path} className={`items-center min-w-0 ${crumb.isLast ? "flex" : "hidden sm:flex"}`}>
-                    <LucideIcons.ChevronRight className="h-4 w-4 text-gray-300 mx-1 shrink-0" />
-                    {crumb.isLast ? (
-                      <span className="font-bold text-indigo-600 truncate uppercase tracking-tight text-xs sm:text-sm">
-                        {crumb.label}
-                      </span>
-                    ) : (
-                      <span className="text-gray-400 font-semibold truncate uppercase tracking-tight text-xs sm:text-sm">
-                        {crumb.label}
-                      </span>
-                    )}
-                  </li>
-                ))}
+                {customBreadcrumbs ? (
+                  customBreadcrumbs.map((crumb, idx) => (
+                    <li key={idx} className="flex items-center min-w-0">
+                      <LucideIcons.ChevronRight className="h-4 w-4 text-gray-300 mx-1 shrink-0" />
+                      {crumb.path && !crumb.active ? (
+                        <NavLink
+                          to={crumb.path}
+                          className="text-gray-400 hover:text-indigo-600 font-semibold truncate uppercase tracking-tight text-xs sm:text-sm transition-colors"
+                        >
+                          {crumb.label}
+                        </NavLink>
+                      ) : (
+                        <span className={`font-bold truncate uppercase tracking-tight text-xs sm:text-sm ${
+                          crumb.active ? "text-indigo-600 bg-indigo-50 border border-indigo-100/50 px-2 py-0.5 rounded-lg shadow-sm" : "text-slate-800"
+                        }`}>
+                          {crumb.label}
+                        </span>
+                      )}
+                    </li>
+                  ))
+                ) : (
+                  breadcrumbs.slice(1).map((crumb) => (
+                    <li key={crumb.path} className={`items-center min-w-0 ${crumb.isLast ? "flex" : "hidden sm:flex"}`}>
+                      <LucideIcons.ChevronRight className="h-4 w-4 text-gray-300 mx-1 shrink-0" />
+                      {crumb.isLast ? (
+                        <span className="font-bold text-indigo-600 truncate uppercase tracking-tight text-xs sm:text-sm">
+                          {crumb.label}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400 font-semibold truncate uppercase tracking-tight text-xs sm:text-sm">
+                          {crumb.label}
+                        </span>
+                      )}
+                    </li>
+                  ))
+                )}
               </ol>
             </nav>
           </div>
@@ -468,7 +551,7 @@ export default function DashboardLayout() {
 
         <main className="flex-1 overflow-auto p-4 md:p-6 bg-gray-50/50">
           <div className="w-full h-full">
-            <Outlet />
+            <Outlet context={{ setCustomBreadcrumbs, setBreadcrumbOverride }} />
           </div>
         </main>
       </div>

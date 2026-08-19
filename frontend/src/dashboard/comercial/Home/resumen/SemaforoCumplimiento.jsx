@@ -2,10 +2,255 @@ import React, { useMemo, useEffect, useState } from "react";
 import { TrendingUp, Target, Calendar, AlertCircle, CheckCircle2, Clock } from 'lucide-react';
 import api from "@/services/api";
 
-export default function SemaforoCumplimiento({ module = "comercial", anno = 2026, mes = "%" }) {
+export default function SemaforoCumplimiento({ module = "comercial", anno = 2026, mes = "%", viewScope = "global" }) {
   const [objetivo, setObjetivo] = useState(null);
   const [logrado, setLogrado] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [reloadTrigger, setReloadTrigger] = useState(0);
+
+  const [openModal, setOpenModal] = useState(false);
+  const [minima, setMinima] = useState({ 2: "", 1: "", 4: "", 8: "" });
+  const [maxima, setMaxima] = useState({ 2: "", 1: "", 4: "", 8: "" });
+  const [saving, setSaving] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    setErrorMsg("");
+    try {
+      if (viewScope === "personal") {
+        // Guardar metas personales en localStorage por año
+        const personalGoals = {
+          2: { minimo: Number(minima[2] || 0), maximo: Number(maxima[2] || 0) },
+          1: { minimo: Number(minima[1] || 0), maximo: Number(maxima[1] || 0) },
+          4: { minimo: Number(minima[4] || 0), maximo: Number(maxima[4] || 0) },
+          8: { minimo: Number(minima[8] || 0), maximo: Number(maxima[8] || 0) }
+        };
+        localStorage.setItem(`vc_personal_goals_${anno}`, JSON.stringify(personalGoals));
+        setOpenModal(false);
+        setReloadTrigger(prev => prev + 1);
+      } else {
+        const payload = {
+          anno: Number(anno),
+          areas: [
+            { id_area: 2, minimo: Number(minima[2] || 0), maximo: Number(maxima[2] || 0) },
+            { id_area: 1, minimo: Number(minima[1] || 0), maximo: Number(maxima[1] || 0) },
+            { id_area: 4, minimo: Number(minima[4] || 0), maximo: Number(maxima[4] || 0) },
+            { id_area: 8, minimo: Number(minima[8] || 0), maximo: Number(maxima[8] || 0) }
+          ]
+        };
+        await api.post("dashboard/objetivos/", payload);
+        setOpenModal(false);
+        setReloadTrigger(prev => prev + 1);
+      }
+    } catch (err) {
+      console.error(err);
+      setErrorMsg(err.response?.data?.error || "Error al guardar objetivos");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Keyboard navigation within the 4x2 grid (row: 0-3, col: 0-1)
+  const handleInputKeyDown = (e, row, col) => {
+    if (e.key === "-" || e.key === "e" || e.key === "E") {
+      e.preventDefault();
+      return;
+    }
+
+    let targetRow = row;
+    let targetCol = col;
+
+    if (e.key === "ArrowDown") {
+      targetRow = (row + 1) % 4;
+      e.preventDefault();
+    } else if (e.key === "ArrowUp") {
+      targetRow = (row - 1 + 4) % 4;
+      e.preventDefault();
+    } else if (e.key === "ArrowRight") {
+      targetCol = (col + 1) % 2;
+      e.preventDefault();
+    } else if (e.key === "ArrowLeft") {
+      targetCol = (col - 1 + 2) % 2;
+      e.preventDefault();
+    }
+
+    if (targetRow !== row || targetCol !== col) {
+      const target = document.querySelector(`.modal-target-input[data-row="${targetRow}"][data-col="${targetCol}"]`);
+      if (target) {
+        target.focus();
+        target.select();
+      }
+    }
+  };
+
+  // Close modal on Escape key press
+  useEffect(() => {
+    if (!openModal) return;
+    const handleGlobalKeyDown = (e) => {
+      if (e.key === "Escape") {
+        setOpenModal(false);
+      }
+    };
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [openModal]);
+
+  // Autofocus and text-selection on the first field when modal opens
+  useEffect(() => {
+    if (openModal) {
+      setTimeout(() => {
+        const firstInput = document.querySelector('.modal-target-input[data-row="0"][data-col="0"]');
+        if (firstInput) {
+          firstInput.focus();
+          firstInput.select();
+        }
+      }, 80);
+    }
+  }, [openModal]);
+
+  // Pre-cargar valores en los campos del modal al abrir o cambiar de modo
+  useEffect(() => {
+    if (!openModal) return;
+    
+    if (viewScope === "personal") {
+      const stored = localStorage.getItem(`vc_personal_goals_${anno}`);
+      if (stored) {
+        try {
+          const personal = JSON.parse(stored);
+          setMinima({
+            2: personal[2]?.minimo || "",
+            1: personal[1]?.minimo || "",
+            4: personal[4]?.minimo || "",
+            8: personal[8]?.minimo || ""
+          });
+          setMaxima({
+            2: personal[2]?.maximo || "",
+            1: personal[1]?.maximo || "",
+            4: personal[4]?.maximo || "",
+            8: personal[8]?.maximo || ""
+          });
+          return;
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    }
+    
+    // Si es global o no hay metas personales guardadas, pre-cargar de objetivos de la base de datos
+    if (Array.isArray(objetivo) && objetivo.length > 0) {
+      const first = objetivo[0];
+      if (first && first.areas) {
+        const tempMin = { 2: "", 1: "", 4: "", 8: "" };
+        const tempMax = { 2: "", 1: "", 4: "", 8: "" };
+        first.areas.forEach(a => {
+          tempMin[a.id_area] = a.minimo || "";
+          tempMax[a.id_area] = a.maximo || "";
+        });
+        setMinima(tempMin);
+        setMaxima(tempMax);
+      }
+    }
+  }, [openModal, objetivo, viewScope, anno]);
+
+  const renderModal = () => {
+    if (!openModal) return null;
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 animate-in fade-in duration-200">
+        <div className="bg-white/85 backdrop-blur-md border border-white/20 rounded-3xl p-6 shadow-2xl max-w-lg w-full flex flex-col gap-6 animate-in zoom-in-95 duration-200">
+          <div className="flex justify-between items-center pb-3 border-b border-gray-100/50">
+            <div className="flex items-center gap-2">
+              <div className="bg-indigo-50/80 p-1.5 rounded-lg text-indigo-600">
+                <Target size={18} />
+              </div>
+              <h3 className="text-sm font-bold text-gray-800">
+                {viewScope === "personal" ? `Configurar Mis Metas Personales Anuales ${anno}` : `Configurar Objetivos Anuales ${anno}`}
+              </h3>
+            </div>
+            <button 
+              type="button"
+              onClick={() => setOpenModal(false)}
+              className="text-gray-400 hover:text-gray-600 transition-colors text-lg font-bold"
+            >
+              &times;
+            </button>
+          </div>
+          <form onSubmit={handleSave} className="flex flex-col gap-4">
+            {errorMsg && (
+              <div className="p-3 bg-red-50 text-red-600 text-xs rounded-xl font-medium text-left">
+                {errorMsg}
+              </div>
+            )}
+            <div className="flex flex-col gap-3">
+              {[
+                { id: 2, label: "Minería", row: 0 },
+                { id: 1, label: "Industria", row: 1 },
+                { id: 4, label: "Petroquímica", row: 2 },
+                { id: 8, label: "Seguridad de Maquinaria", row: 3 }
+              ].map(area => (
+                <div key={area.id} className="grid grid-cols-3 items-center gap-4 py-2 border-b border-gray-100/30 last:border-b-0 text-left">
+                  <span className="text-xs font-bold text-gray-700">{area.label}</span>
+                  <div className="flex flex-col gap-1 col-span-2">
+                    <div className="flex gap-2">
+                      <div className="flex-1 flex flex-col gap-0.5">
+                        <label className="text-[9px] font-bold text-gray-400 uppercase text-left">Mínimo ($)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          required
+                          data-row={area.row}
+                          data-col={0}
+                          value={minima[area.id]}
+                          onKeyDown={e => handleInputKeyDown(e, area.row, 0)}
+                          onChange={e => setMinima(prev => ({ ...prev, [area.id]: e.target.value }))}
+                          className="modal-target-input w-full px-3 py-1.5 border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 bg-white/60 rounded-xl text-xs focus:outline-none transition-all"
+                          placeholder="0.00"
+                        />
+                      </div>
+                      <div className="flex-1 flex flex-col gap-0.5">
+                        <label className="text-[9px] font-bold text-gray-400 uppercase text-left">Máximo ($)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          required
+                          data-row={area.row}
+                          data-col={1}
+                          value={maxima[area.id]}
+                          onKeyDown={e => handleInputKeyDown(e, area.row, 1)}
+                          onChange={e => setMaxima(prev => ({ ...prev, [area.id]: e.target.value }))}
+                          className="modal-target-input w-full px-3 py-1.5 border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 bg-white/60 rounded-xl text-xs focus:outline-none transition-all"
+                          placeholder="0.00"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2 pt-4 border-t border-gray-100/50">
+              <button
+                type="button"
+                onClick={() => setOpenModal(false)}
+                className="px-4 py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 text-xs font-bold rounded-xl transition-colors uppercase tracking-wider"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-xs font-bold rounded-xl shadow-sm transition-colors uppercase tracking-wider"
+              >
+                {saving ? "Guardando..." : "Guardar Objetivos"}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
 
   useEffect(() => {
     if (module === "logistica") {
@@ -15,9 +260,10 @@ export default function SemaforoCumplimiento({ module = "comercial", anno = 2026
     const cargar = async () => {
       try {
         setLoading(true);
+        const isPersonal = viewScope === "personal";
         const [resObjetivo, resLogrado] = await Promise.all([
           api.get(`dashboard/objetivos/?anno=${anno}`),
-          api.get(`dashboard/logrado/?anno=${anno}&mes=${mes}`)
+          api.get(`dashboard/logrado/?anno=${anno}&mes=${mes}${isPersonal ? "&personal=true" : ""}`)
         ]);
         setObjetivo(resObjetivo.data);
         setLogrado(resLogrado.data);
@@ -28,7 +274,7 @@ export default function SemaforoCumplimiento({ module = "comercial", anno = 2026
       }
     };
     cargar();
-  }, [module, anno, mes]);
+  }, [module, anno, mes, viewScope, reloadTrigger]);
 
   const resumen = useMemo(() => {
     if (module === "logistica") {
@@ -69,14 +315,45 @@ export default function SemaforoCumplimiento({ module = "comercial", anno = 2026
     let minAnual = 0; 
     let maxAnual = 0;
 
-    objetivo.forEach(obj => {
-      if (obj.areas) {
-        obj.areas.forEach(a => {
-          minAnual += Number(a.minimo || 0);
-          maxAnual += Number(a.maximo || 0);
-        });
+    if (viewScope === "personal") {
+      const stored = localStorage.getItem(`vc_personal_goals_${anno}`);
+      if (stored) {
+        try {
+          const personal = JSON.parse(stored);
+          Object.values(personal).forEach(p => {
+            minAnual += Number(p.minimo || 0);
+            maxAnual += Number(p.maximo || 0);
+          });
+        } catch (e) {
+          console.error(e);
+        }
       }
-    });
+      
+      // Si no hay cuota personal configurada aún, la prorrateamos por defecto equitativamente entre los 3 comerciales (1/3)
+      if (minAnual === 0 && maxAnual === 0 && Array.isArray(objetivo)) {
+        let globalMin = 0;
+        let globalMax = 0;
+        objetivo.forEach(obj => {
+          if (obj.areas) {
+            obj.areas.forEach(a => {
+              globalMin += Number(a.minimo || 0);
+              globalMax += Number(a.maximo || 0);
+            });
+          }
+        });
+        minAnual = globalMin / 3;
+        maxAnual = globalMax / 3;
+      }
+    } else {
+      objetivo.forEach(obj => {
+        if (obj.areas) {
+          obj.areas.forEach(a => {
+            minAnual += Number(a.minimo || 0);
+            maxAnual += Number(a.maximo || 0);
+          });
+        }
+      });
+    }
 
     const logradoAnual = Number(logrado.anual || 0);
     const logradoMensual = Number(logrado.mensual || 0);
@@ -89,7 +366,7 @@ export default function SemaforoCumplimiento({ module = "comercial", anno = 2026
         logrado: logradoAnual, 
         faltante: Math.max(0, minAnual - logradoAnual),
         icon: <Target size={14} className="text-indigo-500"/>,
-        unit: "S/.",
+        unit: "$",
         isCurrency: true
       },
       mensual: { 
@@ -99,7 +376,7 @@ export default function SemaforoCumplimiento({ module = "comercial", anno = 2026
         logrado: logradoMensual, 
         faltante: Math.max(0, (minAnual / 12) - logradoMensual),
         icon: <Calendar size={14} className="text-indigo-500"/>,
-        unit: "S/.",
+        unit: "$",
         isCurrency: true
       }
     };
@@ -161,6 +438,30 @@ export default function SemaforoCumplimiento({ module = "comercial", anno = 2026
     </div>
   );
 
+  if (!loading && module === "comercial" && (!Array.isArray(objetivo) || objetivo.length === 0)) {
+    return (
+      <div className="w-full bg-white border border-gray-200 rounded-2xl p-8 flex flex-col items-center justify-center gap-4 text-center">
+        <div className="bg-indigo-50 p-3 rounded-full text-indigo-600">
+          <Target size={24} />
+        </div>
+        <div className="space-y-1">
+          <h3 className="text-sm font-bold text-gray-800">No hay objetivos configurados para el año {anno}</h3>
+          <p className="text-xs text-gray-500 max-w-sm">
+            Para poder visualizar el panel de cumplimiento comercial, primero debes configurar los objetivos mínimos y máximos por cada área de negocio.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setOpenModal(true)}
+          className="mt-2 inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition-colors uppercase tracking-wider"
+        >
+          Configurar Objetivos
+        </button>
+        {renderModal()}
+      </div>
+    );
+  }
+
   if (!resumen) return null;
 
   const renderCard = (titulo, data) => {
@@ -172,7 +473,7 @@ export default function SemaforoCumplimiento({ module = "comercial", anno = 2026
 
     const formatVal = (val) => {
       if (data.isCurrency) {
-        return `S/. ${val.toLocaleString('es-PE', { maximumFractionDigits: 0 })}`;
+        return `${data.unit} ${val.toLocaleString('es-PE', { maximumFractionDigits: 0 })}`;
       }
       return `${val.toFixed(1)} ${data.unit}`;
     };

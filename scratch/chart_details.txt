@@ -1,0 +1,210 @@
+
+=========================================
+Chart 4: DoughnutChart
+Anchor: <openpyxl.drawing.spreadsheet_drawing.TwoCellAnchor object>
+Parameters:
+editAs=None, contentPart=None, _from=<openpyxl.drawing.spreadsheet_drawing.AnchorMarker object>
+Parameters:
+col=3, colOff=542060, row=50, rowOff=26458, to=<openpyxl.drawing.spreadsheet_drawing.AnchorMarker object>
+Parameters:
+col=8, colOff=52916, row=63, rowOff=135082, sp=None, grpSp=None, graphicFrame=None, cxnSp=None, pic=None, contentPart=None, clientData=<openpyxl.drawing.spreadsheet_drawing.AnchorClientData object>
+Parameters:
+fLocksWithSheet=None, fPrintsWithSheet=None
+Width: 15, Height: 7.5
+FirstSliceAng: 270.0
+HoleSize: 75.0
+Style: None
+Subcharts count: 2
+  Subchart 1: DoughnutChart
+    firstSliceAng: 270.0
+    holeSize: 75.0
+    Series 1:
+      Val Ref: Objetivos!$C$52:$C$61
+      Cat Ref: None
+      SolidFill: None
+      Line: <openpyxl.drawing.line.LineProperties object>
+Parameters:
+w=None, cap=None, cmpd=None, algn=None, noFill=False, solidFill=None, gradFill=None, pattFill=None, prstDash='solid', custDash=None, round=False, bevel=False, miter=None, headEnd=None, tailEnd=None
+      DataPoints count: 10
+        DP 0: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='FF0000', hslClr=None, sysClr=None, schemeClr=None, prstClr=None
+        DP 1: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='FF0000', hslClr=None, sysClr=None, schemeClr=None, prstClr=None
+        DP 2: fill=None
+        DP 3: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='FFFF00', hslClr=None, sysClr=None, schemeClr=None, prstClr=None
+        DP 4: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='FFFF00', hslClr=None, sysClr=None, schemeClr=None, prstClr=None
+        DP 5: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='FFFF00', hslClr=None, sysClr=None, schemeClr=None, prstClr=None
+        DP 6: fill=None
+        DP 7: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='92D050', hslClr=None, sysClr=None, schemeClr=None, prstClr=None
+        DP 8: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='92D050', hslClr=None, sysClr=None, schemeClr=None, prstClr=None
+        DP 9: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr=None, hslClr=None, sysClr=None, schemeClr=<openpyxl.drawing.colors.SchemeColor object>
+Parameters:
+val='tx1', tint=None, shade=None, comp=None, inv=None, gray=None, alpha=None, alphaOff=None, alphaMod=None, hue=None, hueOff=None, hueMod=None, sat=None, satOff=None, satMod=None, lum=None, lumMod=None, lumOff=None, red=None, redOff=None, redMod=None, green=None, greenOff=None, greenMod=None, blue=None, blueOff=None, blueMod=None, gamma=None, invGamma=None, prstClr=None
+  Subchart 2: ScatterChart
+    Series 1:
+      Val Ref: None
+      Cat Ref: None
+      SolidFill: None
+      Line: <openpyxl.drawing.line.LineProperties object>
+Parameters:
+w=28575.0, cap='rnd', cmpd=None, algn=None, noFill=False, solidFill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='1D05D1', hslClr=None, sysClr=None, schemeClr=None, prstClr=None, gradFill=None, pattFill=None, prstDash='solid', custDash=None, round=True, bevel=False, miter=None, headEnd=None, tailEnd=None
+      DataPoints count: 1
+        DP 1: fill=None
+Main chart series count: 1
+  Series 1:
+    Val Ref: Objetivos!$C$52:$C$61
+    Cat Ref: None
+    SolidFill: None
+    Line: <openpyxl.drawing.line.LineProperties object>
+Parameters:
+w=None, cap=None, cmpd=None, algn=None, noFill=False, solidFill=None, gradFill=None, pattFill=None, prstDash='solid', custDash=None, round=False, bevel=False, miter=None, headEnd=None, tailEnd=None
+    DataPoints count: 10
+      DP 0: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='FF0000', hslClr=None, sysClr=None, schemeClr=None, prstClr=None
+      DP 1: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='FF0000', hslClr=None, sysClr=None, schemeClr=None, prstClr=None
+      DP 2: fill=None
+      DP 3: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='FFFF00', hslClr=None, sysClr=None, schemeClr=None, prstClr=None
+      DP 4: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='FFFF00', hslClr=None, sysClr=None, schemeClr=None, prstClr=None
+      DP 5: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='FFFF00', hslClr=None, sysClr=None, schemeClr=None, prstClr=None
+      DP 6: fill=None
+      DP 7: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='92D050', hslClr=None, sysClr=None, schemeClr=None, prstClr=None
+      DP 8: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='92D050', hslClr=None, sysClr=None, schemeClr=None, prstClr=None
+      DP 9: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr=None, hslClr=None, sysClr=None, schemeClr=<openpyxl.drawing.colors.SchemeColor object>
+Parameters:
+val='tx1', tint=None, shade=None, comp=None, inv=None, gray=None, alpha=None, alphaOff=None, alphaMod=None, hue=None, hueOff=None, hueMod=None, sat=None, satOff=None, satMod=None, lum=None, lumMod=None, lumOff=None, red=None, redOff=None, redMod=None, green=None, greenOff=None, greenMod=None, blue=None, blueOff=None, blueMod=None, gamma=None, invGamma=None, prstClr=None
+
+=========================================
+Chart 5: DoughnutChart
+Anchor: <openpyxl.drawing.spreadsheet_drawing.TwoCellAnchor object>
+Parameters:
+editAs=None, contentPart=None, _from=<openpyxl.drawing.spreadsheet_drawing.AnchorMarker object>
+Parameters:
+col=8, colOff=346364, row=49, rowOff=181841, to=<openpyxl.drawing.spreadsheet_drawing.AnchorMarker object>
+Parameters:
+col=14, colOff=202623, row=63, rowOff=105641, sp=None, grpSp=None, graphicFrame=None, cxnSp=None, pic=None, contentPart=None, clientData=<openpyxl.drawing.spreadsheet_drawing.AnchorClientData object>
+Parameters:
+fLocksWithSheet=None, fPrintsWithSheet=None
+Width: 15, Height: 7.5
+FirstSliceAng: 270.0
+HoleSize: 75.0
+Style: None
+Subcharts count: 2
+  Subchart 1: DoughnutChart
+    firstSliceAng: 270.0
+    holeSize: 75.0
+    Series 1:
+      Val Ref: Objetivos!$C$52:$C$61
+      Cat Ref: None
+      SolidFill: None
+      Line: <openpyxl.drawing.line.LineProperties object>
+Parameters:
+w=None, cap=None, cmpd=None, algn=None, noFill=False, solidFill=None, gradFill=None, pattFill=None, prstDash='solid', custDash=None, round=False, bevel=False, miter=None, headEnd=None, tailEnd=None
+      DataPoints count: 10
+        DP 0: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='FF0000', hslClr=None, sysClr=None, schemeClr=None, prstClr=None
+        DP 1: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='FF0000', hslClr=None, sysClr=None, schemeClr=None, prstClr=None
+        DP 2: fill=None
+        DP 3: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='FFFF00', hslClr=None, sysClr=None, schemeClr=None, prstClr=None
+        DP 4: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='FFFF00', hslClr=None, sysClr=None, schemeClr=None, prstClr=None
+        DP 5: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='FFFF00', hslClr=None, sysClr=None, schemeClr=None, prstClr=None
+        DP 6: fill=None
+        DP 7: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='92D050', hslClr=None, sysClr=None, schemeClr=None, prstClr=None
+        DP 8: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='92D050', hslClr=None, sysClr=None, schemeClr=None, prstClr=None
+        DP 9: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr=None, hslClr=None, sysClr=None, schemeClr=<openpyxl.drawing.colors.SchemeColor object>
+Parameters:
+val='tx1', tint=None, shade=None, comp=None, inv=None, gray=None, alpha=None, alphaOff=None, alphaMod=None, hue=None, hueOff=None, hueMod=None, sat=None, satOff=None, satMod=None, lum=None, lumMod=None, lumOff=None, red=None, redOff=None, redMod=None, green=None, greenOff=None, greenMod=None, blue=None, blueOff=None, blueMod=None, gamma=None, invGamma=None, prstClr=None
+  Subchart 2: ScatterChart
+    Series 1:
+      Val Ref: None
+      Cat Ref: None
+      SolidFill: None
+      Line: <openpyxl.drawing.line.LineProperties object>
+Parameters:
+w=28575.0, cap='rnd', cmpd=None, algn=None, noFill=False, solidFill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='1D05D1', hslClr=None, sysClr=None, schemeClr=None, prstClr=None, gradFill=None, pattFill=None, prstDash='solid', custDash=None, round=True, bevel=False, miter=None, headEnd=None, tailEnd=None
+      DataPoints count: 1
+        DP 1: fill=None
+Main chart series count: 1
+  Series 1:
+    Val Ref: Objetivos!$C$52:$C$61
+    Cat Ref: None
+    SolidFill: None
+    Line: <openpyxl.drawing.line.LineProperties object>
+Parameters:
+w=None, cap=None, cmpd=None, algn=None, noFill=False, solidFill=None, gradFill=None, pattFill=None, prstDash='solid', custDash=None, round=False, bevel=False, miter=None, headEnd=None, tailEnd=None
+    DataPoints count: 10
+      DP 0: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='FF0000', hslClr=None, sysClr=None, schemeClr=None, prstClr=None
+      DP 1: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='FF0000', hslClr=None, sysClr=None, schemeClr=None, prstClr=None
+      DP 2: fill=None
+      DP 3: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='FFFF00', hslClr=None, sysClr=None, schemeClr=None, prstClr=None
+      DP 4: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='FFFF00', hslClr=None, sysClr=None, schemeClr=None, prstClr=None
+      DP 5: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='FFFF00', hslClr=None, sysClr=None, schemeClr=None, prstClr=None
+      DP 6: fill=None
+      DP 7: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='92D050', hslClr=None, sysClr=None, schemeClr=None, prstClr=None
+      DP 8: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr='92D050', hslClr=None, sysClr=None, schemeClr=None, prstClr=None
+      DP 9: fill=<openpyxl.drawing.colors.ColorChoice object>
+Parameters:
+scrgbClr=None, srgbClr=None, hslClr=None, sysClr=None, schemeClr=<openpyxl.drawing.colors.SchemeColor object>
+Parameters:
+val='tx1', tint=None, shade=None, comp=None, inv=None, gray=None, alpha=None, alphaOff=None, alphaMod=None, hue=None, hueOff=None, hueMod=None, sat=None, satOff=None, satMod=None, lum=None, lumMod=None, lumOff=None, red=None, redOff=None, redMod=None, green=None, greenOff=None, greenMod=None, blue=None, blueOff=None, blueMod=None, gamma=None, invGamma=None, prstClr=None

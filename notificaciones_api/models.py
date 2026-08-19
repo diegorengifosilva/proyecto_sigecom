@@ -7,11 +7,6 @@ class Notificacion(models.Model):
         ("atencion", "Atención"),
         ("informativo", "Informativo"),
     )
-    
-    MODULO_CHOICES = (
-        ("comercial", "Comercial"),
-        ("logistica", "Logística"),
-    )
 
     id_notificacion = models.AutoField(primary_key=True)
     usuario = models.ForeignKey(
@@ -20,7 +15,12 @@ class Notificacion(models.Model):
         related_name="notificaciones_usuario"
     )
     tipo = models.CharField(max_length=20, choices=TIPO_CHOICES)
-    modulo = models.CharField(max_length=20, choices=MODULO_CHOICES)
+    id_modulo = models.ForeignKey(
+        'core.Modulo',
+        on_delete=models.CASCADE,
+        db_column='id_modulo',
+        related_name="notificaciones"
+    )
     titulo = models.CharField(max_length=255)
     descripcion = models.TextField()
     leido = models.BooleanField(default=False)
@@ -34,4 +34,5 @@ class Notificacion(models.Model):
         ordering = ["-fecha"]
 
     def __str__(self):
-        return f"[{self.modulo.upper()}] {self.titulo} - User: {self.usuario.usuario}"
+        modulo_nombre = self.id_modulo.nombre if self.id_modulo else "S/M"
+        return f"[{modulo_nombre.upper()}] {self.titulo} - User: {self.usuario.usuario}"

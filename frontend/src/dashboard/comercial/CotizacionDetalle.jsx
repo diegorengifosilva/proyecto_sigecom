@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
 import * as LucideIcons from 'lucide-react';
 import api from '@/services/api';
 import { toast } from '../../utils/toast';
@@ -679,6 +679,9 @@ const EditableGroupRow = ({
   const isSavingRef = useRef(false);
   const [tempData, setTempData] = useState({ titulo: '', cantidad: 1, costoEnvio: 0, detalle: '' });
   const [tempItems, setTempItems] = useState([]);
+  const [editingTempItemId, setEditingTempItemId] = useState(null);
+  const [editingTempItemForm, setEditingTempItemForm] = useState(null);
+  const [activeTempEditField, setActiveTempEditField] = useState(null);
   const [manoObraCostError, setManoObraCostError] = useState("");
   const [descError, setDescError] = useState({ category: null, message: "" });
   const [isDetailExpanded, setIsDetailExpanded] = useState(false);
@@ -1122,14 +1125,8 @@ const EditableGroupRow = ({
     const min = parseFloat(newManoObraItem.costo_min || 0);
     const max = parseFloat(newManoObraItem.costo_max || 0);
     
-    if (min > 0 && finalCosto < min) {
-      handleManoObraFieldChange('costo_hombre_dia', min);
-      toast.warning(`El costo debe estar en el rango de ${formatMoneySymbolSafe(min)} a ${formatMoneySymbolSafe(max)}. Se ajustó al mínimo.`, "Límite de Costo");
-      return;
-    } else if (max > 0 && finalCosto > max) {
-      handleManoObraFieldChange('costo_hombre_dia', max);
-      toast.warning(`El costo debe estar en el rango de ${formatMoneySymbolSafe(min)} a ${formatMoneySymbolSafe(max)}. Se ajustó al máximo.`, "Límite de Costo");
-      return;
+    if ((min > 0 && finalCosto < min) || (max > 0 && finalCosto > max)) {
+      toast.warning(`Sugerencia: El costo recomendado para este personal está en el rango de ${formatMoneySymbolSafe(min)} a ${formatMoneySymbolSafe(max)}.`, "Rango de Costo Recomendado");
     }
 
     const itemToAdd = {
@@ -1191,6 +1188,217 @@ const EditableGroupRow = ({
     const filtered = tempItems.filter(item => item.id_temp !== idTemp);
     const finalItems = recalculateAllTempItems(filtered, tempData.costoEnvio);
     setTempItems(finalItems);
+  };
+
+  const handleStartEditTempItem = (item, fieldName = null) => {
+    setEditingTempItemId(item.id_temp);
+    setEditingTempItemForm({ ...item });
+    setActiveTempEditField(fieldName);
+  };
+
+  const handlePersonalCreatedEditingLocal = (registro) => {
+    const cMin = parseFloat(registro.costo_min || 0);
+    const cMax = parseFloat(registro.costo_max || 0);
+    const cAvg = Math.round((cMin && cMax ? (cMin + cMax) / 2 : (cMax || cMin || 0)) * 100) / 100;
+    setEditingTempItemForm(prev => {
+      const next = {
+        ...prev,
+        codigo_item: `${registro.codigo}-${registro.nombre}`,
+        costo_hombre_dia: cAvg,
+        costo_min: cMin,
+        costo_max: cMax,
+        costType: 'avg'
+      };
+      return recalculateTempItemServicioLocal(next, 'costo_hombre_dia', cAvg);
+    });
+  };
+
+  const handlePersonalCancelEditingLocal = () => {};
+
+  const handleGastoCreatedEditingLocal = (registro, codePrefix) => {
+    setEditingTempItemForm(prev => {
+      const next = {
+        ...prev,
+        codigo_item: registro.codigo,
+        descripcion_item: registro.nombre
+      };
+      return recalculateTempItemServicioLocal(next, codePrefix === '05' ? 'cotizado_hombre_dia' : 'costo_hombre_dia', 0);
+    });
+  };
+
+  const handleGastoCancelEditingLocal = () => {};
+
+  const handleProductCreatedEditingLocal = (registro) => {
+    const totalCostoItems = tempItems.reduce((acc, it) => {
+      if (it.id_temp === editingTempItemId) return acc;
+      return acc + Number(it.costo_precio || 0) * Number(it.cantidad || 0);
+    }, 0);
+    
+    const normalizado = normalizarProductoDB(registro, tipoMoneda, tipoCambio || 1, Number(editingTempItemForm.cantidad || 1));
+    setEditingTempItemForm(prev => {
+      const next = {
+        ...prev,
+        proveedor: normalizado.proveedor,
+        id_marca: registro.id_marca,
+        codigo_item: normalizado.codigo,
+        descripcion: normalizado.descripcion,
+        tipo_unidad: normalizado.unidad,
+        costo_precio: normalizado.costoPrecio,
+        porcentaje_utilidad: prev.porcentaje_utilidad || 20
+      };
+      const totalCostoWithNew = totalCostoItems + (Number(next.costo_precio || 0) * Number(next.cantidad || 0));
+      return recalculateRowValues(next, 'porcentaje_utilidad', Number(tempData.costoEnvio || 0), totalCostoWithNew);
+    });
+  };
+
+  const handleProductCancelEditingLocal = (codigo) => {
+    setEditingTempItemForm(prev => ({ ...prev, codigo_item: codigo }));
+  };
+
+  useEffect(() => {
+    if (editingTempItemId && activeTempEditField) {
+      const timer = setTimeout(() => {
+        const rowEl = document.querySelector(`[data-temp-row="${editingTempItemId}"]`);
+        if (rowEl) {
+          let input = rowEl.querySelector(`[data-field="${activeTempEditField}"], [name="${activeTempEditField}"]`);
+          if (input && input.tagName !== 'INPUT' && input.tagName !== 'TEXTAREA' && input.tagName !== 'SELECT') {
+            input = input.querySelector('input, textarea, select') || input;
+          }
+          if (input) {
+            input.focus();
+            if (typeof input.select === 'function') {
+              input.select();
+            }
+          }
+        }
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [editingTempItemId, activeTempEditField]);
+
+  const recalculateTempItemServicioLocal = (item, fieldModificado, value) => {
+    const next = { ...item, [fieldModificado]: value };
+    const cat = next.categoria;
+    if (cat === "04") {
+      const finalHombres = Number(next.cantidad_hombres || 0);
+      const finalDias = Number(next.cantidad_dias || 0);
+      const finalCosto = Number(next.costo_hombre_dia || 0);
+      let finalPorcentaje = Number(next.porcentaje || 0);
+      
+      const newCostoTotal = finalHombres * finalDias * finalCosto;
+      let newUtil = newCostoTotal * (finalPorcentaje / 100);
+
+      if (fieldModificado === 'utilidad') {
+        newUtil = Number(value || 0);
+        finalPorcentaje = newCostoTotal > 0 ? (newUtil / newCostoTotal) * 100 : 0;
+        next.porcentaje = Number(finalPorcentaje.toFixed(2));
+      } else {
+        next.utilidad = Number(newUtil.toFixed(2));
+      }
+
+      const newCotizadoTotal = newCostoTotal + next.utilidad;
+      const newCotizadoHD = (finalHombres > 0 && finalDias > 0) ? (newCotizadoTotal / (finalHombres * finalDias)) : 0;
+      
+      next.costo_total = newCostoTotal;
+      next.cotizado_total = Number(newCotizadoTotal.toFixed(2));
+      next.cotizado_hombre_dia = Number(newCotizadoHD.toFixed(2));
+    } else if (cat === "05") {
+      const finalHombres = Number(next.cantidad_hombres || 0);
+      const finalDias = Number(next.cantidad_dias || 0);
+      const precio = Number(next.cotizado_hombre_dia || 0);
+      const newTotal = finalHombres * finalDias * precio;
+      next.cotizado_total = Number(newTotal.toFixed(2));
+    } else if (cat === "06") {
+      const finalCant = Number(next.cantidad_hombres || 0);
+      const finalCosto = Number(next.costo_hombre_dia || 0);
+      let finalPorcentaje = Number(next.porcentaje || 0);
+      
+      const newCostoTotal = finalCant * finalCosto;
+      let newUtil = newCostoTotal * (finalPorcentaje / 100);
+
+      if (fieldModificado === 'utilidad') {
+        newUtil = Number(value || 0);
+        finalPorcentaje = newCostoTotal > 0 ? (newUtil / newCostoTotal) * 100 : 0;
+        next.porcentaje = Number(finalPorcentaje.toFixed(2));
+      } else {
+        next.utilidad = Number(newUtil.toFixed(2));
+      }
+
+      const newCotizadoTotal = newCostoTotal + next.utilidad;
+      const newCotizadoHD = finalCant > 0 ? (newCotizadoTotal / finalCant) : 0;
+      
+      next.costo_total = newCostoTotal;
+      next.cotizado_total = Number(newCotizadoTotal.toFixed(2));
+      next.cotizado_hombre_dia = Number(newCotizadoHD.toFixed(2));
+    }
+    return next;
+  };
+
+  const handleSaveTempItem = () => {
+    if (!editingTempItemForm) return;
+    let updatedForm = { ...editingTempItemForm };
+    if (editingTempItemForm.categoria === undefined) {
+      // Suministros
+      const totalCostoItems = tempItems.reduce((acc, it) => {
+        if (it.id_temp === editingTempItemId) return acc;
+        return acc + Number(it.costo_precio || 0) * Number(it.cantidad || 0);
+      }, 0) + Number(updatedForm.costo_precio || 0) * Number(updatedForm.cantidad || 0);
+
+      updatedForm = recalculateRowValues(updatedForm, 'porcentaje_utilidad', Number(tempData.costoEnvio || 0), totalCostoItems);
+    } else {
+      // Servicios
+      const cat = editingTempItemForm.categoria;
+      if (cat === "04") {
+        const finalHombres = Number(updatedForm.cantidad_hombres || 0);
+        const finalDias = Number(updatedForm.cantidad_dias || 0);
+        const finalCosto = Number(updatedForm.costo_hombre_dia || 0);
+        const finalPorcentaje = Number(updatedForm.porcentaje || 0);
+        
+        const newCostoTotal = finalHombres * finalDias * finalCosto;
+        const newUtil = newCostoTotal * (finalPorcentaje / 100);
+        const newCotizadoTotal = newCostoTotal + newUtil;
+        const newCotizadoHD = (finalHombres > 0 && finalDias > 0) ? (newCotizadoTotal / (finalHombres * finalDias)) : 0;
+        
+        updatedForm.costo_total = newCostoTotal;
+        updatedForm.utilidad = Number(newUtil.toFixed(2));
+        updatedForm.cotizado_total = Number(newCotizadoTotal.toFixed(2));
+        updatedForm.cotizado_hombre_dia = Number(newCotizadoHD.toFixed(2));
+
+        const min = parseFloat(updatedForm.costo_min || 0);
+        const max = parseFloat(updatedForm.costo_max || 0);
+        if ((min > 0 && finalCosto < min) || (max > 0 && finalCosto > max)) {
+          toast.warning(`Sugerencia: El costo recomendado para este personal está en el rango de ${formatMoneySymbolSafe(min)} a ${formatMoneySymbolSafe(max)}.`, "Rango de Costo Recomendado");
+        }
+      } else if (cat === "05") {
+        const finalHombres = Number(updatedForm.cantidad_hombres || 0);
+        const finalDias = Number(updatedForm.cantidad_dias || 0);
+        const precio = Number(updatedForm.cotizado_hombre_dia || 0);
+        const newTotal = finalHombres * finalDias * precio;
+        updatedForm.cotizado_total = Number(newTotal.toFixed(2));
+      } else if (cat === "06") {
+        const finalCant = Number(updatedForm.cantidad_hombres || 0);
+        const finalCosto = Number(updatedForm.costo_hombre_dia || 0);
+        const finalPorcentaje = Number(updatedForm.porcentaje || 0);
+        
+        const newCostoTotal = finalCant * finalCosto;
+        const newUtil = newCostoTotal * (finalPorcentaje / 100);
+        const newCotizadoTotal = newCostoTotal + newUtil;
+        const newCotizadoHD = finalCant > 0 ? (newCotizadoTotal / finalCant) : 0;
+        
+        updatedForm.costo_total = newCostoTotal;
+        updatedForm.utilidad = Number(newUtil.toFixed(2));
+        updatedForm.cotizado_total = Number(newCotizadoTotal.toFixed(2));
+        updatedForm.cotizado_hombre_dia = Number(newCotizadoHD.toFixed(2));
+      }
+    }
+
+    setTempItems(prev => {
+      const updated = prev.map(it => it.id_temp === editingTempItemId ? updatedForm : it);
+      return recalculateAllTempItems(updated, tempData.costoEnvio);
+    });
+    setEditingTempItemId(null);
+    setEditingTempItemForm(null);
+    setActiveTempEditField(null);
   };
 
   const handleSaveGroup = () => {
@@ -1570,49 +1778,209 @@ const EditableGroupRow = ({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
-                          {tempItems.filter(it => it.categoria === "04").map((item) => (
-                            <tr key={item.id_temp} className="hover:bg-slate-50/30 transition-colors">
-                              <td className="px-3 py-1.5 text-[11px] font-bold text-slate-900 uppercase">
-                                {item.codigo_item || "S/C"}
-                              </td>
-                              <td className="px-3 py-1.5 text-[11px] text-slate-700 uppercase font-medium truncate max-w-0" title={item.descripcion_item}>
-                                {item.descripcion_item}
-                              </td>
-                              <td className="px-3 py-1.5 text-[11px] text-center font-bold text-slate-900">
-                                {item.cantidad_hombres}
-                              </td>
-                              <td className="px-3 py-1.5 text-[11px] text-center font-bold text-slate-900">
-                                {item.cantidad_dias}
-                              </td>
-                              <td className="px-3 py-1.5 text-[11px] text-center font-bold text-slate-900">
-                                {item.horas}
-                              </td>
-                              <td className="px-3 py-1.5 text-[11px] text-right text-slate-600 font-medium whitespace-nowrap">
-                                {formatMoneySymbolSafe(item.costo_hombre_dia)}
-                              </td>
-                              <td className="px-3 py-1.5 text-[11px] text-right text-slate-600 font-medium">
-                                <div className="flex flex-col items-end whitespace-nowrap">
-                                  <span>{formatMoneySymbolSafe(item.utilidad)}</span>
-                                  <span className="text-[9px] text-slate-400">{item.porcentaje}%</span>
-                                </div>
-                              </td>
-                              <td className="px-3 py-1.5 text-[11px] text-right text-slate-600 font-medium whitespace-nowrap">
-                                {formatMoneySymbolSafe(item.cotizado_hombre_dia)}
-                              </td>
-                              <td className="px-3 py-1.5 text-[11px] font-black text-right text-slate-900 whitespace-nowrap">
-                                {formatMoneySymbolSafe(item.cotizado_total)}
-                              </td>
-                              <td className="px-3 py-1.5 text-center">
-                                <button
-                                  onClick={() => handleRemoveItem(item.id_temp)}
-                                  className="p-1 text-slate-400 hover:text-rose-500 rounded transition-colors"
-                                  title="Quitar"
-                                >
-                                  <Icon name="trash-2" className="h-3.5 w-3.5" />
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
+                          {tempItems.filter(it => it.categoria === "04").map((item) => {
+                            if (editingTempItemId === item.id_temp) {
+                              return (
+                                <tr key={item.id_temp} data-temp-row={item.id_temp} className="bg-indigo-50/30">
+                                  <td className="px-3 py-1">
+                                    <div data-field="codigo_item" className="w-full">
+                                      <TipoPersonalAutocomplete
+                                        value={editingTempItemForm.codigo_item || ""}
+                                        idArea={idArea}
+                                        idRegistro={idRegistro}
+                                        catalogoVersion={catalogoVersion}
+                                        tipoMoneda={tipoMoneda}
+                                        onTriggerCreatePersonal={(name) => handleTriggerCreatePersonal(name, 'editingTemp', handlePersonalCreatedEditingLocal, handlePersonalCancelEditingLocal)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            handleSaveTempItem();
+                                          }
+                                        }}
+                                        onSelect={(personal) => {
+                                          if (!personal || !personal.codigo) {
+                                            setEditingTempItemForm(prev => {
+                                              const next = {
+                                                ...prev,
+                                                codigo_item: '',
+                                                descripcion_item: '',
+                                                costo_hombre_dia: 0,
+                                                costo_min: 0,
+                                                costo_max: 0,
+                                                costType: 'min'
+                                              };
+                                              return recalculateTempItemServicioLocal(next, 'costo_hombre_dia', 0);
+                                            });
+                                            return;
+                                          }
+                                          setEditingTempItemForm(prev => {
+                                            const cMin = parseFloat(personal.costo_min || 0);
+                                            const cMax = parseFloat(personal.costo_max || 0);
+                                            const cAvg = Math.round((cMin && cMax ? (cMin + cMax) / 2 : (cMax || cMin || 0)) * 100) / 100;
+                                            const next = {
+                                              ...prev,
+                                              codigo_item: `${personal.codigo}-${personal.nombre}`,
+                                              costo_hombre_dia: cAvg,
+                                              costo_min: cMin,
+                                              costo_max: cMax,
+                                              costType: 'avg'
+                                            };
+                                            return recalculateTempItemServicioLocal(next, 'costo_hombre_dia', cAvg);
+                                          });
+                                        }}
+                                      />
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-1">
+                                    <input
+                                      type="text"
+                                      data-field="descripcion_item"
+                                      className="w-full text-[11px] border border-slate-300 rounded px-1 py-0.5 uppercase"
+                                      value={editingTempItemForm.descripcion_item || ""}
+                                      onChange={e => setEditingTempItemForm({ ...editingTempItemForm, descripcion_item: e.target.value })}
+                                    />
+                                  </td>
+                                  <td className="px-3 py-1">
+                                    <input
+                                      type="number"
+                                      data-field="cantidad_hombres"
+                                      className="w-full text-[11px] border border-slate-300 rounded px-1 py-0.5 text-center font-bold"
+                                      value={editingTempItemForm.cantidad_hombres || ""}
+                                      onChange={e => setEditingTempItemForm(recalculateTempItemServicioLocal(editingTempItemForm, 'cantidad_hombres', parseInt(e.target.value) || 0))}
+                                    />
+                                  </td>
+                                  <td className="px-3 py-1">
+                                    <input
+                                      type="number"
+                                      data-field="cantidad_dias"
+                                      className="w-full text-[11px] border border-slate-300 rounded px-1 py-0.5 text-center font-bold"
+                                      value={editingTempItemForm.cantidad_dias || ""}
+                                      onChange={e => setEditingTempItemForm(recalculateTempItemServicioLocal(editingTempItemForm, 'cantidad_dias', parseInt(e.target.value) || 0))}
+                                    />
+                                  </td>
+                                  <td className="px-3 py-1">
+                                    <input
+                                      type="number"
+                                      data-field="horas"
+                                      className="w-full text-[11px] border border-slate-300 rounded px-1 py-0.5 text-center font-bold"
+                                      value={editingTempItemForm.horas || ""}
+                                      onChange={e => setEditingTempItemForm({ ...editingTempItemForm, horas: parseInt(e.target.value) || 8 })}
+                                    />
+                                  </td>
+                                  <td className="px-3 py-1">
+                                    <input
+                                      type="text"
+                                      data-field="costo_hombre_dia"
+                                      className="w-full text-[11px] border border-slate-300 rounded px-1 py-0.5 text-center font-bold"
+                                      value={editingTempItemForm.costo_hombre_dia === undefined ? "" : editingTempItemForm.costo_hombre_dia}
+                                      onChange={e => handleDecimalChange(e, (val) => setEditingTempItemForm(recalculateTempItemServicioLocal(editingTempItemForm, 'costo_hombre_dia', val)))}
+                                      onBlur={(e) => {
+                                        const val = parseFloat(e.target.value) || 0;
+                                        const min = parseFloat(editingTempItemForm.costo_min || 0);
+                                        const max = parseFloat(editingTempItemForm.costo_max || 0);
+                                        if ((min > 0 && val < min) || (max > 0 && val > max)) {
+                                          toast.warning(`Sugerencia: El costo recomendado para este personal está en el rango de ${formatMoneySymbolSafe(min)} a ${formatMoneySymbolSafe(max)}.`, "Rango de Costo Recomendado");
+                                        }
+                                      }}
+                                    />
+                                  </td>
+                                  <td className="px-3 py-1 text-right">
+                                    <div className="flex flex-col gap-1">
+                                      <input
+                                        type="text"
+                                        data-field="utilidad"
+                                        className="w-full text-[11px] border border-slate-300 rounded px-1 py-0.5 text-right font-bold text-slate-700"
+                                        value={editingTempItemForm.utilidad === undefined ? "" : editingTempItemForm.utilidad}
+                                        onChange={e => handleDecimalChange(e, (val) => setEditingTempItemForm(recalculateTempItemServicioLocal(editingTempItemForm, 'utilidad', val)))}
+                                      />
+                                      <div className="relative flex items-center justify-center w-full">
+                                        <input
+                                          type="text"
+                                          data-field="porcentaje"
+                                          className="w-full text-[10px] border border-slate-300 text-center rounded px-1 py-0.5 font-medium text-slate-500"
+                                          value={editingTempItemForm.porcentaje === undefined ? "" : editingTempItemForm.porcentaje}
+                                          onChange={e => handleDecimalChange(e, (val) => setEditingTempItemForm(recalculateTempItemServicioLocal(editingTempItemForm, 'porcentaje', val)))}
+                                        />
+                                        <span className="absolute right-1 text-[9px] text-gray-400">%</span>
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-1 text-right text-[11px] text-slate-600 font-medium">
+                                    {formatMoneySymbolSafe(editingTempItemForm.cotizado_hombre_dia)}
+                                  </td>
+                                  <td className="px-3 py-1 text-right text-[11px] font-black text-slate-900">
+                                    {formatMoneySymbolSafe(editingTempItemForm.cotizado_total)}
+                                  </td>
+                                  <td className="px-3 py-1 text-center">
+                                    <div className="flex items-center gap-1 justify-center">
+                                      <button
+                                        type="button"
+                                        onClick={handleSaveTempItem}
+                                        className="p-1 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded"
+                                        title="Guardar"
+                                      >
+                                        <Icon name="check" className="h-3.5 w-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingTempItemId(null);
+                                          setEditingTempItemForm(null);
+                                        }}
+                                        className="p-1 text-slate-400 hover:text-slate-655 hover:bg-slate-100 rounded"
+                                        title="Cancelar"
+                                      >
+                                        <Icon name="x" className="h-3.5 w-3.5" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            }
+                            return (
+                              <tr key={item.id_temp} onDoubleClick={() => handleStartEditTempItem(item, 'descripcion_item')} className="hover:bg-slate-50/30 transition-colors cursor-pointer" title="Doble clic para editar">
+                                <td className="px-3 py-1.5 text-[11px] font-bold text-slate-900 uppercase" onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'codigo_item'); }}>
+                                  {item.codigo_item || "S/C"}
+                                </td>
+                                <td className="px-3 py-1.5 text-[11px] text-slate-700 uppercase font-medium truncate max-w-0" title={item.descripcion_item} onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'descripcion_item'); }}>
+                                  {item.descripcion_item}
+                                </td>
+                                <td className="px-3 py-1.5 text-[11px] text-center font-bold text-slate-900" onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'cantidad_hombres'); }}>
+                                  {item.cantidad_hombres}
+                                </td>
+                                <td className="px-3 py-1.5 text-[11px] text-center font-bold text-slate-900" onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'cantidad_dias'); }}>
+                                  {item.cantidad_dias}
+                                </td>
+                                <td className="px-3 py-1.5 text-[11px] text-center font-bold text-slate-900" onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'horas'); }}>
+                                  {item.horas}
+                                </td>
+                                <td className="px-3 py-1.5 text-[11px] text-right text-slate-600 font-medium whitespace-nowrap" onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'costo_hombre_dia'); }}>
+                                  {formatMoneySymbolSafe(item.costo_hombre_dia)}
+                                </td>
+                                <td className="px-3 py-1.5 text-[11px] text-right text-slate-600 font-medium" onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'utilidad'); }}>
+                                  <div className="flex flex-col items-end whitespace-nowrap">
+                                    <span>{formatMoneySymbolSafe(item.utilidad)}</span>
+                                    <span className="text-[9px] text-slate-400">{item.porcentaje}%</span>
+                                  </div>
+                                </td>
+                                <td className="px-3 py-1.5 text-[11px] text-right text-slate-600 font-medium whitespace-nowrap">
+                                  {formatMoneySymbolSafe(item.cotizado_hombre_dia)}
+                                </td>
+                                <td className="px-3 py-1.5 text-[11px] font-black text-right text-slate-900 whitespace-nowrap">
+                                  {formatMoneySymbolSafe(item.cotizado_total)}
+                                </td>
+                                <td className="px-3 py-1.5 text-center" onDoubleClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    onClick={() => handleRemoveItem(item.id_temp)}
+                                    className="p-1 text-slate-400 hover:text-rose-500 rounded transition-colors"
+                                    title="Quitar"
+                                  >
+                                    <Icon name="trash-2" className="h-3.5 w-3.5" />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
                           
                           <tr className="bg-indigo-50/10">
                             <td className="px-3 py-1.5 min-w-[200px]">
@@ -1754,18 +2122,8 @@ const EditableGroupRow = ({
                                   let val = parseDecimalString(e.target.value);
                                   const min = parseFloat(newManoObraItem.costo_min || 0);
                                   const max = parseFloat(newManoObraItem.costo_max || 0);
-                                  let modified = false;
-                                  if (min > 0 && val < min) {
-                                    val = min;
-                                    modified = true;
-                                    toast.warning(`El costo debe estar en el rango de ${formatMoneySymbolSafe(min)} a ${formatMoneySymbolSafe(max)}. Se ajustó al mínimo.`, "Límite de Costo");
-                                  } else if (max > 0 && val > max) {
-                                    val = max;
-                                    modified = true;
-                                    toast.warning(`El costo debe estar en el rango de ${formatMoneySymbolSafe(min)} a ${formatMoneySymbolSafe(max)}. Se ajustó al máximo.`, "Límite de Costo");
-                                  }
-                                  if (modified) {
-                                    handleManoObraFieldChange('costo_hombre_dia', val);
+                                  if ((min > 0 && val < min) || (max > 0 && val > max)) {
+                                    toast.warning(`Sugerencia: El costo recomendado para este personal está en el rango de ${formatMoneySymbolSafe(min)} a ${formatMoneySymbolSafe(max)}.`, "Rango de Costo Recomendado");
                                   }
                                 }}
                               />
@@ -1845,6 +2203,7 @@ const EditableGroupRow = ({
                             </td>
                           </tr>
                           {renderInlinePersonalCreateForm && renderInlinePersonalCreateForm('new', handlePersonalCreatedLocal, handlePersonalCancelLocal)}
+                          {renderInlinePersonalCreateForm && renderInlinePersonalCreateForm('editingTemp', handlePersonalCreatedEditingLocal, handlePersonalCancelEditingLocal)}
                         </tbody>
                       </table>
                     </div>
@@ -1893,37 +2252,146 @@ const EditableGroupRow = ({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
-                          {tempItems.filter(it => it.categoria === "05").map((item) => (
-                            <tr key={item.id_temp} className="hover:bg-slate-50/30 transition-colors">
-                              <td className="px-3 py-1.5 text-[11px] font-bold text-slate-900 uppercase whitespace-nowrap">
-                                {item.codigo_item || "S/C"}
-                              </td>
-                              <td className="px-3 py-1.5 text-[11px] text-slate-700 uppercase font-medium truncate max-w-0" title={item.descripcion_item}>
-                                {item.descripcion_item}
-                              </td>
-                              <td className="px-3 py-1.5 text-[11px] text-center font-bold text-slate-900">
-                                {item.cantidad_hombres}
-                              </td>
-                              <td className="px-3 py-1.5 text-[11px] text-center font-bold text-slate-900">
-                                {item.cantidad_dias}
-                              </td>
-                              <td className="px-3 py-1.5 text-[11px] text-right text-slate-600 font-medium whitespace-nowrap">
-                                {formatMoneySymbolSafe(item.cotizado_hombre_dia)}
-                              </td>
-                              <td className="px-3 py-1.5 text-[11px] font-black text-right text-slate-900 whitespace-nowrap">
-                                {formatMoneySymbolSafe(item.cotizado_total)}
-                              </td>
-                              <td className="px-3 py-1.5 text-center">
-                                <button
-                                  onClick={() => handleRemoveItem(item.id_temp)}
-                                  className="p-1 text-slate-400 hover:text-rose-500 rounded transition-colors"
-                                  title="Quitar"
-                                >
-                                  <Icon name="trash-2" className="h-3.5 w-3.5" />
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
+                          {tempItems.filter(it => it.categoria === "05").map((item) => {
+                            if (editingTempItemId === item.id_temp) {
+                              return (
+                                <tr key={item.id_temp} data-temp-row={item.id_temp} className="bg-indigo-50/30">
+                                  <td className="px-3 py-1">
+                                    <div data-field="codigo_item" className="w-full">
+                                      <TipoGastoDetalleAutocomplete
+                                        value={editingTempItemForm.codigo_item || ""}
+                                        codePrefix="05"
+                                        idRegistro={idRegistro}
+                                        onTriggerCreateGasto={(name) => handleTriggerCreateGasto(name, 'editingTemp', '05', handleGastoCreatedEditingLocal, handleGastoCancelEditingLocal)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            handleSaveTempItem();
+                                          }
+                                        }}
+                                        onSelect={(gasto) => {
+                                          if (!gasto || !gasto.codigo) {
+                                            setEditingTempItemForm(prev => {
+                                              const next = {
+                                                ...prev,
+                                                codigo_item: '',
+                                                descripcion_item: '',
+                                                cotizado_hombre_dia: 0
+                                              };
+                                              return recalculateTempItemServicioLocal(next, 'cotizado_hombre_dia', 0);
+                                            });
+                                            return;
+                                          }
+                                          setEditingTempItemForm(prev => {
+                                            const next = {
+                                              ...prev,
+                                              codigo_item: gasto.codigo,
+                                              descripcion_item: gasto.nombre,
+                                              cotizado_hombre_dia: 0
+                                            };
+                                            return recalculateTempItemServicioLocal(next, 'cotizado_hombre_dia', 0);
+                                          });
+                                        }}
+                                      />
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-1">
+                                    <input
+                                      type="text"
+                                      data-field="descripcion_item"
+                                      className="w-full text-[11px] border border-slate-300 rounded px-1 py-0.5 uppercase"
+                                      value={editingTempItemForm.descripcion_item || ""}
+                                      onChange={e => setEditingTempItemForm({ ...editingTempItemForm, descripcion_item: e.target.value })}
+                                    />
+                                  </td>
+                                  <td className="px-3 py-1">
+                                    <input
+                                      type="number"
+                                      data-field="cantidad_hombres"
+                                      className="w-full text-[11px] border border-slate-300 rounded px-1 py-0.5 text-center font-bold"
+                                      value={editingTempItemForm.cantidad_hombres || ""}
+                                      onChange={e => setEditingTempItemForm(recalculateTempItemServicioLocal(editingTempItemForm, 'cantidad_hombres', parseInt(e.target.value) || 0))}
+                                    />
+                                  </td>
+                                  <td className="px-3 py-1">
+                                    <input
+                                      type="number"
+                                      data-field="cantidad_dias"
+                                      className="w-full text-[11px] border border-slate-300 rounded px-1 py-0.5 text-center font-bold"
+                                      value={editingTempItemForm.cantidad_dias || ""}
+                                      onChange={e => setEditingTempItemForm(recalculateTempItemServicioLocal(editingTempItemForm, 'cantidad_dias', parseInt(e.target.value) || 0))}
+                                    />
+                                  </td>
+                                  <td className="px-3 py-1">
+                                    <input
+                                      type="text"
+                                      data-field="cotizado_hombre_dia"
+                                      className="w-full text-[11px] border border-slate-300 rounded px-1 py-0.5 text-center font-bold"
+                                      value={editingTempItemForm.cotizado_hombre_dia === undefined ? "" : editingTempItemForm.cotizado_hombre_dia}
+                                      onChange={e => handleDecimalChange(e, (val) => setEditingTempItemForm(recalculateTempItemServicioLocal(editingTempItemForm, 'cotizado_hombre_dia', val)))}
+                                    />
+                                  </td>
+                                  <td className="px-3 py-1 text-right text-[11px] font-black text-slate-900">
+                                    {formatMoneySymbolSafe(editingTempItemForm.cotizado_total)}
+                                  </td>
+                                  <td className="px-3 py-1 text-center">
+                                    <div className="flex items-center gap-1 justify-center">
+                                      <button
+                                        type="button"
+                                        onClick={handleSaveTempItem}
+                                        className="p-1 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded"
+                                        title="Guardar"
+                                      >
+                                        <Icon name="check" className="h-3.5 w-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingTempItemId(null);
+                                          setEditingTempItemForm(null);
+                                        }}
+                                        className="p-1 text-slate-400 hover:text-slate-655 hover:bg-slate-100 rounded"
+                                        title="Cancelar"
+                                      >
+                                        <Icon name="x" className="h-3.5 w-3.5" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            }
+                            return (
+                              <tr key={item.id_temp} onDoubleClick={() => handleStartEditTempItem(item, 'descripcion_item')} className="hover:bg-slate-50/30 transition-colors cursor-pointer" title="Doble clic para editar">
+                                <td className="px-3 py-1.5 text-[11px] font-bold text-slate-900 uppercase whitespace-nowrap" onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'codigo_item'); }}>
+                                  {item.codigo_item || "S/C"}
+                                </td>
+                                <td className="px-3 py-1.5 text-[11px] text-slate-700 uppercase font-medium truncate max-w-0" title={item.descripcion_item} onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'descripcion_item'); }}>
+                                  {item.descripcion_item}
+                                </td>
+                                <td className="px-3 py-1.5 text-[11px] text-center font-bold text-slate-900" onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'cantidad_hombres'); }}>
+                                  {item.cantidad_hombres}
+                                </td>
+                                <td className="px-3 py-1.5 text-[11px] text-center font-bold text-slate-900" onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'cantidad_dias'); }}>
+                                  {item.cantidad_dias}
+                                </td>
+                                <td className="px-3 py-1.5 text-[11px] text-right text-slate-600 font-medium whitespace-nowrap" onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'cotizado_hombre_dia'); }}>
+                                  {formatMoneySymbolSafe(item.cotizado_hombre_dia)}
+                                </td>
+                                <td className="px-3 py-1.5 text-[11px] font-black text-right text-slate-900 whitespace-nowrap">
+                                  {formatMoneySymbolSafe(item.cotizado_total)}
+                                </td>
+                                <td className="px-3 py-1.5 text-center" onDoubleClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    onClick={() => handleRemoveItem(item.id_temp)}
+                                    className="p-1 text-slate-400 hover:text-rose-500 rounded transition-colors"
+                                    title="Quitar"
+                                  >
+                                    <Icon name="trash-2" className="h-3.5 w-3.5" />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
                           
                           <tr className="bg-indigo-50/10">
                             <td className="px-3 py-1.5">
@@ -2050,6 +2518,7 @@ const EditableGroupRow = ({
                             </td>
                           </tr>
                           {renderInlineGastoCreateForm && renderInlineGastoCreateForm('new', handleGastoCreatedLocal, handleGastoCancelLocal)}
+                          {renderInlineGastoCreateForm && renderInlineGastoCreateForm('editingTemp', handleGastoCreatedEditingLocal, handleGastoCancelEditingLocal)}
                         </tbody>
                       </table>
                     </div>
@@ -2099,43 +2568,167 @@ const EditableGroupRow = ({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
-                          {tempItems.filter(it => it.categoria === "06").map((item) => (
-                            <tr key={item.id_temp} className="hover:bg-slate-50/30 transition-colors">
-                              <td className="px-3 py-1.5 text-[11px] font-bold text-slate-900 uppercase whitespace-nowrap">
-                                {item.codigo_item || "S/C"}
-                              </td>
-                              <td className="px-3 py-1.5 text-[11px] text-slate-750 uppercase font-semibold truncate max-w-0" title={item.descripcion_item}>
-                                {item.descripcion_item}
-                              </td>
-                              <td className="px-3 py-1.5 text-[11px] text-center font-bold text-slate-900">
-                                {item.cantidad_hombres}
-                              </td>
-                              <td className="px-3 py-1.5 text-[11px] text-right text-slate-600 font-medium whitespace-nowrap">
-                                {formatMoneySymbolSafe(item.costo_hombre_dia)}
-                              </td>
-                              <td className="px-3 py-1.5 text-[11px] text-right text-slate-600 font-medium">
-                                <div className="flex flex-col items-end whitespace-nowrap">
-                                  <span>{formatMoneySymbolSafe(item.utilidad)}</span>
-                                  <span className="text-[9px] text-gray-400">{item.porcentaje}%</span>
-                                </div>
-                              </td>
-                              <td className="px-3 py-1.5 text-[11px] text-right text-slate-600 font-medium whitespace-nowrap">
-                                {formatMoneySymbolSafe(item.cotizado_hombre_dia)}
-                              </td>
-                              <td className="px-3 py-1.5 text-[11px] font-black text-right text-slate-900 whitespace-nowrap">
-                                {formatMoneySymbolSafe(item.cotizado_total)}
-                              </td>
-                              <td className="px-3 py-1.5 text-center">
-                                <button
-                                  onClick={() => handleRemoveItem(item.id_temp)}
-                                  className="p-1 text-slate-400 hover:text-rose-500 rounded transition-colors"
-                                  title="Quitar"
-                                >
-                                  <Icon name="trash-2" className="h-3.5 w-3.5" />
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
+                          {tempItems.filter(it => it.categoria === "06").map((item) => {
+                            if (editingTempItemId === item.id_temp) {
+                              return (
+                                <tr key={item.id_temp} data-temp-row={item.id_temp} className="bg-indigo-50/30">
+                                  <td className="px-3 py-1">
+                                    <div data-field="codigo_item" className="w-full">
+                                      <TipoGastoDetalleAutocomplete
+                                        value={editingTempItemForm.codigo_item || ""}
+                                        codePrefix="06"
+                                        idRegistro={idRegistro}
+                                        onTriggerCreateGasto={(name) => handleTriggerCreateGasto(name, 'editingTemp', '06', handleGastoCreatedEditingLocal, handleGastoCancelEditingLocal)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            handleSaveTempItem();
+                                          }
+                                        }}
+                                        onSelect={(gasto) => {
+                                          if (!gasto || !gasto.codigo) {
+                                            setEditingTempItemForm(prev => {
+                                              const next = {
+                                                ...prev,
+                                                codigo_item: '',
+                                                descripcion_item: '',
+                                                costo_hombre_dia: 0
+                                              };
+                                              return recalculateTempItemServicioLocal(next, 'costo_hombre_dia', 0);
+                                            });
+                                            return;
+                                          }
+                                          setEditingTempItemForm(prev => {
+                                            const next = {
+                                              ...prev,
+                                              codigo_item: gasto.codigo,
+                                              descripcion_item: gasto.nombre,
+                                              costo_hombre_dia: 0
+                                            };
+                                            return recalculateTempItemServicioLocal(next, 'costo_hombre_dia', 0);
+                                          });
+                                        }}
+                                      />
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-1">
+                                    <input
+                                      type="text"
+                                      data-field="descripcion_item"
+                                      className="w-full text-[11px] border border-slate-300 rounded px-1 py-0.5 uppercase"
+                                      value={editingTempItemForm.descripcion_item || ""}
+                                      onChange={e => setEditingTempItemForm({ ...editingTempItemForm, descripcion_item: e.target.value })}
+                                    />
+                                  </td>
+                                  <td className="px-3 py-1">
+                                    <input
+                                      type="number"
+                                      data-field="cantidad_hombres"
+                                      className="w-full text-[11px] border border-slate-300 rounded px-1 py-0.5 text-center font-bold"
+                                      value={editingTempItemForm.cantidad_hombres || ""}
+                                      onChange={e => setEditingTempItemForm(recalculateTempItemServicioLocal(editingTempItemForm, 'cantidad_hombres', parseInt(e.target.value) || 0))}
+                                    />
+                                  </td>
+                                  <td className="px-3 py-1">
+                                    <input
+                                      type="text"
+                                      data-field="costo_hombre_dia"
+                                      className="w-full text-[11px] border border-slate-300 rounded px-1 py-0.5 text-center font-bold"
+                                      value={editingTempItemForm.costo_hombre_dia === undefined ? "" : editingTempItemForm.costo_hombre_dia}
+                                      onChange={e => handleDecimalChange(e, (val) => setEditingTempItemForm(recalculateTempItemServicioLocal(editingTempItemForm, 'costo_hombre_dia', val)))}
+                                    />
+                                  </td>
+                                  <td className="px-3 py-1 text-right">
+                                    <div className="flex flex-col gap-1">
+                                      <input
+                                        type="text"
+                                        data-field="utilidad"
+                                        className="w-full text-[11px] border border-slate-300 rounded px-1 py-0.5 text-right font-bold text-slate-700"
+                                        value={editingTempItemForm.utilidad === undefined ? "" : editingTempItemForm.utilidad}
+                                        onChange={e => handleDecimalChange(e, (val) => setEditingTempItemForm(recalculateTempItemServicioLocal(editingTempItemForm, 'utilidad', val)))}
+                                      />
+                                      <div className="relative flex items-center justify-center w-full">
+                                        <input
+                                          type="text"
+                                          data-field="porcentaje"
+                                          className="w-full text-[10px] border border-slate-300 text-center rounded px-1 py-0.5 font-medium text-slate-500"
+                                          value={editingTempItemForm.porcentaje === undefined ? "" : editingTempItemForm.porcentaje}
+                                          onChange={e => handleDecimalChange(e, (val) => setEditingTempItemForm(recalculateTempItemServicioLocal(editingTempItemForm, 'porcentaje', val)))}
+                                        />
+                                        <span className="absolute right-1 text-[9px] text-gray-400">%</span>
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-1 text-right text-[11px] text-slate-600 font-medium">
+                                    {formatMoneySymbolSafe(editingTempItemForm.cotizado_hombre_dia)}
+                                  </td>
+                                  <td className="px-3 py-1 text-right text-[11px] font-black text-slate-900">
+                                    {formatMoneySymbolSafe(editingTempItemForm.cotizado_total)}
+                                  </td>
+                                  <td className="px-3 py-1 text-center">
+                                    <div className="flex items-center gap-1 justify-center">
+                                      <button
+                                        type="button"
+                                        onClick={handleSaveTempItem}
+                                        className="p-1 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded"
+                                        title="Guardar"
+                                      >
+                                        <Icon name="check" className="h-3.5 w-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingTempItemId(null);
+                                          setEditingTempItemForm(null);
+                                        }}
+                                        className="p-1 text-slate-400 hover:text-slate-655 hover:bg-slate-100 rounded"
+                                        title="Cancelar"
+                                      >
+                                        <Icon name="x" className="h-3.5 w-3.5" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            }
+                            return (
+                              <tr key={item.id_temp} onDoubleClick={() => handleStartEditTempItem(item, 'descripcion_item')} className="hover:bg-slate-50/30 transition-colors cursor-pointer" title="Doble clic para editar">
+                                <td className="px-3 py-1.5 text-[11px] font-bold text-slate-900 uppercase whitespace-nowrap" onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'codigo_item'); }}>
+                                  {item.codigo_item || "S/C"}
+                                </td>
+                                <td className="px-3 py-1.5 text-[11px] text-slate-750 uppercase font-semibold truncate max-w-0" title={item.descripcion_item} onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'descripcion_item'); }}>
+                                  {item.descripcion_item}
+                                </td>
+                                <td className="px-3 py-1.5 text-[11px] text-center font-bold text-slate-900" onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'cantidad_hombres'); }}>
+                                  {item.cantidad_hombres}
+                                </td>
+                                <td className="px-3 py-1.5 text-[11px] text-right text-slate-600 font-medium whitespace-nowrap" onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'costo_hombre_dia'); }}>
+                                  {formatMoneySymbolSafe(item.costo_hombre_dia)}
+                                </td>
+                                <td className="px-3 py-1.5 text-[11px] text-right text-slate-600 font-medium" onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'utilidad'); }}>
+                                  <div className="flex flex-col items-end whitespace-nowrap">
+                                    <span>{formatMoneySymbolSafe(item.utilidad)}</span>
+                                    <span className="text-[9px] text-gray-400">{item.porcentaje}%</span>
+                                  </div>
+                                </td>
+                                <td className="px-3 py-1.5 text-[11px] text-right text-slate-600 font-medium whitespace-nowrap">
+                                  {formatMoneySymbolSafe(item.cotizado_hombre_dia)}
+                                </td>
+                                <td className="px-3 py-1.5 text-[11px] font-black text-right text-slate-900 whitespace-nowrap">
+                                  {formatMoneySymbolSafe(item.cotizado_total)}
+                                </td>
+                                <td className="px-3 py-1.5 text-center" onDoubleClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    onClick={() => handleRemoveItem(item.id_temp)}
+                                    className="p-1 text-slate-400 hover:text-rose-500 rounded transition-colors"
+                                    title="Quitar"
+                                  >
+                                    <Icon name="trash-2" className="h-3.5 w-3.5" />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
                           
                           <tr className="bg-indigo-50/10">
                             <td className="px-3 py-1.5">
@@ -2306,6 +2899,7 @@ const EditableGroupRow = ({
                             </td>
                           </tr>
                           {renderInlineGastoCreateForm && renderInlineGastoCreateForm('new', handleGastoCreatedLocal, handleGastoCancelLocal)}
+                          {renderInlineGastoCreateForm && renderInlineGastoCreateForm('editingTemp', handleGastoCreatedEditingLocal, handleGastoCancelEditingLocal)}
                         </tbody>
                       </table>
                     </div>
@@ -2335,61 +2929,260 @@ const EditableGroupRow = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {tempItems.map((item) => (
-                        <tr key={item.id_temp} className="hover:bg-gray-50/50 transition-colors">
-                          <td className="w-[1.5%] py-1.5"></td>
-                          <td className="px-4 py-1.5 text-[11px] font-bold text-gray-900 uppercase">
-                            <div className="flex flex-col">
-                              <span>{item.codigo_item}</span>
-                              {item.id_marca && (
-                                <span className="text-[9px] text-gray-400 font-semibold">
-                                  {proveedores?.find(p => String(p.id_marca).padStart(2, '0') === String(item.proveedor))?.nombre || ""}
-                                </span>
+                      {tempItems.map((item) => {
+                        if (editingTempItemId === item.id_temp) {
+                          const totalCostoItems = tempItems.reduce((acc, it) => {
+                            if (it.id_temp === editingTempItemId) return acc;
+                            return acc + Number(it.costo_precio || 0) * Number(it.cantidad || 0);
+                          }, 0) + Number(editingTempItemForm.costo_precio || 0) * Number(editingTempItemForm.cantidad || 0);
+                          
+                          return (
+                            <tr key={item.id_temp} data-temp-row={item.id_temp} className="bg-indigo-50/30">
+                              <td className="w-[1.5%] py-1.5"></td>
+                              <td className="px-4 py-1">
+                                <div className="flex flex-col gap-1 items-center justify-center text-center relative">
+                                  <div data-field="id_marca" className="w-full">
+                                    <MarcaAutocomplete
+                                      idMarca={editingTempItemForm.id_marca}
+                                      idRegistro={idRegistro}
+                                      proveedores={proveedores}
+                                      onSelect={(brand) => {
+                                        const code = String(brand.id_marca).padStart(2, '0');
+                                        setEditingTempItemForm(prev => ({
+                                          ...prev,
+                                          proveedor: code,
+                                          id_marca: brand.id_marca
+                                        }));
+                                      }}
+                                      onAddBrand={(newBrand) => {
+                                        setProveedores(prev => [...prev, newBrand]);
+                                      }}
+                                    />
+                                  </div>
+                                  <div data-field="codigo_item" className="w-full">
+                                    <ProductoAutocomplete
+                                      value={editingTempItemForm.codigo_item || ""}
+                                      idMarca={editingTempItemForm.id_marca}
+                                      tcamb={tipoCambio}
+                                      tipoMoneda={tipoMoneda}
+                                      catalogoVersion={catalogoVersion}
+                                      onTriggerCreate={(code) => handleTriggerCreateProduct(code, 'editingTemp', editingTempItemForm.id_marca)}
+                                      onSelect={(prod) => {
+                                        if (prod.isCustom) {
+                                          setEditingTempItemForm(prev => ({ ...prev, codigo_item: prod.codigo }));
+                                        } else {
+                                          const normalizado = normalizarProductoDB(prod, tipoMoneda, tipoCambio || 1, Number(editingTempItemForm.cantidad || 1));
+                                          setEditingTempItemForm(prev => {
+                                            const updated = {
+                                              ...prev,
+                                              proveedor: normalizado.proveedor,
+                                              id_marca: prod.id_marca,
+                                              codigo_item: normalizado.codigo,
+                                              descripcion: normalizado.descripcion,
+                                              tipo_unidad: normalizado.unidad,
+                                              costo_precio: normalizado.costoPrecio,
+                                              porcentaje_utilidad: prev.porcentaje_utilidad || 20
+                                            };
+                                            const totalCostoItems = tempItems.reduce((acc, it) => {
+                                              if (it.id_temp === editingTempItemId) return acc;
+                                              return acc + Number(it.costo_precio || 0) * Number(it.cantidad || 0);
+                                            }, 0) + Number(updated.costo_precio || 0) * Number(updated.cantidad || 0);
+                                            return recalculateRowValues(updated, 'porcentaje_utilidad', Number(tempData.costoEnvio || 0), totalCostoItems);
+                                          });
+                                        }
+                                      }}
+                                    />
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-4 py-1">
+                                <div className="flex flex-col gap-1">
+                                  <textarea
+                                    data-field="descripcion"
+                                    className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-0.5 font-semibold text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-center resize-none overflow-hidden h-auto uppercase"
+                                    value={editingTempItemForm.descripcion || ""}
+                                    onChange={e => setEditingTempItemForm({ ...editingTempItemForm, descripcion: e.target.value })}
+                                    placeholder="Descripción"
+                                    rows={1}
+                                  />
+                                  <textarea
+                                    data-field="observacion"
+                                    className="w-full text-[9.5px] border border-gray-300 rounded px-1.5 py-0.5 text-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-center resize-none overflow-hidden h-auto uppercase"
+                                    value={editingTempItemForm.observacion || ""}
+                                    onChange={e => setEditingTempItemForm({ ...editingTempItemForm, observacion: e.target.value })}
+                                    placeholder="Observación"
+                                    rows={1}
+                                  />
+                                </div>
+                              </td>
+                              <td className="px-4 py-1">
+                                <input
+                                  type="number"
+                                  data-field="cantidad"
+                                  className="w-full text-[11px] border border-gray-300 rounded px-1 py-0.5 text-center font-bold"
+                                  value={editingTempItemForm.cantidad || ""}
+                                  onChange={e => {
+                                    const val = parseInt(e.target.value) || 0;
+                                    setEditingTempItemForm(prev => {
+                                      const updated = { ...prev, cantidad: val };
+                                      return recalculateRowValues(updated, 'porcentaje_utilidad', Number(tempData.costoEnvio || 0), totalCostoItems);
+                                    });
+                                  }}
+                                />
+                              </td>
+                              <td className="px-4 py-1">
+                                <input
+                                  type="text"
+                                  data-field="costo_precio"
+                                  className="w-full text-[11px] border border-gray-300 rounded px-1 py-0.5 text-center font-bold"
+                                  value={editingTempItemForm.costo_precio === undefined ? "" : editingTempItemForm.costo_precio}
+                                  onChange={e => handleDecimalChange(e, (val) => {
+                                    setEditingTempItemForm(prev => {
+                                      const updated = { ...prev, costo_precio: val };
+                                      return recalculateRowValues(updated, 'porcentaje_utilidad', Number(tempData.costoEnvio || 0), totalCostoItems);
+                                    });
+                                  })}
+                                />
+                              </td>
+                              {isVenta && (
+                                <td className="px-4 py-1">
+                                  <input
+                                    type="text"
+                                    data-field="costo_envio"
+                                    className="w-full text-[11px] border border-gray-300 rounded px-1 py-0.5 text-center font-bold"
+                                    value={editingTempItemForm.costo_envio === undefined ? "" : editingTempItemForm.costo_envio}
+                                    onChange={e => handleDecimalChange(e, (val) => {
+                                      setEditingTempItemForm(prev => {
+                                        const updated = { ...prev, costo_envio: val };
+                                        return recalculateRowValues(updated, 'porcentaje_utilidad', Number(tempData.costoEnvio || 0), totalCostoItems);
+                                      });
+                                    })}
+                                  />
+                                </td>
                               )}
-                            </div>
-                          </td>
-                          <td className="px-4 py-1.5 text-[11px] text-gray-700 uppercase font-medium">
-                            <div className="flex flex-col">
-                              <span>{item.descripcion}</span>
-                              {item.observacion && (
-                                <span className="text-[9px] text-gray-400 font-semibold">{item.observacion}</span>
+                              <td className="px-4 py-1">
+                                <div className="flex flex-col gap-1">
+                                  <input
+                                    type="text"
+                                    data-field="utilidad"
+                                    className="w-full text-[11px] border border-gray-300 rounded px-1 py-0.5 text-right font-bold text-gray-700"
+                                    value={editingTempItemForm.utilidad === undefined ? "" : editingTempItemForm.utilidad}
+                                    onChange={e => handleDecimalChange(e, (val) => {
+                                      setEditingTempItemForm(prev => {
+                                        const updated = { ...prev, utilidad: val };
+                                        return recalculateRowValues(updated, 'utilidad', Number(tempData.costoEnvio || 0), totalCostoItems);
+                                      });
+                                    })}
+                                  />
+                                  <div className="relative flex items-center justify-center w-full">
+                                    <input
+                                      type="text"
+                                      data-field="porcentaje_utilidad"
+                                      className="w-full text-[10px] border border-gray-300 text-center rounded px-1 py-0.5 font-medium text-gray-500"
+                                      value={editingTempItemForm.porcentaje_utilidad === undefined ? "" : editingTempItemForm.porcentaje_utilidad}
+                                      onChange={e => handleDecimalChange(e, (val) => {
+                                        setEditingTempItemForm(prev => {
+                                          const updated = { ...prev, porcentaje_utilidad: val };
+                                          return recalculateRowValues(updated, 'porcentaje_utilidad', Number(tempData.costoEnvio || 0), totalCostoItems);
+                                        });
+                                      })}
+                                    />
+                                    <span className="absolute right-1 text-[9px] text-gray-400">%</span>
+                                  </div>
+                                </div>
+                              </td>
+                              {!ocultarTotalesMap['draft'] && (
+                                <>
+                                  <td className="px-4 py-1 text-right text-[11px] text-gray-500 font-semibold">
+                                    {formatMoneySymbolSafe(editingTempItemForm.precio_venta)}
+                                  </td>
+                                  <td className="px-4 py-1 text-right text-[11px] font-black text-gray-900">
+                                    {formatMoneySymbolSafe(editingTempItemForm.venta_total)}
+                                  </td>
+                                </>
                               )}
-                            </div>
-                          </td>
-                          <td className="px-4 py-1.5 text-[11px] text-center font-bold text-gray-900">{item.cantidad}</td>
-                          <td className="px-4 py-1.5 text-[11px] text-right text-gray-600 font-medium">{formatMoneySymbolSafe(item.costo_precio)}</td>
-                          {isVenta && (
-                            <td className="px-4 py-1.5 text-[11px] text-right text-gray-600 font-medium">
-                              {formatMoneySymbolSafe(item.costo_envio)}
+                              <td className="px-4 py-1 text-center">
+                                <div className="flex items-center gap-1 justify-center">
+                                  <button
+                                    type="button"
+                                    onClick={handleSaveTempItem}
+                                    className="p-1 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded"
+                                    title="Guardar"
+                                  >
+                                    <Icon name="check" className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingTempItemId(null);
+                                      setEditingTempItemForm(null);
+                                    }}
+                                    className="p-1 text-slate-400 hover:text-slate-655 hover:bg-slate-100 rounded"
+                                    title="Cancelar"
+                                  >
+                                    <Icon name="x" className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        }
+                        return (
+                          <tr key={item.id_temp} onDoubleClick={() => handleStartEditTempItem(item, 'descripcion')} className="hover:bg-gray-50/50 transition-colors cursor-pointer" title="Doble clic para editar">
+                            <td className="w-[1.5%] py-1.5" onDoubleClick={(e) => e.stopPropagation()}></td>
+                            <td className="px-4 py-1.5 text-[11px] font-bold text-gray-900 uppercase" onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'codigo_item'); }}>
+                              <div className="flex flex-col">
+                                <span>{item.codigo_item}</span>
+                                {item.id_marca && (
+                                  <span className="text-[9px] text-gray-400 font-semibold" onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'id_marca'); }}>
+                                    {proveedores?.find(p => String(p.id_marca).padStart(2, '0') === String(item.proveedor))?.nombre || ""}
+                                  </span>
+                                )}
+                              </div>
                             </td>
-                          )}
-                          <td className="px-4 py-1.5 text-[11px] text-right text-gray-600 font-medium">
-                            <div className="flex flex-col items-end">
-                              <span>{formatMoneySymbolSafe(item.utilidad || 0)}</span>
-                              <span className="text-[9px] text-gray-400">{item.porcentaje_utilidad || 0}%</span>
-                            </div>
-                          </td>
-                          {!ocultarTotalesMap['draft'] && (
-                            <>
-                              <td className="px-4 py-1.5 text-[11px] text-right text-gray-600 font-medium">
-                                {formatMoneySymbolSafe(item.precio_venta || item.costo_precio)}
+                            <td className="px-4 py-1.5 text-[11px] text-gray-700 uppercase font-medium" onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'descripcion'); }}>
+                              <div className="flex flex-col">
+                                <span>{item.descripcion}</span>
+                                {item.observacion && (
+                                  <span className="text-[9px] text-gray-400 font-semibold" onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'observacion'); }}>{item.observacion}</span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-4 py-1.5 text-[11px] text-center font-bold text-gray-900" onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'cantidad'); }}>{item.cantidad}</td>
+                            <td className="px-4 py-1.5 text-[11px] text-right text-gray-600 font-medium" onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'costo_precio'); }}>{formatMoneySymbolSafe(item.costo_precio)}</td>
+                            {isVenta && (
+                              <td className="px-4 py-1.5 text-[11px] text-right text-gray-600 font-medium" onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'costo_envio'); }}>
+                                {formatMoneySymbolSafe(item.costo_envio)}
                               </td>
-                              <td className="px-4 py-1.5 text-[11px] font-black text-right text-gray-900">
-                                {formatMoneySymbolSafe(isVenta ? item.venta_total : item.cantidad * item.costo_precio)}
+                            )}
+                            <td className="px-4 py-1.5 text-[11px] text-right text-gray-600 font-medium" onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'utilidad'); }}>
+                              <div className="flex flex-col items-end">
+                                <span>{formatMoneySymbolSafe(item.utilidad || 0)}</span>
+                                <span className="text-[9px] text-gray-400">{item.porcentaje_utilidad || 0}%</span>
+                              </div>
+                            </td>
+                            {!ocultarTotalesMap['draft'] && (
+                              <>
+                                <td className="px-4 py-1.5 text-[11px] text-right text-gray-600 font-medium">
+                                  {formatMoneySymbolSafe(item.precio_venta || item.costo_precio)}
+                                </td>
+                                <td className="px-4 py-1.5 text-[11px] font-black text-right text-gray-900">
+                                  {formatMoneySymbolSafe(isVenta ? item.venta_total : item.cantidad * item.costo_precio)}
+                                </td>
+                              </>
+                            )}
+                            <td className="px-4 py-1.5 text-center" onDoubleClick={(e) => e.stopPropagation()}>
+                              <button
+                                onClick={() => handleRemoveItem(item.id_temp)}
+                                className="p-1 text-gray-400 hover:text-red-500 rounded transition-colors"
+                                  title="Quitar"
+                                >
+                                  <Icon name="trash-2" className="h-3.5 w-3.5" />
+                                </button>
                               </td>
-                            </>
-                          )}
-                          <td className="px-4 py-1.5 text-center">
-                            <button
-                              onClick={() => handleRemoveItem(item.id_temp)}
-                              className="p-1 text-gray-400 hover:text-red-500 rounded transition-colors"
-                              title="Quitar"
-                            >
-                              <Icon name="trash-2" className="h-3.5 w-3.5" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                            </tr>
+                          );
+                      })}
 
                       <tr className="bg-indigo-50/10" onKeyDown={e => handleRowKeyDown(e, handleAddItem)}>
                         <td className="w-[1.5%] py-1.5"></td>
@@ -2740,6 +3533,7 @@ const EditableGroupRow = ({
                         </td>
                       </tr>
                       {renderInlineProductCreateForm && renderInlineProductCreateForm('new', handleProductCreatedLocal, handleProductCancelLocal)}
+                      {renderInlineProductCreateForm && renderInlineProductCreateForm('editingTemp', handleProductCreatedEditingLocal, handleProductCancelEditingLocal)}
                     </tbody>
                   </table>
                 </>
@@ -2752,8 +3546,37 @@ const EditableGroupRow = ({
   );
 };
 
+const CondicionesEditor = React.forwardRef(({ initialValue, onChange, isReadOnly, placeholder, modules, ...props }, ref) => {
+  const [localValue, setLocalValue] = React.useState(initialValue);
+
+  React.useEffect(() => {
+    setLocalValue(initialValue);
+  }, [initialValue]);
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      onChange(localValue);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [localValue, onChange]);
+
+  return (
+    <ReactQuill
+      ref={ref}
+      theme="snow"
+      value={localValue}
+      onChange={setLocalValue}
+      readOnly={isReadOnly}
+      placeholder={placeholder}
+      modules={modules}
+      {...props}
+    />
+  );
+});
+
 const CotizacionDetalle = ({ esOportunidad = false }) => {
   const { numReg } = useParams();
+  const { setCustomBreadcrumbs, setBreadcrumbOverride } = useOutletContext() || {};
   const cleanBaseURL = api.defaults.baseURL.endsWith('/') ? api.defaults.baseURL.slice(0, -1) : api.defaults.baseURL;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -2826,16 +3649,36 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
   const [catalogoVersion, setCatalogoVersion] = useState(0);
 
   useEffect(() => {
-    const codeToShow = data?.codigo || data?.numero;
+    const codeToShow = data?.codigo || data?.numero || numReg;
     if (codeToShow) {
-      window.dispatchEvent(new CustomEvent("sigecom-breadcrumb-label", {
-        detail: {
-          path: window.location.pathname,
-          label: codeToShow
-        }
-      }));
+      if (setBreadcrumbOverride) setBreadcrumbOverride(codeToShow);
+
+      // Dispatch dynamic commercial flow breadcrumbs
+      const crumbs = [];
+      crumbs.push({
+        label: "Oportunidades",
+        path: `/comercial/oportunidades/${data?.id_registro || numReg}`,
+        active: esOportunidad
+      });
+      crumbs.push({
+        label: "Cotizaciones",
+        path: `/comercial/cotizaciones/${data?.id_registro || numReg}`,
+        active: !esOportunidad
+      });
+      if (data?.has_apertura) {
+        crumbs.push({
+          label: "Aperturas",
+          path: `/comercial/aperturas/${data.id_registro}`,
+          active: false
+        });
+      }
+      crumbs.push({
+        label: codeToShow
+      });
+
+      if (setCustomBreadcrumbs) setCustomBreadcrumbs(crumbs);
     }
-  }, [data?.codigo, data?.numero]);
+  }, [data, numReg, esOportunidad, setCustomBreadcrumbs, setBreadcrumbOverride]);
 
   useEffect(() => {
     const isDropdownOrPortalOpen = () => {
@@ -4774,12 +5617,64 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
   const [currentStatus, setCurrentStatus] = useState('');
   const [searchQueryNotas, setSearchQueryNotas] = useState('');
 
+  // Sincronizar el estado del badge del estado de forma automática e inmediata al cambiar de vista o recibir datos
+  useEffect(() => {
+    if (data) {
+      if (esOportunidad) {
+        const OPP_STATES_MAP = { 1: 'Pendiente', 2: 'No Cotizado', 3: 'Rechazado', 4: 'Cotizado' };
+        setCurrentStatus(OPP_STATES_MAP[data.estado_oportunidad] || 'Pendiente');
+      } else {
+        setCurrentStatus(data.estado_nombre || 'Pendiente');
+      }
+    }
+  }, [esOportunidad, data]);
+
   // Estados para descuento comercial
   const [descuentoAplicar, setDescuentoAplicar] = useState(false);
   const [descuentoAfecto, setDescuentoAfecto] = useState("t");
   const [descuentoPorcentaje, setDescuentoPorcentaje] = useState("");
   const [descuentoImporte, setDescuentoImporte] = useState("");
   const [descuentoTotales, setDescuentoTotales] = useState({ total: 0, suministros: 0, servicios: 0, des_m: 0 });
+
+  // Real-time local totals calculation
+  const localTotalSuministros = useMemo(() => {
+    return Object.values(gruposSuministros || {}).reduce((acc, gp) => {
+      return acc + Number(gp.venta_total || 0);
+    }, 0);
+  }, [gruposSuministros]);
+
+  const localTotalServicios = useMemo(() => {
+    return Object.values(gruposServicios || {}).reduce((acc, gp) => {
+      const gpTotal = (gp.subgrupos || []).reduce((subAcc, sg) => {
+        const sgTotal = (sg.items || []).reduce((itemAcc, item) => {
+          return itemAcc + Number(item.cotizado_total || 0);
+        }, 0);
+        return subAcc + sgTotal;
+      }, 0);
+      return acc + (gpTotal * Number(gp.cantidad || 1));
+    }, 0);
+  }, [gruposServicios]);
+
+  // Sync local totals to discountTotales state instantly on changes
+  useEffect(() => {
+    setDescuentoTotales(prev => {
+      const nextTotal = localTotalSuministros + localTotalServicios;
+      if (
+        prev.suministros === localTotalSuministros &&
+        prev.servicios === localTotalServicios &&
+        prev.total === nextTotal
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        suministros: localTotalSuministros,
+        servicios: localTotalServicios,
+        total: nextTotal
+      };
+    });
+  }, [localTotalSuministros, localTotalServicios]);
+
   const [loadingDescuentoTotales, setLoadingDescuentoTotales] = useState(false);
   const [descuentoError, setDescuentoError] = useState("");
   const [savingDescuento, setSavingDescuento] = useState(false);
@@ -5213,7 +6108,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     const timer = setTimeout(async () => {
       try {
         await saveSuministros();
-        fetchHistory();
+        await loadAllData(true);
       } catch (err) {
         console.error("Error al autoguardar suministros:", err);
         toast.error("Error al autoguardar suministros");
@@ -5228,7 +6123,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     const timer = setTimeout(async () => {
       try {
         await saveServicios();
-        fetchHistory();
+        await loadAllData(true);
       } catch (err) {
         console.error("Error al autoguardar servicios:", err);
         toast.error("Error al autoguardar servicios");
@@ -5258,7 +6153,6 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     }, 5000);
     return () => clearTimeout(timer);
   }, [isCondicionesDirty, saveCondicionesInstantly, isReadOnly]);
-
   const saveHeaderInstantly = useCallback(async (customData) => {
     if (isReadOnly) return;
     if (!customData || !customData.id_cliente || !customData.id_area || !customData.id_tipo) {
@@ -5829,6 +6723,22 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     }
   };
 
+  // Poll data in the background for real-time multi-user concurrency
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      // Only poll if the document is visible and there are no unsaved local changes (not dirty)
+      if (document.visibilityState === "visible" && !isDirty) {
+        try {
+          await loadAllData(true);
+        } catch (err) {
+          console.error("Error polling data:", err);
+        }
+      }
+    }, 4000); // Poll every 4 seconds
+
+    return () => clearInterval(interval);
+  }, [isDirty, loadAllData]);
+
 
 
   const handleAgregarGrupoSuministro = async (form) => {
@@ -5951,34 +6861,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     const min = parseFloat(form.costo_min || 0);
     const max = parseFloat(form.costo_max || 0);
 
-    if (min > 0 && finalCosto < min) {
-      toast.warning(`El costo debe estar en el rango de ${formatMoneySymbol(min)} a ${formatMoneySymbol(max)}. Se ajustó al mínimo.`, "Límite de Costo");
-      const finalHombres = Number(form.cantidad_hombres || 0);
-      const finalDias = Number(form.cantidad_dias || 0);
-      const newCostoTotal = finalHombres * finalDias * min;
-      const finalPorcentaje = Number(form.porcentaje || 0);
-      const newUtil = newCostoTotal * (finalPorcentaje / 100);
-      
-      setEditingServicioForm({
-        ...form,
-        costo_hombre_dia: min,
-        utilidad: Number(newUtil.toFixed(2))
-      });
-      return;
-    } else if (max > 0 && finalCosto > max) {
-      toast.warning(`El costo debe estar en el rango de ${formatMoneySymbol(min)} a ${formatMoneySymbol(max)}. Se ajustó al máximo.`, "Límite de Costo");
-      const finalHombres = Number(form.cantidad_hombres || 0);
-      const finalDias = Number(form.cantidad_dias || 0);
-      const newCostoTotal = finalHombres * finalDias * max;
-      const finalPorcentaje = Number(form.porcentaje || 0);
-      const newUtil = newCostoTotal * (finalPorcentaje / 100);
-      
-      setEditingServicioForm({
-        ...form,
-        costo_hombre_dia: max,
-        utilidad: Number(newUtil.toFixed(2))
-      });
-      return;
+    if ((min > 0 && finalCosto < min) || (max > 0 && finalCosto > max)) {
+      toast.warning(`Sugerencia: El costo recomendado para este personal está en el rango de ${formatMoneySymbol(min)} a ${formatMoneySymbol(max)}.`, "Rango de Costo Recomendado");
     }
 
     const hookForm = {
@@ -9623,7 +10507,6 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                               const range = quill.getSelection() || { index: quill.getLength() };
                               const textoInsertar = nota.descripcion || '';
                               quill.insertText(range.index, `${textoInsertar}\n`, { bold: false });
-                              quill.formatLine(range.index, textoInsertar.length, 'list', 'bullet');
                               quill.setSelection(range.index + textoInsertar.length + 1);
                             }}
                             className={cn(
@@ -9730,13 +10613,12 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                   `}</style>
 
                   <div className="editor-container">
-                    <ReactQuill
+                    <CondicionesEditor
                       ref={quillRef} // <--- IMPORTANTE: Referencia asignada
-                      theme="snow"
-                      value={generalConditions}
+                      initialValue={generalConditions}
                       onChange={setGeneralConditions}
                       onBlur={() => saveCondicionesInstantly()}
-                      readOnly={isReadOnly}
+                      isReadOnly={isReadOnly}
                       placeholder="Las notas aparecerán aquí. Puedes editarlas libremente..."
                       modules={{
                         toolbar: isReadOnly ? false : [
@@ -10604,7 +11486,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                   </div>
                   <div className="text-right">
                     <span className="text-sm font-black text-white">
-                      {formatMoneySymbol(data?.total_cotizacion || 0)}
+                      {formatMoneySymbol(descuentoTotales.total || 0)}
                     </span>
                   </div>
                 </div>
@@ -13513,13 +14395,9 @@ const SortableItemServicioRow = ({
                 if (!isNaN(num)) {
                   const min = parseFloat(editingServicioForm.costo_min || 0);
                   const max = parseFloat(editingServicioForm.costo_max || 0);
-                  let val = num;
-                  if (min > 0 && val < min) {
-                    val = min;
-                    toast.warning(`El costo debe estar en el rango de ${formatMoneySymbol(min)} a ${formatMoneySymbol(max)}. Se ajustó al mínimo.`, "Límite de Costo");
-                  } else if (max > 0 && val > max) {
-                    val = max;
-                    toast.warning(`El costo debe estar en el rango de ${formatMoneySymbol(min)} a ${formatMoneySymbol(max)}. Se ajustó al máximo.`, "Límite de Costo");
+                  const val = num;
+                  if ((min > 0 && val < min) || (max > 0 && val > max)) {
+                    toast.warning(`Sugerencia: El costo recomendado para este personal está en el rango de ${formatMoneySymbol(min)} a ${formatMoneySymbol(max)}.`, "Rango de Costo Recomendado");
                   }
                   
                   const finalHombres = Number(editingServicioForm.cantidad_hombres || 0);

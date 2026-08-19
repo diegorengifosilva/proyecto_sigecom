@@ -191,6 +191,7 @@ export default function CotizacionNuevaModal({ open, onClose, cotizacion, modo, 
 
   // Cargar sugerencias de tiempos de entrega
   useEffect(() => {
+    if (!open) return;
     const fetchSugerencias = async () => {
       try {
         const { data: res } = await api.get("cotizaciones/tiempos-frecuentes/", {
@@ -266,7 +267,7 @@ export default function CotizacionNuevaModal({ open, onClose, cotizacion, modo, 
     };
 
     fetchSugerencias();
-  }, [data?.id_cliente, data?.cotit]);
+  }, [open, data?.id_cliente, data?.cotit]);
 
   // Estados locales para entrada de plazos en texto libre
   const [suministrosTexto, setSuministrosTexto] = useState("");

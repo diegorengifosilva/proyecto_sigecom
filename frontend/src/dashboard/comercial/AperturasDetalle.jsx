@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
 import * as LucideIcons from 'lucide-react';
 import api from '@/services/api';
 import { toast } from '@/utils/toast';
@@ -251,6 +251,37 @@ export default function AperturasDetalle({ idRegistro }) {
       fetchDetail();
     }
   }, [activeIdRegistro]);
+
+  const { setCustomBreadcrumbs, setBreadcrumbOverride } = useOutletContext() || {};
+
+  useEffect(() => {
+    const codeToShow = quoteDetails?.codigo || quoteDetails?.numero || activeIdRegistro;
+    if (codeToShow) {
+      if (setBreadcrumbOverride) setBreadcrumbOverride(codeToShow);
+
+      const crumbs = [];
+      crumbs.push({
+        label: "Oportunidades",
+        path: `/comercial/oportunidades/${quoteDetails?.id_registro || activeIdRegistro}`,
+        active: false
+      });
+      crumbs.push({
+        label: "Cotizaciones",
+        path: `/comercial/cotizaciones/${quoteDetails?.id_registro || activeIdRegistro}`,
+        active: false
+      });
+      crumbs.push({
+        label: "Aperturas",
+        path: `/comercial/aperturas/${quoteDetails?.id_registro || activeIdRegistro}`,
+        active: true
+      });
+      crumbs.push({
+        label: codeToShow || "S/N"
+      });
+
+      if (setCustomBreadcrumbs) setCustomBreadcrumbs(crumbs);
+    }
+  }, [quoteDetails, activeIdRegistro, setCustomBreadcrumbs, setBreadcrumbOverride]);
 
   const handleCrearNuevaOCConArchivo = async (event) => {
     const file = event.target.files[0];

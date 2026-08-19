@@ -49,7 +49,7 @@ const maskUserNames = (obj) => {
 // Manejo de 401 y refresh
 api.interceptors.response.use(
   (res) => {
-    if (res && res.data) {
+    if (res && res.data && !(res.data instanceof Blob) && res.config.responseType !== 'blob') {
       res.data = maskUserNames(res.data);
     }
     return res;

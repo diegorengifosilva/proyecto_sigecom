@@ -1,0 +1,94 @@
+[
+  {
+    "index": 1,
+    "class": "BarChart3D",
+    "width": 15,
+    "height": 7.5,
+    "anchor": "A32",
+    "title": "Avance objetivo M\u00e1ximo al Mes en curso",
+    "series": [
+      {
+        "index": 1,
+        "title": "<openpyxl.chart.series.SeriesLabel object>\nParameters:\nstrRef=<openpyxl.chart.data_source.StrRef object>\nParameters:\nf='Objetivos!$B$19', strCache=<openpyxl.chart.data_source.StrData object>\nParameters:\nptCount=1, pt=[<openpyxl.chart.data_source.StrVal object>\nParameters:\nidx=0, v='Avance'], v=None",
+        "val_ref": "Objetivos!$B$20:$B$24",
+        "cat_ref": "Objetivos!$A$20:$A$24"
+      },
+      {
+        "index": 2,
+        "title": "<openpyxl.chart.series.SeriesLabel object>\nParameters:\nstrRef=<openpyxl.chart.data_source.StrRef object>\nParameters:\nf='Objetivos!$C$19', strCache=<openpyxl.chart.data_source.StrData object>\nParameters:\nptCount=1, pt=[<openpyxl.chart.data_source.StrVal object>\nParameters:\nidx=0, v='Faltante'], v=None",
+        "val_ref": "Objetivos!$C$20:$C$24",
+        "cat_ref": "Objetivos!$A$20:$A$24"
+      }
+    ]
+  },
+  {
+    "index": 2,
+    "class": "BarChart3D",
+    "width": 15,
+    "height": 7.5,
+    "anchor": "G32",
+    "title": "Avance objetivo M\u00ednimo al Mes en curso",
+    "series": [
+      {
+        "index": 1,
+        "title": "<openpyxl.chart.series.SeriesLabel object>\nParameters:\nstrRef=<openpyxl.chart.data_source.StrRef object>\nParameters:\nf='Objetivos!$D$19', strCache=<openpyxl.chart.data_source.StrData object>\nParameters:\nptCount=1, pt=[<openpyxl.chart.data_source.StrVal object>\nParameters:\nidx=0, v='Avance'], v=None",
+        "val_ref": "Objetivos!$D$20:$D$24",
+        "cat_ref": "Objetivos!$A$20:$A$24"
+      },
+      {
+        "index": 2,
+        "title": "<openpyxl.chart.series.SeriesLabel object>\nParameters:\nstrRef=<openpyxl.chart.data_source.StrRef object>\nParameters:\nf='Objetivos!$E$19', strCache=<openpyxl.chart.data_source.StrData object>\nParameters:\nptCount=1, pt=[<openpyxl.chart.data_source.StrVal object>\nParameters:\nidx=0, v='Faltante'], v=None",
+        "val_ref": "Objetivos!$E$20:$E$24",
+        "cat_ref": "Objetivos!$A$20:$A$24"
+      }
+    ]
+  },
+  {
+    "index": 3,
+    "class": "BarChart3D",
+    "width": 15,
+    "height": 7.5,
+    "anchor": "K16",
+    "title": "Monto Logrado por A\u00f1o HH+UTILIDAD",
+    "series": [
+      {
+        "index": 1,
+        "title": "<openpyxl.chart.series.SeriesLabel object>\nParameters:\nstrRef=<openpyxl.chart.data_source.StrRef object>\nParameters:\nf='Objetivos!$N$1', strCache=<openpyxl.chart.data_source.StrData object>\nParameters:\nptCount=1, pt=[<openpyxl.chart.data_source.StrVal object>\nParameters:\nidx=0, v='Monto'], v=None",
+        "val_ref": "Objetivos!$N$2:$N$14",
+        "cat_ref": "None"
+      }
+    ]
+  },
+  {
+    "index": 4,
+    "class": "DoughnutChart",
+    "width": 15,
+    "height": 7.5,
+    "anchor": "D51",
+    "title": null,
+    "series": [
+      {
+        "index": 1,
+        "title": "None",
+        "val_ref": "Objetivos!$C$52:$C$61",
+        "cat_ref": "None"
+      }
+    ]
+  },
+  {
+    "index": 5,
+    "class": "DoughnutChart",
+    "width": 15,
+    "height": 7.5,
+    "anchor": "I50",
+    "title": null,
+    "series": [
+      {
+        "index": 1,
+        "title": "None",
+        "val_ref": "Objetivos!$C$52:$C$61",
+        "cat_ref": "None"
+      }
+    ]
+  }
+]

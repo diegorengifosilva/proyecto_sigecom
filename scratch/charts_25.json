@@ -1,0 +1,303 @@
+[
+  {
+    "index": 1,
+    "class": "PieChart3D",
+    "width": 15,
+    "height": 7.5,
+    "anchor": "E2",
+    "title": "% OC \u00c1rea",
+    "dataLabels": {
+      "showVal": false,
+      "showCatName": true,
+      "showSerName": true,
+      "showPercent": true
+    },
+    "axis": {},
+    "legend": "None"
+  },
+  {
+    "index": 2,
+    "class": "BarChart3D",
+    "width": 15,
+    "height": 7.5,
+    "anchor": "O2",
+    "title": "Evoluci\u00f3n OC vs HH y Utilidad",
+    "dataLabels": {
+      "showVal": false,
+      "showCatName": false,
+      "showSerName": false,
+      "showPercent": false
+    },
+    "axis": {
+      "x_axis_delete": true,
+      "y_axis_delete": false
+    },
+    "legend": "None"
+  },
+  {
+    "index": 3,
+    "class": "LineChart",
+    "width": 15,
+    "height": 7.5,
+    "anchor": "AF2",
+    "title": "Evoluci\u00f3n OC, Objetivos Minimos y HH+Utilidad",
+    "dataLabels": {
+      "showVal": false,
+      "showCatName": false,
+      "showSerName": false,
+      "showPercent": false
+    },
+    "axis": {
+      "x_axis_delete": true,
+      "y_axis_delete": false
+    },
+    "legend": "None"
+  },
+  {
+    "index": 4,
+    "class": "BarChart3D",
+    "width": 15,
+    "height": 7.5,
+    "anchor": "P26",
+    "title": "Evoluci\u00f3n OC Industria",
+    "dataLabels": {
+      "showVal": false,
+      "showCatName": false,
+      "showSerName": false,
+      "showPercent": false
+    },
+    "axis": {
+      "x_axis_delete": true,
+      "y_axis_delete": true
+    },
+    "legend": "None"
+  },
+  {
+    "index": 5,
+    "class": "BarChart3D",
+    "width": 15,
+    "height": 7.5,
+    "anchor": "AD26",
+    "title": "Montos Ordenes Mes a Mes",
+    "dataLabels": {
+      "showVal": false,
+      "showCatName": false,
+      "showSerName": false,
+      "showPercent": false
+    },
+    "axis": {
+      "x_axis_delete": true,
+      "y_axis_delete": true
+    },
+    "legend": "None"
+  },
+  {
+    "index": 6,
+    "class": "BarChart3D",
+    "width": 15,
+    "height": 7.5,
+    "anchor": "P56",
+    "title": "Evoluci\u00f3n OC Miner\u00eda",
+    "dataLabels": {
+      "showVal": false,
+      "showCatName": false,
+      "showSerName": false,
+      "showPercent": false
+    },
+    "axis": {
+      "x_axis_delete": true,
+      "y_axis_delete": true
+    },
+    "legend": "None"
+  },
+  {
+    "index": 7,
+    "class": "BarChart3D",
+    "width": 15,
+    "height": 7.5,
+    "anchor": "AD56",
+    "title": "Montos Ordenes Mes a Mes",
+    "dataLabels": {
+      "showVal": false,
+      "showCatName": false,
+      "showSerName": false,
+      "showPercent": false
+    },
+    "axis": {
+      "x_axis_delete": true,
+      "y_axis_delete": true
+    },
+    "legend": "None"
+  },
+  {
+    "index": 8,
+    "class": "BarChart3D",
+    "width": 15,
+    "height": 7.5,
+    "anchor": "P86",
+    "title": "Evoluci\u00f3n Petroqu\u00edmica",
+    "dataLabels": {
+      "showVal": false,
+      "showCatName": false,
+      "showSerName": false,
+      "showPercent": false
+    },
+    "axis": {
+      "x_axis_delete": true,
+      "y_axis_delete": true
+    },
+    "legend": "None"
+  },
+  {
+    "index": 9,
+    "class": "BarChart3D",
+    "width": 15,
+    "height": 7.5,
+    "anchor": "AD86",
+    "title": "Montos Ordenes Mes a Mes",
+    "dataLabels": {
+      "showVal": false,
+      "showCatName": false,
+      "showSerName": false,
+      "showPercent": false
+    },
+    "axis": {
+      "x_axis_delete": true,
+      "y_axis_delete": true
+    },
+    "legend": "None"
+  },
+  {
+    "index": 10,
+    "class": "BarChart3D",
+    "width": 15,
+    "height": 7.5,
+    "anchor": "P116",
+    "title": "Evoluci\u00f3n Anual Safety",
+    "dataLabels": {
+      "showVal": false,
+      "showCatName": false,
+      "showSerName": false,
+      "showPercent": false
+    },
+    "axis": {
+      "x_axis_delete": true,
+      "y_axis_delete": true
+    },
+    "legend": "None"
+  },
+  {
+    "index": 11,
+    "class": "BarChart3D",
+    "width": 15,
+    "height": 7.5,
+    "anchor": "AD116",
+    "title": "Montos Ordenes Mes a Mes",
+    "dataLabels": {
+      "showVal": false,
+      "showCatName": false,
+      "showSerName": false,
+      "showPercent": false
+    },
+    "axis": {
+      "x_axis_delete": true,
+      "y_axis_delete": true
+    },
+    "legend": "None"
+  },
+  {
+    "index": 12,
+    "class": "BarChart3D",
+    "width": 15,
+    "height": 7.5,
+    "anchor": "G146",
+    "title": "Evoluci\u00f3n OC Mensual 2026",
+    "dataLabels": {
+      "showVal": true,
+      "showCatName": false,
+      "showSerName": false,
+      "showPercent": false
+    },
+    "axis": {
+      "x_axis_delete": false,
+      "y_axis_delete": true
+    },
+    "legend": "None"
+  },
+  {
+    "index": 13,
+    "class": "BarChart3D",
+    "width": 15,
+    "height": 7.5,
+    "anchor": "A167",
+    "title": "Evoluci\u00f3n OC Mensual Miner\u00eda 2026",
+    "dataLabels": {
+      "showVal": true,
+      "showCatName": false,
+      "showSerName": false,
+      "showPercent": false
+    },
+    "axis": {
+      "x_axis_delete": false,
+      "y_axis_delete": true
+    },
+    "legend": "None"
+  },
+  {
+    "index": 14,
+    "class": "BarChart3D",
+    "width": 15,
+    "height": 7.5,
+    "anchor": "I167",
+    "title": "Evoluci\u00f3n OC Mensual Industria 2026",
+    "dataLabels": {
+      "showVal": true,
+      "showCatName": false,
+      "showSerName": false,
+      "showPercent": false
+    },
+    "axis": {
+      "x_axis_delete": false,
+      "y_axis_delete": true
+    },
+    "legend": "None"
+  },
+  {
+    "index": 15,
+    "class": "BarChart3D",
+    "width": 15,
+    "height": 7.5,
+    "anchor": "U167",
+    "title": "Evoluci\u00f3n OC Mensual Petroqu\u00edmica 2026",
+    "dataLabels": {
+      "showVal": true,
+      "showCatName": false,
+      "showSerName": false,
+      "showPercent": false
+    },
+    "axis": {
+      "x_axis_delete": false,
+      "y_axis_delete": true
+    },
+    "legend": "None"
+  },
+  {
+    "index": 16,
+    "class": "BarChart3D",
+    "width": 15,
+    "height": 7.5,
+    "anchor": "AJ167",
+    "title": "Evoluci\u00f3n OC Mensual Safety 2026",
+    "dataLabels": {
+      "showVal": true,
+      "showCatName": false,
+      "showSerName": true,
+      "showPercent": false
+    },
+    "axis": {
+      "x_axis_delete": false,
+      "y_axis_delete": true
+    },
+    "legend": "None"
+  }
+]

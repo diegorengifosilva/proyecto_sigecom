@@ -46,31 +46,19 @@ export default function CondicionesModal({
     const range = quill.getSelection() || { index: quill.getLength() };
 
     textos.forEach((t) => {
-      // 1. Preparamos el texto: Lo ponemos en negrita y negro para Word
-      // Agregamos un espacio al inicio para que no pegue el texto al bullet
       const notaTexto = `${t}\n`;
 
-      // 2. Insertamos el texto con formato diferencial (Negrita)
+      // Insertamos el texto como texto normal (sin negrita obligatoria, sin bullet)
       quill.insertText(range.index, notaTexto, {
-        bold: true,      // <--- Esto lo hace diferencial de una viñeta normal
-        color: "#000000" // Negro puro para máxima compatibilidad
+        bold: false
       });
-
-      // 3. Aplicamos el formato de viñeta (bullet)
-      // Esto asegura que al exportar a Word, se reconozca como una lista real
-      quill.formatLine(range.index, notaTexto.length, 'list', 'bullet');
 
       // Actualizamos el índice para la siguiente nota
       range.index += notaTexto.length;
     });
 
-    // 4. Limpieza final: Insertamos una línea nueva sin negrita 
-    // para que el usuario pueda seguir escribiendo normal abajo
-    quill.insertText(range.index, "\n", { bold: false });
-    quill.formatLine(range.index, 1, 'list', false); // Rompemos la lista
-
     // Posicionamos el cursor al final
-    quill.setSelection(range.index + 1);
+    quill.setSelection(range.index);
   };
 
   const modules = useMemo(() => ({

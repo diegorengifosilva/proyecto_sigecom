@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, Cell, Legend } from "recharts";
+import { BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, Cell, Legend, ReferenceLine } from "recharts";
 import { BarChart3, FileSpreadsheet, Coins, Clock, Download, Save, Trash, HelpCircle } from "lucide-react";
+import api from "@/services/api";
 
 const COLORS = [
   "#6366f1", // Indigo
@@ -13,18 +14,44 @@ const COLORS = [
   "#64748b"  // Slate
 ];
 
-export default function AnalisisDashboard({ module = "comercial", cotizaciones = [], anno, mes }) {
+export default function AnalisisDashboard({ module = "comercial", cotizaciones = [], anno, mes, viewScope = "global" }) {
   const [dimensions, setDimensions] = useState(["mes"]); 
   const [metrica, setMetrica] = useState("monto"); 
+  const [overrideGrafico, setOverrideGrafico] = useState(null);
+  const [mostrarPromedio, setMostrarPromedio] = useState(false);
+  const [topN, setTopN] = useState("all");
+  const [drillDownFilter, setDrillDownFilter] = useState(null);
+
+  useEffect(() => {
+    setDrillDownFilter(null);
+  }, [dimensions, overrideGrafico, topN, metrica]);
+
+  useEffect(() => {
+    if (viewScope === "personal" && dimensions.includes("vendedor")) {
+      setDimensions(prev => {
+        const filtered = prev.filter(d => d !== "vendedor");
+        return filtered.length > 0 ? filtered : ["mes"];
+      });
+    }
+  }, [viewScope, dimensions]); 
 
   // Configuración de análisis guardados
-  const [savedAnalyses, setSavedAnalyses] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem("pminsight_saved_analyses") || "[]");
-    } catch {
-      return [];
-    }
-  });
+  const [savedAnalyses, setSavedAnalyses] = useState([]);
+  const [loadingPresets, setLoadingPresets] = useState(true);
+
+  useEffect(() => {
+    api.get("cotizaciones/vistas_analisis/")
+      .then(res => {
+        setSavedAnalyses(Array.isArray(res.data) ? res.data : []);
+        setLoadingPresets(false);
+      })
+      .catch(err => {
+        console.error("Error cargando vistas guardadas", err);
+        setSavedAnalyses([]);
+        setLoadingPresets(false);
+      });
+  }, []);
+
   const [newAnalysisName, setNewAnalysisName] = useState("");
 
   // Setea dimensiones por defecto adecuadas cuando cambia el módulo
@@ -42,14 +69,19 @@ export default function AnalisisDashboard({ module = "comercial", cotizaciones =
         { id: "categoria", label: "Categoría" },
       ];
     }
-    return [
+    const list = [
       { id: "mes", label: "Mes" },
       { id: "vendedor", label: "Ejecutivo" },
       { id: "area", label: "Área" },
       { id: "cliente", label: "Cliente" },
       { id: "estado", label: "Estado" },
+      { id: "rango_monto", label: "Rango de Monto" },
     ];
-  }, [module]);
+    if (viewScope === "personal") {
+      return list.filter(opt => opt.id !== "vendedor");
+    }
+    return list;
+  }, [module, viewScope]);
 
   const metricasOptions = useMemo(() => {
     if (module === "logistica") {
@@ -76,8 +108,9 @@ export default function AnalisisDashboard({ module = "comercial", cotizaciones =
     });
   };
 
-  // RECOMENDADOR INTELIGENTE DE GRÁFICOS (Automático y sin selector manual)
+  // RECOMENDADOR INTELIGENTE DE GRÁFICOS
   const tipoGrafico = useMemo(() => {
+    if (overrideGrafico) return overrideGrafico;
     if (dimensions.length >= 2) {
       return "bar"; // Barras agrupadas para comparaciones cruzadas
     }
@@ -89,7 +122,7 @@ export default function AnalisisDashboard({ module = "comercial", cotizaciones =
       return "pie"; // Gráfico circular para distribuciones
     }
     return "bar"; // Barras normales para elementos individuales (Clientes, Proveedores, Vendedores)
-  }, [dimensions]);
+  }, [dimensions, overrideGrafico]);
 
   // Datos deterministas de Logística
   const mockLogisticaData = useMemo(() => {
@@ -126,6 +159,43 @@ export default function AnalisisDashboard({ module = "comercial", cotizaciones =
     return list;
   }, [module, anno, mes]);
 
+  // Resolver atributo de cotización
+  const resolveAttributeValue = (c, keyId) => {
+    if (module === "comercial") {
+      if (keyId === "mes") {
+        const dateObj = new Date(c.fecha || c.cotif);
+        return dateObj.toLocaleString("es-ES", { month: "short" }).toUpperCase();
+      }
+      if (keyId === "vendedor") {
+        const val = c.comercial_nombre || c.comercial;
+        return (val && val !== "-" ? val : "Por Asignar").trim().toUpperCase();
+      }
+      if (keyId === "area") {
+        const val = c.area_nombre || c.area;
+        return (val && val !== "-" ? val : "Sin Área").trim().toUpperCase();
+      }
+      if (keyId === "cliente") {
+        const val = c.cliente_nombre || c.cliente;
+        return (val && val !== "-" ? val : "Cliente Genérico").trim().toUpperCase();
+      }
+      if (keyId === "estado") {
+        const val = c.estado_nombre || c.estado;
+        return (val && val !== "-" ? val : "Desconocido").trim().toUpperCase();
+      }
+      if (keyId === "rango_monto") {
+        const amount = Number(c.tot_c || c.total_cotizacion || 0);
+        if (amount < 1000) return "🟢 MICRO-NEGOCIOS (<$1K)";
+        if (amount < 5000) return "🔵 PEQUEÑAS ($1K-$5K)";
+        if (amount < 20000) return "🟡 MEDIANAS ($5K-$20K)";
+        if (amount < 50000) return "🟠 GRANDES ($20K-$50K)";
+        return "🔴 CORPORATIVAS (>$50K)";
+      }
+    } else {
+      return c[keyId] || "SIN CLASIFICAR";
+    }
+    return "OTRO";
+  };
+
   // Obtener claves únicas de la dimensión secundaria
   const uniqueSecondaryKeys = useMemo(() => {
     if (dimensions.length < 2) return [];
@@ -134,19 +204,7 @@ export default function AnalisisDashboard({ module = "comercial", cotizaciones =
 
     if (module === "comercial") {
       cotizaciones.forEach(c => {
-        let key = "";
-        if (secondaryId === "mes") {
-          const dateObj = new Date(c.fecha || c.cotif);
-          key = dateObj.toLocaleString("es-ES", { month: "short" }).toUpperCase();
-        } else if (secondaryId === "vendedor") {
-          key = (c.comercial_nombre || "Por Asignar").trim().toUpperCase();
-        } else if (secondaryId === "area") {
-          key = (c.area_nombre || "Sin Área").trim().toUpperCase();
-        } else if (secondaryId === "cliente") {
-          key = (c.cliente || "Cliente Genérico").trim().toUpperCase();
-        } else if (secondaryId === "estado") {
-          key = (c.estado_nombre || "Desconocido").trim().toUpperCase();
-        }
+        const key = resolveAttributeValue(c, secondaryId);
         if (key) set.add(key);
       });
     } else {
@@ -161,23 +219,6 @@ export default function AnalisisDashboard({ module = "comercial", cotizaciones =
     }
     return Array.from(set).slice(0, 6); // Limitar a 6 series para legibilidad extrema
   }, [module, cotizaciones, mockLogisticaData, dimensions]);
-
-  // Resolver atributo de cotización
-  const resolveAttributeValue = (c, keyId) => {
-    if (module === "comercial") {
-      if (keyId === "mes") {
-        const dateObj = new Date(c.fecha || c.cotif);
-        return dateObj.toLocaleString("es-ES", { month: "short" }).toUpperCase();
-      }
-      if (keyId === "vendedor") return (c.comercial_nombre || "Por Asignar").trim().toUpperCase();
-      if (keyId === "area") return (c.area_nombre || "Sin Área").trim().toUpperCase();
-      if (keyId === "cliente") return (c.cliente || "Cliente Genérico").trim().toUpperCase();
-      if (keyId === "estado") return (c.estado_nombre || "Desconocido").trim().toUpperCase();
-    } else {
-      return c[keyId] || "SIN CLASIFICAR";
-    }
-    return "OTRO";
-  };
 
   // Motor de Agregación N-Dimensional
   const aggregatedData = useMemo(() => {
@@ -266,6 +307,15 @@ export default function AnalisisDashboard({ module = "comercial", cotizaciones =
     if (primaryId === "mes" && dimensions.length === 1) {
       const monthOrder = ["ENE", "FEB", "MAR", "ABR", "MAY", "JUN", "JUL", "AGO", "SET", "OCT", "NOV", "DIC"];
       list.sort((a, b) => monthOrder.indexOf(a.name) - monthOrder.indexOf(b.name));
+    } else if (primaryId === "rango_monto" && dimensions.length === 1) {
+      const rankOrder = [
+        "🟢 MICRO-NEGOCIOS (<$1K)",
+        "🔵 PEQUEÑAS ($1K-$5K)",
+        "🟡 MEDIANAS ($5K-$20K)",
+        "🟠 GRANDES ($20K-$50K)",
+        "🔴 CORPORATIVAS (>$50K)"
+      ];
+      list.sort((a, b) => rankOrder.indexOf(a.name) - rankOrder.indexOf(b.name));
     } else {
       if (!secondaryId) {
         list.sort((a, b) => b.value - a.value);
@@ -278,8 +328,28 @@ export default function AnalisisDashboard({ module = "comercial", cotizaciones =
       }
     }
 
+    // 8. Aplicar Top N con agrupación en "OTROS (RESTO)"
+    if (module === "comercial" && topN !== "all" && list.length > Number(topN)) {
+      const limit = Number(topN);
+      const topRows = list.slice(0, limit);
+      const restRows = list.slice(limit);
+      
+      const otrosObj = { name: "OTROS (RESTO)" };
+      
+      if (!secondaryId) {
+        const sumVal = restRows.reduce((acc, row) => acc + (row.value || 0), 0);
+        otrosObj.value = sumVal;
+      } else {
+        uniqueSecondaryKeys.forEach(k => {
+          otrosObj[k] = restRows.reduce((acc, row) => acc + (row[k] || 0), 0);
+        });
+      }
+      
+      return [...topRows, otrosObj];
+    }
+
     return list;
-  }, [module, cotizaciones, mockLogisticaData, dimensions, uniqueSecondaryKeys, metrica]);
+  }, [module, cotizaciones, mockLogisticaData, dimensions, uniqueSecondaryKeys, metrica, topN]);
 
   // Totales
   const totalMetricValue = useMemo(() => {
@@ -302,6 +372,146 @@ export default function AnalisisDashboard({ module = "comercial", cotizaciones =
     }
   }, [aggregatedData, metrica, dimensions, uniqueSecondaryKeys]);
 
+  const avgValue = useMemo(() => {
+    if (aggregatedData.length === 0) return 0;
+    if (metrica === "leadtime") return totalMetricValue;
+    
+    if (dimensions.length >= 2) {
+      const sum = aggregatedData.reduce((acc, row) => {
+        const rowSum = uniqueSecondaryKeys.reduce((s, k) => s + (row[k] || 0), 0);
+        return acc + rowSum;
+      }, 0);
+      return sum / aggregatedData.length;
+    }
+    
+    const sum = aggregatedData.reduce((acc, row) => acc + row.value, 0);
+    return sum / aggregatedData.length;
+  }, [aggregatedData, metrica, totalMetricValue, dimensions, uniqueSecondaryKeys]);
+
+  const tableDataFiltered = useMemo(() => {
+    if (!drillDownFilter) return aggregatedData;
+    return aggregatedData.filter(row => row.name === drillDownFilter);
+  }, [aggregatedData, drillDownFilter]);
+
+  const tableTotalMetricValue = useMemo(() => {
+    if (dimensions.length < 2) {
+      if (metrica === "leadtime") {
+        return tableDataFiltered.length > 0 ? (tableDataFiltered.reduce((acc, row) => acc + row.value, 0) / tableDataFiltered.length) : 0;
+      }
+      return tableDataFiltered.reduce((acc, row) => acc + row.value, 0);
+    } else {
+      let sum = 0;
+      tableDataFiltered.forEach(row => {
+        uniqueSecondaryKeys.forEach(k => {
+          sum += (row[k] || 0);
+        });
+      });
+      if (metrica === "leadtime") {
+        return sum / (tableDataFiltered.length * uniqueSecondaryKeys.length || 1);
+      }
+      return sum;
+    }
+  }, [tableDataFiltered, metrica, dimensions, uniqueSecondaryKeys]);
+
+  const maxRowTotal = useMemo(() => {
+    if (tableDataFiltered.length === 0) return 1;
+    const totalsList = tableDataFiltered.map(row => {
+      if (dimensions.length < 2) return row.value;
+      return uniqueSecondaryKeys.reduce((acc, k) => acc + (row[k] || 0), 0);
+    });
+    return Math.max(...totalsList) || 1;
+  }, [tableDataFiltered, dimensions, uniqueSecondaryKeys]);
+
+  const recomendacionAI = useMemo(() => {
+    if (overrideGrafico) {
+      return {
+        tipo: overrideGrafico,
+        justificacion: `Has forzado manualmente un gráfico de ${
+          overrideGrafico === "bar" ? "Barras" : overrideGrafico === "line" ? "Líneas" : overrideGrafico === "area" ? "Área" : "Pastel"
+        }.`
+      };
+    }
+    if (dimensions.length >= 2) {
+      return {
+        tipo: "bar",
+        justificacion: "Gráfico de Barras Cruzadas para comparar el comportamiento de múltiples dimensiones agrupadas."
+      };
+    }
+    const primary = dimensions[0];
+    if (primary === "mes") {
+      return {
+        tipo: "line",
+        justificacion: "Gráfico de Líneas porque es la forma más limpia de visualizar series de tiempo y tendencias."
+      };
+    }
+    if (primary === "area" || primary === "categoria" || primary === "estado" || primary === "rango_monto") {
+      return {
+        tipo: "pie",
+        justificacion: "Gráfico Circular / Donut para ver la distribución y participación de cada categoría sobre el total."
+      };
+    }
+    return {
+      tipo: "bar",
+      justificacion: "Gráfico de Barras porque es el estándar óptimo para comparar magnitudes individuales entre diferentes categorías."
+    };
+  }, [dimensions, overrideGrafico]);
+
+  const autoInsights = useMemo(() => {
+    if (module !== "comercial" || tableDataFiltered.length === 0) return [];
+    
+    const list = [...tableDataFiltered];
+    const getVal = (row) => {
+      if (dimensions.length < 2) return row.value;
+      return uniqueSecondaryKeys.reduce((acc, k) => acc + (row[k] || 0), 0);
+    };
+    
+    const sortedByVal = list.sort((a, b) => getVal(b) - getVal(a));
+    const peak = sortedByVal[0];
+    const lowest = sortedByVal[sortedByVal.length - 1];
+    const totalSum = sortedByVal.reduce((acc, row) => acc + getVal(row), 0);
+    const items = [];
+    
+    if (peak && totalSum > 0) {
+      const percentage = ((getVal(peak) / totalSum) * 100).toFixed(1);
+      items.push({
+        type: "peak",
+        title: "🎯 Concentración Máxima",
+        desc: `El volumen principal se concentra en "${peak.name}" con $${getVal(peak).toLocaleString(undefined, {maximumFractionDigits: 0})}, lo que representa el ${percentage}% del total.`
+      });
+    }
+    
+    if (sortedByVal.length >= 3 && totalSum > 0) {
+      const top3Sum = sortedByVal.slice(0, 3).reduce((acc, row) => acc + getVal(row), 0);
+      const percentageTop3 = ((top3Sum / totalSum) * 100).toFixed(1);
+      items.push({
+        type: "pareto",
+        title: "⚖️ Regla de Pareto (Top 3)",
+        desc: `Los 3 elementos líderes de esta dimensión representan el ${percentageTop3}% de toda la facturación analizada.`
+      });
+    }
+    
+    if (lowest && lowest.name !== peak.name && totalSum > 0) {
+      const percentage = ((getVal(lowest) / totalSum) * 100).toFixed(1);
+      items.push({
+        type: "low",
+        title: "⚠️ Participación Mínima",
+        desc: `La categoría con menor tracción comercial en este corte es "${lowest.name}" con apenas el ${percentage}% del total ($${getVal(lowest).toLocaleString(undefined, {maximumFractionDigits: 0})}).`
+      });
+    }
+    
+    return items;
+  }, [module, tableDataFiltered, dimensions, uniqueSecondaryKeys]);
+
+  const getSemanticColor = (name) => {
+    const upper = String(name).toUpperCase();
+    if (upper.includes("ADJUDICADO") || upper.includes("GANADO")) return "#10b981"; // Emerald
+    if (upper.includes("RECHAZADA") || upper.includes("RECHAZADO") || upper.includes("ANULADA") || upper.includes("ANULADO")) return "#f43f5e"; // Rose
+    if (upper.includes("ENVIADO") || upper.includes("ENVIADA")) return "#0ea5e9"; // Sky
+    if (upper.includes("OPORTUNIDAD")) return "#6366f1"; // Indigo
+    if (upper.includes("BORRADOR") || upper.includes("PENDIENTE")) return "#f59e0b"; // Amber
+    return null;
+  };
+
   const formatTooltipValue = (val) => {
     if (metrica === "monto") return `$${Number(val).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
     if (metrica === "leadtime") return `${Number(val).toFixed(1)} días`;
@@ -309,24 +519,32 @@ export default function AnalisisDashboard({ module = "comercial", cotizaciones =
   };
 
   // PRESETS GUARDADOS (Análisis en 1-Click)
-  const handleSaveAnalysis = () => {
+  const handleSaveAnalysis = async () => {
     if (!newAnalysisName.trim()) return;
-    const newPreset = {
-      name: newAnalysisName.toUpperCase(),
-      dimensions,
-      metrica
-    };
-    const updated = [...savedAnalyses, newPreset];
-    setSavedAnalyses(updated);
-    localStorage.setItem("pminsight_saved_analyses", JSON.stringify(updated));
-    setNewAnalysisName("");
+    try {
+      const payload = {
+        nombre: newAnalysisName.toUpperCase(),
+        dimensions,
+        metrica
+      };
+      const res = await api.post("cotizaciones/vistas_analisis/", payload);
+      if (res.data) {
+        setSavedAnalyses(prev => [res.data, ...prev]);
+      }
+      setNewAnalysisName("");
+    } catch (err) {
+      console.error("Error al guardar la vista", err);
+    }
   };
 
-  const handleDeletePreset = (e, index) => {
+  const handleDeletePreset = async (e, id_vista) => {
     e.stopPropagation();
-    const updated = savedAnalyses.filter((_, idx) => idx !== index);
-    setSavedAnalyses(updated);
-    localStorage.setItem("pminsight_saved_analyses", JSON.stringify(updated));
+    try {
+      await api.delete(`cotizaciones/vistas_analisis/${id_vista}/`);
+      setSavedAnalyses(prev => prev.filter(p => p.id_vista !== id_vista));
+    } catch (err) {
+      console.error("Error al eliminar la vista", err);
+    }
   };
 
   const handleLoadPreset = (p) => {
@@ -373,17 +591,19 @@ export default function AnalisisDashboard({ module = "comercial", cotizaciones =
   return (
     <div className="flex flex-col gap-6 w-full">
       {/* HEADER */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 px-2">
-        <div>
-          <h2 className="text-sm font-bold text-gray-800 flex items-center gap-2 tracking-tight">
-            <div className="bg-indigo-50 p-1.5 rounded-lg text-indigo-600">
-              <BarChart3 size={16} />
-            </div>
-            {module === "logistica" ? "Visualizador BI Logístico" : "Visualizador BI Comercial"}
-          </h2>
-          <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider ml-10">
-            Cruce multidimensional de objetivos comerciales
-          </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4 px-2">
+        <div className="flex items-center gap-2">
+          <div className="bg-indigo-50 p-1.5 rounded-xl text-indigo-600">
+            <BarChart3 size={15} />
+          </div>
+          <div>
+            <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider">
+              {module === "logistica" ? "Visualizador BI Logístico" : (viewScope === "personal" ? "Mi Visualizador BI Personal" : "Visualizador BI Comercial")}
+            </h3>
+            <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider">
+              Cruce multidimensional de objetivos comerciales
+            </p>
+          </div>
         </div>
       </div>
 
@@ -443,6 +663,114 @@ export default function AnalisisDashboard({ module = "comercial", cotizaciones =
                 ))}
               </div>
             </div>
+
+            {/* 3. TIPO DE GRÁFICO */}
+            <div>
+              <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-2 flex items-center justify-between">
+                <span>3. Tipo de Gráfico</span>
+                {overrideGrafico && (
+                  <button 
+                    type="button"
+                    onClick={() => setOverrideGrafico(null)}
+                    className="text-[8px] text-indigo-600 font-bold uppercase hover:underline"
+                  >
+                    Restablecer Auto
+                  </button>
+                )}
+              </h3>
+              <div className="grid grid-cols-4 gap-1">
+                <button
+                  type="button"
+                  onClick={() => setOverrideGrafico("bar")}
+                  className={`py-1 text-center border text-[9px] font-black rounded-lg transition-colors uppercase ${
+                    tipoGrafico === "bar" && overrideGrafico
+                      ? "bg-slate-900 text-white border-slate-900 shadow-sm"
+                      : (tipoGrafico === "bar" ? "bg-indigo-50 text-indigo-600 border-indigo-200" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50")
+                  }`}
+                >
+                  Barras
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOverrideGrafico("line")}
+                  className={`py-1 text-center border text-[9px] font-black rounded-lg transition-colors uppercase ${
+                    tipoGrafico === "line" && overrideGrafico
+                      ? "bg-slate-900 text-white border-slate-900 shadow-sm"
+                      : (tipoGrafico === "line" ? "bg-indigo-50 text-indigo-600 border-indigo-200" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50")
+                  }`}
+                >
+                  Líneas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOverrideGrafico("area")}
+                  className={`py-1 text-center border text-[9px] font-black rounded-lg transition-colors uppercase ${
+                    tipoGrafico === "area" && overrideGrafico
+                      ? "bg-slate-900 text-white border-slate-900 shadow-sm"
+                      : (tipoGrafico === "area" ? "bg-indigo-50 text-indigo-600 border-indigo-200" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50")
+                  }`}
+                >
+                  Área
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOverrideGrafico("pie")}
+                  disabled={dimensions.length >= 2}
+                  className={`py-1 text-center border text-[9px] font-black rounded-lg transition-colors uppercase disabled:opacity-30 disabled:cursor-not-allowed ${
+                    tipoGrafico === "pie" && overrideGrafico
+                      ? "bg-slate-900 text-white border-slate-900 shadow-sm"
+                      : (tipoGrafico === "pie" ? "bg-indigo-50 text-indigo-600 border-indigo-200" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50")
+                  }`}
+                >
+                  Pastel
+                </button>
+              </div>
+            </div>
+
+            {/* 4. FILTROS AVANZADOS */}
+            <div>
+              <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-2">4. Filtros Avanzados</h3>
+              <div className="space-y-3 bg-slate-50/50 border border-slate-200/50 p-3 rounded-xl">
+                <div className="space-y-1">
+                  <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider block">Mostrar Límite (Top N)</span>
+                  <div className="grid grid-cols-4 gap-1">
+                    {["all", "5", "10", "15"].map(limit => (
+                      <button
+                        key={limit}
+                        type="button"
+                        onClick={() => setTopN(limit)}
+                        className={`py-0.5 text-center border text-[8px] font-black rounded transition-all uppercase ${
+                          topN === limit
+                            ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                            : "bg-white text-gray-500 border-slate-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        {limit === "all" ? "Todos" : `Top ${limit}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {tipoGrafico !== "pie" && (
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
+                    <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Línea de Media General</span>
+                    <button
+                      type="button"
+                      onClick={() => setMostrarPromedio(prev => !prev)}
+                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        mostrarPromedio ? "bg-indigo-600" : "bg-slate-200"
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-250 ease-in-out ${
+                          mostrarPromedio ? "translate-x-4" : "translate-x-0"
+                        }`}
+                      />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* GUARDAR CONFIGURACIÓN */}
@@ -469,22 +797,22 @@ export default function AnalisisDashboard({ module = "comercial", cotizaciones =
 
             {/* LISTA DE PRESETS */}
             <div className="max-h-32 overflow-y-auto space-y-1">
-              {savedAnalyses.map((p, idx) => (
+              {Array.isArray(savedAnalyses) && savedAnalyses.map((p, idx) => (
                 <div
-                  key={idx}
+                  key={p.id_vista || idx}
                   onClick={() => handleLoadPreset(p)}
                   className="flex justify-between items-center px-2.5 py-1.5 bg-slate-50 border border-gray-200 rounded-lg cursor-pointer hover:bg-slate-100 transition-colors"
                 >
-                  <span className="text-[9px] font-black text-slate-700 truncate max-w-[140px]">{p.name}</span>
+                  <span className="text-[9px] font-black text-slate-700 truncate max-w-[140px]">{p.nombre || p.name}</span>
                   <button
-                    onClick={(e) => handleDeletePreset(e, idx)}
+                    onClick={(e) => handleDeletePreset(e, p.id_vista || idx)}
                     className="text-gray-400 hover:text-red-500 p-0.5 transition"
                   >
                     <Trash size={11} />
                   </button>
                 </div>
               ))}
-              {savedAnalyses.length === 0 && (
+              {(!Array.isArray(savedAnalyses) || savedAnalyses.length === 0) && (
                 <span className="text-[9px] font-bold text-gray-400 block text-center py-2">Sin análisis personalizados</span>
               )}
             </div>
@@ -505,9 +833,19 @@ export default function AnalisisDashboard({ module = "comercial", cotizaciones =
               Exportar CSV
             </button>
 
-            <h3 className="text-xs font-black text-gray-500 uppercase tracking-wider mb-6 pr-24">
-              Visualización: {dimensions.map(id => dimensionsOptions.find(d => d.id === id)?.label).join(" + ")} vs {metricasOptions.find(m => m.id === metrica)?.label}
+            <h3 className="text-xs font-black text-gray-500 uppercase tracking-wider mb-2 pr-24 flex items-center flex-wrap gap-2">
+              <span>Visualización: {dimensions.map(id => dimensionsOptions.find(d => d.id === id)?.label).join(" + ")} vs {metricasOptions.find(m => m.id === metrica)?.label}</span>
+              {drillDownFilter && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black bg-indigo-50 text-indigo-755 border border-indigo-200 shadow-sm shrink-0 select-none animate-pulse">
+                  Filtrado por: {drillDownFilter}
+                  <button type="button" onClick={() => setDrillDownFilter(null)} className="hover:text-red-500 font-extrabold text-[10px]" title="Quitar filtro">✕</button>
+                </span>
+              )}
             </h3>
+
+            <div className="mb-4 flex items-center gap-1 text-[9px] text-violet-600 font-black uppercase tracking-wider bg-violet-50/60 border border-violet-100/50 px-3 py-1.5 rounded-xl w-fit select-none shrink-0">
+              <span>✨ BI Recomendador: {recomendacionAI.justificacion}</span>
+            </div>
 
             <div className="h-[320px] w-full">
               {aggregatedData.length === 0 ? (
@@ -517,54 +855,63 @@ export default function AnalisisDashboard({ module = "comercial", cotizaciones =
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   {tipoGrafico === "bar" ? (
-                    <BarChart data={aggregatedData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                    <BarChart data={aggregatedData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }} onClick={(state) => { if (state && state.activeLabel) setDrillDownFilter(prev => prev === state.activeLabel ? null : state.activeLabel); }} style={{ cursor: "pointer" }}>
                       <CartesianGrid strokeDasharray="2 2" stroke="#e2e8f0" vertical={false} />
-                      <XAxis dataKey="name" stroke="#94a3b8" fontSize={9} fontWeight="bold" fontFamily="monospace" tickLine={false} />
-                      <YAxis stroke="#94a3b8" fontSize={9} fontWeight="bold" fontFamily="monospace" tickLine={false} />
+                      <XAxis dataKey="name" stroke="#334155" fontSize={10} fontWeight="extrabold" fontFamily="sans-serif" tickLine={false} />
+                      <YAxis stroke="#334155" fontSize={10} fontWeight="extrabold" fontFamily="sans-serif" tickLine={false} />
                       <Tooltip 
                         contentStyle={{ background: "rgba(15, 23, 42, 0.95)", borderRadius: "8px", border: "none", boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)", backdropFilter: "blur(4px)" }}
                         labelStyle={{ fontWeight: "800", color: "#f8fafc", fontSize: "10px", fontFamily: "monospace" }}
                         itemStyle={{ fontSize: "10px", color: "#e2e8f0", fontFamily: "monospace" }}
                         formatter={(val, name) => [formatTooltipValue(val), name === "value" ? metricasOptions.find(m => m.id === metrica)?.label : name]}
                       />
+                      {mostrarPromedio && (
+                        <ReferenceLine y={avgValue} stroke="#f43f5e" strokeDasharray="3 3" label={{ value: `Media: ${formatTooltipValue(avgValue)}`, fill: '#f43f5e', fontSize: 9, fontWeight: 'bold', position: 'top' }} />
+                      )}
                       {dimensions.length < 2 ? (
-                        <Bar dataKey="value" fill="#4f46e5" radius={[2, 2, 0, 0]} isAnimationActive={true} animationDuration={250} maxBarSize={30}>
+                        <Bar dataKey="value" fill="#4f46e5" radius={[2, 2, 0, 0]} isAnimationActive={true} animationDuration={250} maxBarSize={30} cursor="pointer">
                           {aggregatedData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                            <Cell key={`cell-${index}`} fill={getSemanticColor(entry.name) || COLORS[index % COLORS.length]} />
                           ))}
                         </Bar>
                       ) : (
                         uniqueSecondaryKeys.map((key, index) => (
-                          <Bar key={key} dataKey={key} fill={COLORS[index % COLORS.length]} radius={[2, 2, 0, 0]} isAnimationActive={true} animationDuration={250} maxBarSize={20} />
+                          <Bar key={key} dataKey={key} fill={COLORS[index % COLORS.length]} radius={[2, 2, 0, 0]} isAnimationActive={true} animationDuration={250} maxBarSize={20} cursor="pointer" />
                         ))
                       )}
-                      {dimensions.length >= 2 && <Legend wrapperStyle={{ fontSize: "9px", fontFamily: "monospace", fontWeight: "bold" }} />}
+                      {dimensions.length >= 2 && <Legend wrapperStyle={{ fontSize: "10px", fontFamily: "sans-serif", fontWeight: "800", color: "#334155" }} />}
                     </BarChart>
                   ) : tipoGrafico === "line" ? (
-                    <LineChart data={aggregatedData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                    <LineChart data={aggregatedData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }} onClick={(state) => { if (state && state.activeLabel) setDrillDownFilter(prev => prev === state.activeLabel ? null : state.activeLabel); }} style={{ cursor: "pointer" }}>
                       <CartesianGrid strokeDasharray="2 2" stroke="#e2e8f0" vertical={false} />
-                      <XAxis dataKey="name" stroke="#94a3b8" fontSize={9} fontWeight="bold" fontFamily="monospace" tickLine={false} />
-                      <YAxis stroke="#94a3b8" fontSize={9} fontWeight="bold" fontFamily="monospace" tickLine={false} />
+                      <XAxis dataKey="name" stroke="#334155" fontSize={10} fontWeight="extrabold" fontFamily="sans-serif" tickLine={false} />
+                      <YAxis stroke="#334155" fontSize={10} fontWeight="extrabold" fontFamily="sans-serif" tickLine={false} />
                       <Tooltip 
                         contentStyle={{ background: "rgba(15, 23, 42, 0.95)", borderRadius: "8px", border: "none", boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)", backdropFilter: "blur(4px)" }}
                         labelStyle={{ fontWeight: "800", color: "#f8fafc", fontSize: "10px", fontFamily: "monospace" }}
                         itemStyle={{ fontSize: "10px", color: "#e2e8f0", fontFamily: "monospace" }}
                         formatter={(val, name) => [formatTooltipValue(val), name === "value" ? metricasOptions.find(m => m.id === metrica)?.label : name]}
                       />
-                      <Line type="monotone" dataKey="value" stroke="#6366f1" strokeWidth={2.5} activeDot={{ r: 4 }} isAnimationActive={true} animationDuration={250} dot={false} />
+                      {mostrarPromedio && (
+                        <ReferenceLine y={avgValue} stroke="#f43f5e" strokeDasharray="3 3" label={{ value: `Media: ${formatTooltipValue(avgValue)}`, fill: '#f43f5e', fontSize: 9, fontWeight: 'bold', position: 'top' }} />
+                      )}
+                      <Line type="monotone" dataKey="value" stroke="#6366f1" strokeWidth={2.5} activeDot={{ r: 4 }} isAnimationActive={true} animationDuration={250} dot={false} cursor="pointer" />
                     </LineChart>
                   ) : tipoGrafico === "area" ? (
-                    <AreaChart data={aggregatedData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                    <AreaChart data={aggregatedData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }} onClick={(state) => { if (state && state.activeLabel) setDrillDownFilter(prev => prev === state.activeLabel ? null : state.activeLabel); }} style={{ cursor: "pointer" }}>
                       <CartesianGrid strokeDasharray="2 2" stroke="#e2e8f0" vertical={false} />
-                      <XAxis dataKey="name" stroke="#94a3b8" fontSize={9} fontWeight="bold" fontFamily="monospace" tickLine={false} />
-                      <YAxis stroke="#94a3b8" fontSize={9} fontWeight="bold" fontFamily="monospace" tickLine={false} />
+                      <XAxis dataKey="name" stroke="#334155" fontSize={10} fontWeight="extrabold" fontFamily="sans-serif" tickLine={false} />
+                      <YAxis stroke="#334155" fontSize={10} fontWeight="extrabold" fontFamily="sans-serif" tickLine={false} />
                       <Tooltip 
                         contentStyle={{ background: "rgba(15, 23, 42, 0.95)", borderRadius: "8px", border: "none", boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)", backdropFilter: "blur(4px)" }}
                         labelStyle={{ fontWeight: "800", color: "#f8fafc", fontSize: "10px", fontFamily: "monospace" }}
                         itemStyle={{ fontSize: "10px", color: "#e2e8f0", fontFamily: "monospace" }}
                         formatter={(val, name) => [formatTooltipValue(val), name === "value" ? metricasOptions.find(m => m.id === metrica)?.label : name]}
                       />
-                      <Area type="monotone" dataKey="value" stroke="#6366f1" fill="#e0e7ff" strokeWidth={2} isAnimationActive={true} animationDuration={250} />
+                      {mostrarPromedio && (
+                        <ReferenceLine y={avgValue} stroke="#f43f5e" strokeDasharray="3 3" label={{ value: `Media: ${formatTooltipValue(avgValue)}`, fill: '#f43f5e', fontSize: 9, fontWeight: 'bold', position: 'top' }} />
+                      )}
+                      <Area type="monotone" dataKey="value" stroke="#6366f1" fill="#e0e7ff" strokeWidth={2} isAnimationActive={true} animationDuration={250} cursor="pointer" />
                     </AreaChart>
                   ) : (
                     <PieChart>
@@ -586,9 +933,11 @@ export default function AnalisisDashboard({ module = "comercial", cotizaciones =
                         labelLine={true}
                         isAnimationActive={true}
                         animationDuration={250}
+                        onClick={(entry) => setDrillDownFilter(prev => prev === entry.name ? null : entry.name)}
+                        cursor="pointer"
                       >
                         {aggregatedData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          <Cell key={`cell-${index}`} fill={getSemanticColor(entry.name) || COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>
                       <Legend verticalAlign="bottom" height={36} wrapperStyle={{ fontSize: "9px", fontFamily: "monospace", fontWeight: "bold" }} />
@@ -599,14 +948,38 @@ export default function AnalisisDashboard({ module = "comercial", cotizaciones =
             </div>
           </div>
 
+          {/* PANEL DE AUTO-INSIGHTS */}
+          {module === "comercial" && autoInsights.length > 0 && (
+            <div className="bg-slate-50 border border-slate-200/80 p-5 rounded-2xl space-y-3 shadow-inner">
+              <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5 select-none">
+                <span>💡 Insights Automáticos del Asistente BI</span>
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {autoInsights.map((ins, idx) => (
+                  <div key={idx} className="bg-white p-3.5 border border-slate-150 rounded-xl space-y-1 shadow-sm hover:border-indigo-150 transition-colors">
+                    <span className="text-[9px] font-black text-indigo-600 uppercase tracking-wider block">{ins.title}</span>
+                    <p className="text-[10px] text-slate-650 leading-relaxed font-semibold">{ins.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* TABLA PIVOT RESUMIDA */}
           <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
             <div className="flex justify-between items-center mb-3">
-              <h3 className="text-xs font-black text-gray-700 uppercase tracking-wider">Desglose de datos agrupados</h3>
+              <h3 className="text-xs font-black text-gray-700 uppercase tracking-wider flex items-center gap-2">
+                <span>Desglose de datos agrupados</span>
+                {drillDownFilter && (
+                  <span className="text-[9px] font-bold bg-indigo-50 text-indigo-650 px-2 py-0.5 rounded border border-indigo-200">
+                    Filtrado por gráfico
+                  </span>
+                )}
+              </h3>
               <span className="text-[10px] font-black text-gray-500 bg-slate-50 px-2 py-0.5 rounded-md border border-gray-200 shadow-sm font-mono">
                 {metrica === "monto" 
-                  ? `Total: $${totalMetricValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` 
-                  : (metrica === "leadtime" ? `Promedio: ${totalMetricValue.toFixed(1)} días` : `Total: ${totalMetricValue} Docs`)
+                  ? `Total: $${tableTotalMetricValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` 
+                  : (metrica === "leadtime" ? `Promedio: ${tableTotalMetricValue.toFixed(1)} días` : `Total: ${tableTotalMetricValue} Docs`)
                 }
               </span>
             </div>
@@ -627,12 +1000,12 @@ export default function AnalisisDashboard({ module = "comercial", cotizaciones =
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {aggregatedData.length === 0 ? (
+                  {tableDataFiltered.length === 0 ? (
                     <tr>
                       <td colSpan={dimensions.length >= 2 ? uniqueSecondaryKeys.length + 2 : 3} className="text-center py-6 text-gray-400 font-medium">Sin datos agrupados</td>
                     </tr>
                   ) : (
-                    aggregatedData.map((row, idx) => {
+                    tableDataFiltered.map((row, idx) => {
                       let rowTotal = 0;
                       return (
                         <tr key={idx} className="hover:bg-gray-50/50 transition-colors">
@@ -655,11 +1028,18 @@ export default function AnalisisDashboard({ module = "comercial", cotizaciones =
                               }
                             </td>
                           )}
-                          <td className="px-4 py-2.5 text-right font-black text-slate-900 bg-slate-50/30">
-                            {metrica === "monto" 
-                              ? `$${(dimensions.length < 2 ? row.value : rowTotal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                              : (dimensions.length < 2 ? `${row.value} Docs` : `${rowTotal} Docs`)
-                            }
+                          <td className="px-4 py-2.5 text-right font-black text-slate-900 bg-slate-50/30 relative overflow-hidden select-none">
+                            {/* Barra de formato condicional sutil */}
+                            <div 
+                              className="absolute top-0 right-0 bottom-0 bg-indigo-500/10 pointer-events-none transition-all duration-300"
+                              style={{ width: `${((dimensions.length < 2 ? row.value : rowTotal) / maxRowTotal) * 100}%` }}
+                            />
+                            <span className="relative z-10">
+                              {metrica === "monto" 
+                                ? `$${(dimensions.length < 2 ? row.value : rowTotal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                : (dimensions.length < 2 ? `${row.value} Docs` : `${rowTotal} Docs`)
+                              }
+                            </span>
                           </td>
                         </tr>
                       );

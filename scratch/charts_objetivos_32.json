@@ -1,0 +1,90 @@
+[
+  {
+    "index": 1,
+    "class": "BarChart3D",
+    "width": 15,
+    "height": 7.5,
+    "anchor": "N2",
+    "title": "Monto Logrado por A\u00f1o HH+UTILIDAD",
+    "series": [
+      {
+        "title": "None",
+        "values": "None",
+        "categories": "None"
+      }
+    ],
+    "dataLabels": {
+      "showVal": true,
+      "showCatName": false,
+      "showSerName": false,
+      "showPercent": false
+    },
+    "axis": {
+      "x_axis_delete": false,
+      "y_axis_delete": true
+    },
+    "legend": "None"
+  },
+  {
+    "index": 2,
+    "class": "BarChart3D",
+    "width": 15,
+    "height": 7.5,
+    "anchor": "B22",
+    "title": "Avance objetivo M\u00e1ximo al Mes en curso",
+    "series": [
+      {
+        "title": "None",
+        "values": "None",
+        "categories": "None"
+      },
+      {
+        "title": "None",
+        "values": "None",
+        "categories": "None"
+      }
+    ],
+    "dataLabels": {
+      "showVal": true,
+      "showCatName": false,
+      "showSerName": false,
+      "showPercent": false
+    },
+    "axis": {
+      "x_axis_delete": false,
+      "y_axis_delete": true
+    },
+    "legend": "None"
+  },
+  {
+    "index": 3,
+    "class": "BarChart3D",
+    "width": 15,
+    "height": 7.5,
+    "anchor": "G22",
+    "title": "Avance objetivo M\u00ednimo al Mes en curso",
+    "series": [
+      {
+        "title": "None",
+        "values": "None",
+        "categories": "None"
+      },
+      {
+        "title": "None",
+        "values": "None",
+        "categories": "None"
+      }
+    ],
+    "dataLabels": {
+      "showVal": true,
+      "showCatName": false,
+      "showSerName": false,
+      "showPercent": false
+    },
+    "axis": {
+      "x_axis_delete": false,
+      "y_axis_delete": true
+    },
+    "legend": "None"
+  }
+]

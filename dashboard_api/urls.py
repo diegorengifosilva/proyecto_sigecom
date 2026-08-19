@@ -7,4 +7,6 @@ urlpatterns = [
     path('kpis/', views.kpis_dashboard, name='kpis_dashboard'),
     path('tendencias/', views.tendencias_dashboard, name='tendencias_dashboard'),
     path('analisis/', views.cotizaciones_analisis_view, name='cotizaciones-analisis'),
+    path('exportar/mensual/', views.exportar_mensual, name='exportar_mensual'),
+    path('exportar/anual/', views.exportar_anual, name='exportar_anual'),
 ]

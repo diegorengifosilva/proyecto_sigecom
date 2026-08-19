@@ -468,10 +468,6 @@ class CotizacionApertura(models.Model):
 
 #========================================================================================
 
-# (El modelo Notificacion se trasladó a su propia app de notificaciones_api)
-
-#========================================================================================
-
 ##================##
 ## DATOS DE BD_VC ##
 ##================##
@@ -630,3 +626,20 @@ class vc_mov_orden(models.Model):
 
     def __str__(self):
         return f"{self.num} | {self.nomcli} | {self.tot}"
+
+
+class VistaAnalisis(models.Model):
+    id_vista = models.AutoField(primary_key=True)
+    nombre = models.CharField(max_length=255)
+    dimensions = models.JSONField()  # Lista de dimensiones, ej. ["mes", "vendedor"]
+    metrica = models.CharField(max_length=100)  # Ej. "monto" o "cantidad"
+    id_usuario = models.ForeignKey('users.Usuario', on_delete=models.CASCADE, db_column='id_usuario')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        managed = True
+        db_table = 'vista_analisis'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.nombre} - {self.id_usuario}"

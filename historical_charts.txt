@@ -1,0 +1,318 @@
+Sheet '2012 - 2026' charts count: 11
+
+Chart 0: Title='<openpyxl.chart.text.Text object>
+Parameters:
+strRef=None, rich=<openpyxl.chart.text.RichText object>
+Parameters:
+bodyPr=<openpyxl.drawing.text.RichTextProperties object>
+Parameters:
+rot=None, spcFirstLastPara=None, vertOverflow=None, horzOverflow=None, vert=None, wrap=None, lIns=None, tIns=None, rIns=None, bIns=None, numCol=None, spcCol=None, rtlCol=None, fromWordArt=None, anchor=None, anchorCtr=None, forceAA=None, upright=None, compatLnSpc=None, prstTxWarp=None, scene3d=None, noAutofit=False, normAutofit=False, spAutoFit=False, lstStyle=<openpyxl.drawing.text.ListStyle object>
+Parameters:
+defPPr=None, lvl1pPr=None, lvl2pPr=None, lvl3pPr=None, lvl4pPr=None, lvl5pPr=None, lvl6pPr=None, lvl7pPr=None, lvl8pPr=None, lvl9pPr=None, p=[<openpyxl.drawing.text.Paragraph object>
+Parameters:
+pPr=<openpyxl.drawing.text.ParagraphProperties object>
+Parameters:
+marL=None, marR=None, lvl=None, indent=None, algn=None, defTabSz=None, rtl=None, eaLnBrk=None, fontAlgn=None, latinLnBrk=None, hangingPunct=None, lnSpc=None, spcBef=None, spcAft=None, tabLst=None, defRPr=<openpyxl.drawing.text.CharacterProperties object>
+Parameters:
+kumimoji=None, lang=None, altLang=None, sz=1200.0, b=True, i=None, u=None, strike=None, kern=None, cap=None, spc=None, normalizeH=None, baseline=None, noProof=None, dirty=None, err=None, smtClean=None, smtId=None, bmk=None, ln=None, noFill=False, solidFill=None, gradFill=None, blipFill=None, pattFill=None, grpFill=False, effectLst=None, effectDag=None, highlight=None, uLnTx=False, uLn=None, uFillTx=False, uFill=False, latin=<openpyxl.drawing.text.Font object>
+Parameters:
+typeface='Calibri', panose=None, pitchFamily=None, charset=None, ea=None, cs=None, sym=None, hlinkClick=None, hlinkMouseOver=None, rtl=None, buClrTx=False, buClr=None, buSzTx=False, buSzPct=None, buSzPts=None, buFontTx=False, buFont=None, buNone=False, buAutoNum=False, buChar=None, buBlip=None, r=[<openpyxl.drawing.text.RegularTextRun object>
+Parameters:
+rPr=<openpyxl.drawing.text.CharacterProperties object>
+Parameters:
+kumimoji=None, lang='es-PE', altLang=None, sz=None, b=None, i=None, u=None, strike=None, kern=None, cap=None, spc=None, normalizeH=None, baseline=None, noProof=None, dirty=None, err=None, smtClean=None, smtId=None, bmk=None, ln=None, noFill=False, solidFill=None, gradFill=None, blipFill=None, pattFill=None, grpFill=False, effectLst=None, effectDag=None, highlight=None, uLnTx=False, uLn=None, uFillTx=False, uFill=False, latin=None, ea=None, cs=None, sym=None, hlinkClick=None, hlinkMouseOver=None, rtl=None, t='% OC Área'], br=None, fld=None, endParaRPr=None]'
+  Type: PieChart3D
+  Anchor: OneCellAnchor: col=4, row=1
+  Width: 15 cm, Height: 7.5 cm
+  Legend: None
+  dTable: None
+
+Chart 1: Title='<openpyxl.chart.text.Text object>
+Parameters:
+strRef=None, rich=<openpyxl.chart.text.RichText object>
+Parameters:
+bodyPr=<openpyxl.drawing.text.RichTextProperties object>
+Parameters:
+rot=None, spcFirstLastPara=None, vertOverflow=None, horzOverflow=None, vert=None, wrap=None, lIns=None, tIns=None, rIns=None, bIns=None, numCol=None, spcCol=None, rtlCol=None, fromWordArt=None, anchor=None, anchorCtr=None, forceAA=None, upright=None, compatLnSpc=None, prstTxWarp=None, scene3d=None, noAutofit=False, normAutofit=False, spAutoFit=False, lstStyle=<openpyxl.drawing.text.ListStyle object>
+Parameters:
+defPPr=None, lvl1pPr=None, lvl2pPr=None, lvl3pPr=None, lvl4pPr=None, lvl5pPr=None, lvl6pPr=None, lvl7pPr=None, lvl8pPr=None, lvl9pPr=None, p=[<openpyxl.drawing.text.Paragraph object>
+Parameters:
+pPr=<openpyxl.drawing.text.ParagraphProperties object>
+Parameters:
+marL=None, marR=None, lvl=None, indent=None, algn=None, defTabSz=None, rtl=None, eaLnBrk=None, fontAlgn=None, latinLnBrk=None, hangingPunct=None, lnSpc=None, spcBef=None, spcAft=None, tabLst=None, defRPr=<openpyxl.drawing.text.CharacterProperties object>
+Parameters:
+kumimoji=None, lang=None, altLang=None, sz=1200.0, b=True, i=None, u=None, strike=None, kern=None, cap=None, spc=None, normalizeH=None, baseline=None, noProof=None, dirty=None, err=None, smtClean=None, smtId=None, bmk=None, ln=None, noFill=False, solidFill=None, gradFill=None, blipFill=None, pattFill=None, grpFill=False, effectLst=None, effectDag=None, highlight=None, uLnTx=False, uLn=None, uFillTx=False, uFill=False, latin=<openpyxl.drawing.text.Font object>
+Parameters:
+typeface='Calibri', panose=None, pitchFamily=None, charset=None, ea=None, cs=None, sym=None, hlinkClick=None, hlinkMouseOver=None, rtl=None, buClrTx=False, buClr=None, buSzTx=False, buSzPct=None, buSzPts=None, buFontTx=False, buFont=None, buNone=False, buAutoNum=False, buChar=None, buBlip=None, r=[<openpyxl.drawing.text.RegularTextRun object>
+Parameters:
+rPr=<openpyxl.drawing.text.CharacterProperties object>
+Parameters:
+kumimoji=None, lang='es-PE', altLang=None, sz=None, b=None, i=None, u=None, strike=None, kern=None, cap=None, spc=None, normalizeH=None, baseline=None, noProof=None, dirty=None, err=None, smtClean=None, smtId=None, bmk=None, ln=None, noFill=False, solidFill=None, gradFill=None, blipFill=None, pattFill=None, grpFill=False, effectLst=None, effectDag=None, highlight=None, uLnTx=False, uLn=None, uFillTx=False, uFill=False, latin=None, ea=None, cs=None, sym=None, hlinkClick=None, hlinkMouseOver=None, rtl=None, t='Evolución OC vs HH y Utilidad'], br=None, fld=None, endParaRPr=None]'
+  Type: BarChart3D
+  Anchor: OneCellAnchor: col=14, row=1
+  Width: 15 cm, Height: 7.5 cm
+  Legend: None
+  X-axis delete: True
+  Y-axis delete: False
+  dTable: None
+
+Chart 2: Title='<openpyxl.chart.text.Text object>
+Parameters:
+strRef=None, rich=<openpyxl.chart.text.RichText object>
+Parameters:
+bodyPr=<openpyxl.drawing.text.RichTextProperties object>
+Parameters:
+rot=None, spcFirstLastPara=None, vertOverflow=None, horzOverflow=None, vert=None, wrap=None, lIns=None, tIns=None, rIns=None, bIns=None, numCol=None, spcCol=None, rtlCol=None, fromWordArt=None, anchor=None, anchorCtr=None, forceAA=None, upright=None, compatLnSpc=None, prstTxWarp=None, scene3d=None, noAutofit=False, normAutofit=False, spAutoFit=False, lstStyle=<openpyxl.drawing.text.ListStyle object>
+Parameters:
+defPPr=None, lvl1pPr=None, lvl2pPr=None, lvl3pPr=None, lvl4pPr=None, lvl5pPr=None, lvl6pPr=None, lvl7pPr=None, lvl8pPr=None, lvl9pPr=None, p=[<openpyxl.drawing.text.Paragraph object>
+Parameters:
+pPr=<openpyxl.drawing.text.ParagraphProperties object>
+Parameters:
+marL=None, marR=None, lvl=None, indent=None, algn=None, defTabSz=None, rtl=None, eaLnBrk=None, fontAlgn=None, latinLnBrk=None, hangingPunct=None, lnSpc=None, spcBef=None, spcAft=None, tabLst=None, defRPr=<openpyxl.drawing.text.CharacterProperties object>
+Parameters:
+kumimoji=None, lang=None, altLang=None, sz=1200.0, b=True, i=None, u=None, strike=None, kern=None, cap=None, spc=None, normalizeH=None, baseline=None, noProof=None, dirty=None, err=None, smtClean=None, smtId=None, bmk=None, ln=None, noFill=False, solidFill=None, gradFill=None, blipFill=None, pattFill=None, grpFill=False, effectLst=None, effectDag=None, highlight=None, uLnTx=False, uLn=None, uFillTx=False, uFill=False, latin=<openpyxl.drawing.text.Font object>
+Parameters:
+typeface='Calibri', panose=None, pitchFamily=None, charset=None, ea=None, cs=None, sym=None, hlinkClick=None, hlinkMouseOver=None, rtl=None, buClrTx=False, buClr=None, buSzTx=False, buSzPct=None, buSzPts=None, buFontTx=False, buFont=None, buNone=False, buAutoNum=False, buChar=None, buBlip=None, r=[<openpyxl.drawing.text.RegularTextRun object>
+Parameters:
+rPr=<openpyxl.drawing.text.CharacterProperties object>
+Parameters:
+kumimoji=None, lang='es-PE', altLang=None, sz=None, b=None, i=None, u=None, strike=None, kern=None, cap=None, spc=None, normalizeH=None, baseline=None, noProof=None, dirty=None, err=None, smtClean=None, smtId=None, bmk=None, ln=None, noFill=False, solidFill=None, gradFill=None, blipFill=None, pattFill=None, grpFill=False, effectLst=None, effectDag=None, highlight=None, uLnTx=False, uLn=None, uFillTx=False, uFill=False, latin=None, ea=None, cs=None, sym=None, hlinkClick=None, hlinkMouseOver=None, rtl=None, t='Evolución OC, Objetivos Minimos y HH+Utilidad'], br=None, fld=None, endParaRPr=None]'
+  Type: LineChart
+  Anchor: OneCellAnchor: col=31, row=1
+  Width: 15 cm, Height: 7.5 cm
+  Legend: None
+  X-axis delete: True
+  Y-axis delete: False
+  dTable: None
+
+Chart 3: Title='<openpyxl.chart.text.Text object>
+Parameters:
+strRef=None, rich=<openpyxl.chart.text.RichText object>
+Parameters:
+bodyPr=<openpyxl.drawing.text.RichTextProperties object>
+Parameters:
+rot=None, spcFirstLastPara=None, vertOverflow=None, horzOverflow=None, vert=None, wrap=None, lIns=None, tIns=None, rIns=None, bIns=None, numCol=None, spcCol=None, rtlCol=None, fromWordArt=None, anchor=None, anchorCtr=None, forceAA=None, upright=None, compatLnSpc=None, prstTxWarp=None, scene3d=None, noAutofit=False, normAutofit=False, spAutoFit=False, lstStyle=<openpyxl.drawing.text.ListStyle object>
+Parameters:
+defPPr=None, lvl1pPr=None, lvl2pPr=None, lvl3pPr=None, lvl4pPr=None, lvl5pPr=None, lvl6pPr=None, lvl7pPr=None, lvl8pPr=None, lvl9pPr=None, p=[<openpyxl.drawing.text.Paragraph object>
+Parameters:
+pPr=<openpyxl.drawing.text.ParagraphProperties object>
+Parameters:
+marL=None, marR=None, lvl=None, indent=None, algn=None, defTabSz=None, rtl=None, eaLnBrk=None, fontAlgn=None, latinLnBrk=None, hangingPunct=None, lnSpc=None, spcBef=None, spcAft=None, tabLst=None, defRPr=<openpyxl.drawing.text.CharacterProperties object>
+Parameters:
+kumimoji=None, lang=None, altLang=None, sz=1200.0, b=True, i=None, u=None, strike=None, kern=None, cap=None, spc=None, normalizeH=None, baseline=None, noProof=None, dirty=None, err=None, smtClean=None, smtId=None, bmk=None, ln=None, noFill=False, solidFill=None, gradFill=None, blipFill=None, pattFill=None, grpFill=False, effectLst=None, effectDag=None, highlight=None, uLnTx=False, uLn=None, uFillTx=False, uFill=False, latin=<openpyxl.drawing.text.Font object>
+Parameters:
+typeface='Calibri', panose=None, pitchFamily=None, charset=None, ea=None, cs=None, sym=None, hlinkClick=None, hlinkMouseOver=None, rtl=None, buClrTx=False, buClr=None, buSzTx=False, buSzPct=None, buSzPts=None, buFontTx=False, buFont=None, buNone=False, buAutoNum=False, buChar=None, buBlip=None, r=[<openpyxl.drawing.text.RegularTextRun object>
+Parameters:
+rPr=<openpyxl.drawing.text.CharacterProperties object>
+Parameters:
+kumimoji=None, lang='es-PE', altLang=None, sz=None, b=None, i=None, u=None, strike=None, kern=None, cap=None, spc=None, normalizeH=None, baseline=None, noProof=None, dirty=None, err=None, smtClean=None, smtId=None, bmk=None, ln=None, noFill=False, solidFill=None, gradFill=None, blipFill=None, pattFill=None, grpFill=False, effectLst=None, effectDag=None, highlight=None, uLnTx=False, uLn=None, uFillTx=False, uFill=False, latin=None, ea=None, cs=None, sym=None, hlinkClick=None, hlinkMouseOver=None, rtl=None, t='Evolución OC Industria'], br=None, fld=None, endParaRPr=None]'
+  Type: BarChart3D
+  Anchor: OneCellAnchor: col=15, row=25
+  Width: 15 cm, Height: 7.5 cm
+  Legend: None
+  X-axis delete: True
+  Y-axis delete: True
+  dTable: None
+
+Chart 4: Title='<openpyxl.chart.text.Text object>
+Parameters:
+strRef=None, rich=<openpyxl.chart.text.RichText object>
+Parameters:
+bodyPr=<openpyxl.drawing.text.RichTextProperties object>
+Parameters:
+rot=None, spcFirstLastPara=None, vertOverflow=None, horzOverflow=None, vert=None, wrap=None, lIns=None, tIns=None, rIns=None, bIns=None, numCol=None, spcCol=None, rtlCol=None, fromWordArt=None, anchor=None, anchorCtr=None, forceAA=None, upright=None, compatLnSpc=None, prstTxWarp=None, scene3d=None, noAutofit=False, normAutofit=False, spAutoFit=False, lstStyle=<openpyxl.drawing.text.ListStyle object>
+Parameters:
+defPPr=None, lvl1pPr=None, lvl2pPr=None, lvl3pPr=None, lvl4pPr=None, lvl5pPr=None, lvl6pPr=None, lvl7pPr=None, lvl8pPr=None, lvl9pPr=None, p=[<openpyxl.drawing.text.Paragraph object>
+Parameters:
+pPr=<openpyxl.drawing.text.ParagraphProperties object>
+Parameters:
+marL=None, marR=None, lvl=None, indent=None, algn=None, defTabSz=None, rtl=None, eaLnBrk=None, fontAlgn=None, latinLnBrk=None, hangingPunct=None, lnSpc=None, spcBef=None, spcAft=None, tabLst=None, defRPr=<openpyxl.drawing.text.CharacterProperties object>
+Parameters:
+kumimoji=None, lang=None, altLang=None, sz=1200.0, b=True, i=None, u=None, strike=None, kern=None, cap=None, spc=None, normalizeH=None, baseline=None, noProof=None, dirty=None, err=None, smtClean=None, smtId=None, bmk=None, ln=None, noFill=False, solidFill=None, gradFill=None, blipFill=None, pattFill=None, grpFill=False, effectLst=None, effectDag=None, highlight=None, uLnTx=False, uLn=None, uFillTx=False, uFill=False, latin=<openpyxl.drawing.text.Font object>
+Parameters:
+typeface='Calibri', panose=None, pitchFamily=None, charset=None, ea=None, cs=None, sym=None, hlinkClick=None, hlinkMouseOver=None, rtl=None, buClrTx=False, buClr=None, buSzTx=False, buSzPct=None, buSzPts=None, buFontTx=False, buFont=None, buNone=False, buAutoNum=False, buChar=None, buBlip=None, r=[<openpyxl.drawing.text.RegularTextRun object>
+Parameters:
+rPr=<openpyxl.drawing.text.CharacterProperties object>
+Parameters:
+kumimoji=None, lang='es-PE', altLang=None, sz=None, b=None, i=None, u=None, strike=None, kern=None, cap=None, spc=None, normalizeH=None, baseline=None, noProof=None, dirty=None, err=None, smtClean=None, smtId=None, bmk=None, ln=None, noFill=False, solidFill=None, gradFill=None, blipFill=None, pattFill=None, grpFill=False, effectLst=None, effectDag=None, highlight=None, uLnTx=False, uLn=None, uFillTx=False, uFill=False, latin=None, ea=None, cs=None, sym=None, hlinkClick=None, hlinkMouseOver=None, rtl=None, t='Montos Ordenes Mes a Mes'], br=None, fld=None, endParaRPr=None]'
+  Type: BarChart3D
+  Anchor: OneCellAnchor: col=29, row=25
+  Width: 15 cm, Height: 7.5 cm
+  Legend: None
+  X-axis delete: True
+  Y-axis delete: True
+  dTable: None
+
+Chart 5: Title='<openpyxl.chart.text.Text object>
+Parameters:
+strRef=None, rich=<openpyxl.chart.text.RichText object>
+Parameters:
+bodyPr=<openpyxl.drawing.text.RichTextProperties object>
+Parameters:
+rot=None, spcFirstLastPara=None, vertOverflow=None, horzOverflow=None, vert=None, wrap=None, lIns=None, tIns=None, rIns=None, bIns=None, numCol=None, spcCol=None, rtlCol=None, fromWordArt=None, anchor=None, anchorCtr=None, forceAA=None, upright=None, compatLnSpc=None, prstTxWarp=None, scene3d=None, noAutofit=False, normAutofit=False, spAutoFit=False, lstStyle=<openpyxl.drawing.text.ListStyle object>
+Parameters:
+defPPr=None, lvl1pPr=None, lvl2pPr=None, lvl3pPr=None, lvl4pPr=None, lvl5pPr=None, lvl6pPr=None, lvl7pPr=None, lvl8pPr=None, lvl9pPr=None, p=[<openpyxl.drawing.text.Paragraph object>
+Parameters:
+pPr=<openpyxl.drawing.text.ParagraphProperties object>
+Parameters:
+marL=None, marR=None, lvl=None, indent=None, algn=None, defTabSz=None, rtl=None, eaLnBrk=None, fontAlgn=None, latinLnBrk=None, hangingPunct=None, lnSpc=None, spcBef=None, spcAft=None, tabLst=None, defRPr=<openpyxl.drawing.text.CharacterProperties object>
+Parameters:
+kumimoji=None, lang=None, altLang=None, sz=1200.0, b=True, i=None, u=None, strike=None, kern=None, cap=None, spc=None, normalizeH=None, baseline=None, noProof=None, dirty=None, err=None, smtClean=None, smtId=None, bmk=None, ln=None, noFill=False, solidFill=None, gradFill=None, blipFill=None, pattFill=None, grpFill=False, effectLst=None, effectDag=None, highlight=None, uLnTx=False, uLn=None, uFillTx=False, uFill=False, latin=<openpyxl.drawing.text.Font object>
+Parameters:
+typeface='Calibri', panose=None, pitchFamily=None, charset=None, ea=None, cs=None, sym=None, hlinkClick=None, hlinkMouseOver=None, rtl=None, buClrTx=False, buClr=None, buSzTx=False, buSzPct=None, buSzPts=None, buFontTx=False, buFont=None, buNone=False, buAutoNum=False, buChar=None, buBlip=None, r=[<openpyxl.drawing.text.RegularTextRun object>
+Parameters:
+rPr=<openpyxl.drawing.text.CharacterProperties object>
+Parameters:
+kumimoji=None, lang='es-PE', altLang=None, sz=None, b=None, i=None, u=None, strike=None, kern=None, cap=None, spc=None, normalizeH=None, baseline=None, noProof=None, dirty=None, err=None, smtClean=None, smtId=None, bmk=None, ln=None, noFill=False, solidFill=None, gradFill=None, blipFill=None, pattFill=None, grpFill=False, effectLst=None, effectDag=None, highlight=None, uLnTx=False, uLn=None, uFillTx=False, uFill=False, latin=None, ea=None, cs=None, sym=None, hlinkClick=None, hlinkMouseOver=None, rtl=None, t='Evolución OC Minería'], br=None, fld=None, endParaRPr=None]'
+  Type: BarChart3D
+  Anchor: OneCellAnchor: col=15, row=55
+  Width: 15 cm, Height: 7.5 cm
+  Legend: None
+  X-axis delete: True
+  Y-axis delete: True
+  dTable: None
+
+Chart 6: Title='<openpyxl.chart.text.Text object>
+Parameters:
+strRef=None, rich=<openpyxl.chart.text.RichText object>
+Parameters:
+bodyPr=<openpyxl.drawing.text.RichTextProperties object>
+Parameters:
+rot=None, spcFirstLastPara=None, vertOverflow=None, horzOverflow=None, vert=None, wrap=None, lIns=None, tIns=None, rIns=None, bIns=None, numCol=None, spcCol=None, rtlCol=None, fromWordArt=None, anchor=None, anchorCtr=None, forceAA=None, upright=None, compatLnSpc=None, prstTxWarp=None, scene3d=None, noAutofit=False, normAutofit=False, spAutoFit=False, lstStyle=<openpyxl.drawing.text.ListStyle object>
+Parameters:
+defPPr=None, lvl1pPr=None, lvl2pPr=None, lvl3pPr=None, lvl4pPr=None, lvl5pPr=None, lvl6pPr=None, lvl7pPr=None, lvl8pPr=None, lvl9pPr=None, p=[<openpyxl.drawing.text.Paragraph object>
+Parameters:
+pPr=<openpyxl.drawing.text.ParagraphProperties object>
+Parameters:
+marL=None, marR=None, lvl=None, indent=None, algn=None, defTabSz=None, rtl=None, eaLnBrk=None, fontAlgn=None, latinLnBrk=None, hangingPunct=None, lnSpc=None, spcBef=None, spcAft=None, tabLst=None, defRPr=<openpyxl.drawing.text.CharacterProperties object>
+Parameters:
+kumimoji=None, lang=None, altLang=None, sz=1200.0, b=True, i=None, u=None, strike=None, kern=None, cap=None, spc=None, normalizeH=None, baseline=None, noProof=None, dirty=None, err=None, smtClean=None, smtId=None, bmk=None, ln=None, noFill=False, solidFill=None, gradFill=None, blipFill=None, pattFill=None, grpFill=False, effectLst=None, effectDag=None, highlight=None, uLnTx=False, uLn=None, uFillTx=False, uFill=False, latin=<openpyxl.drawing.text.Font object>
+Parameters:
+typeface='Calibri', panose=None, pitchFamily=None, charset=None, ea=None, cs=None, sym=None, hlinkClick=None, hlinkMouseOver=None, rtl=None, buClrTx=False, buClr=None, buSzTx=False, buSzPct=None, buSzPts=None, buFontTx=False, buFont=None, buNone=False, buAutoNum=False, buChar=None, buBlip=None, r=[<openpyxl.drawing.text.RegularTextRun object>
+Parameters:
+rPr=<openpyxl.drawing.text.CharacterProperties object>
+Parameters:
+kumimoji=None, lang='es-PE', altLang=None, sz=None, b=None, i=None, u=None, strike=None, kern=None, cap=None, spc=None, normalizeH=None, baseline=None, noProof=None, dirty=None, err=None, smtClean=None, smtId=None, bmk=None, ln=None, noFill=False, solidFill=None, gradFill=None, blipFill=None, pattFill=None, grpFill=False, effectLst=None, effectDag=None, highlight=None, uLnTx=False, uLn=None, uFillTx=False, uFill=False, latin=None, ea=None, cs=None, sym=None, hlinkClick=None, hlinkMouseOver=None, rtl=None, t='Montos Ordenes Mes a Mes'], br=None, fld=None, endParaRPr=None]'
+  Type: BarChart3D
+  Anchor: OneCellAnchor: col=29, row=55
+  Width: 15 cm, Height: 7.5 cm
+  Legend: None
+  X-axis delete: True
+  Y-axis delete: True
+  dTable: None
+
+Chart 7: Title='<openpyxl.chart.text.Text object>
+Parameters:
+strRef=None, rich=<openpyxl.chart.text.RichText object>
+Parameters:
+bodyPr=<openpyxl.drawing.text.RichTextProperties object>
+Parameters:
+rot=None, spcFirstLastPara=None, vertOverflow=None, horzOverflow=None, vert=None, wrap=None, lIns=None, tIns=None, rIns=None, bIns=None, numCol=None, spcCol=None, rtlCol=None, fromWordArt=None, anchor=None, anchorCtr=None, forceAA=None, upright=None, compatLnSpc=None, prstTxWarp=None, scene3d=None, noAutofit=False, normAutofit=False, spAutoFit=False, lstStyle=<openpyxl.drawing.text.ListStyle object>
+Parameters:
+defPPr=None, lvl1pPr=None, lvl2pPr=None, lvl3pPr=None, lvl4pPr=None, lvl5pPr=None, lvl6pPr=None, lvl7pPr=None, lvl8pPr=None, lvl9pPr=None, p=[<openpyxl.drawing.text.Paragraph object>
+Parameters:
+pPr=<openpyxl.drawing.text.ParagraphProperties object>
+Parameters:
+marL=None, marR=None, lvl=None, indent=None, algn=None, defTabSz=None, rtl=None, eaLnBrk=None, fontAlgn=None, latinLnBrk=None, hangingPunct=None, lnSpc=None, spcBef=None, spcAft=None, tabLst=None, defRPr=<openpyxl.drawing.text.CharacterProperties object>
+Parameters:
+kumimoji=None, lang=None, altLang=None, sz=1200.0, b=True, i=None, u=None, strike=None, kern=None, cap=None, spc=None, normalizeH=None, baseline=None, noProof=None, dirty=None, err=None, smtClean=None, smtId=None, bmk=None, ln=None, noFill=False, solidFill=None, gradFill=None, blipFill=None, pattFill=None, grpFill=False, effectLst=None, effectDag=None, highlight=None, uLnTx=False, uLn=None, uFillTx=False, uFill=False, latin=<openpyxl.drawing.text.Font object>
+Parameters:
+typeface='Calibri', panose=None, pitchFamily=None, charset=None, ea=None, cs=None, sym=None, hlinkClick=None, hlinkMouseOver=None, rtl=None, buClrTx=False, buClr=None, buSzTx=False, buSzPct=None, buSzPts=None, buFontTx=False, buFont=None, buNone=False, buAutoNum=False, buChar=None, buBlip=None, r=[<openpyxl.drawing.text.RegularTextRun object>
+Parameters:
+rPr=<openpyxl.drawing.text.CharacterProperties object>
+Parameters:
+kumimoji=None, lang='es-PE', altLang=None, sz=None, b=None, i=None, u=None, strike=None, kern=None, cap=None, spc=None, normalizeH=None, baseline=None, noProof=None, dirty=None, err=None, smtClean=None, smtId=None, bmk=None, ln=None, noFill=False, solidFill=None, gradFill=None, blipFill=None, pattFill=None, grpFill=False, effectLst=None, effectDag=None, highlight=None, uLnTx=False, uLn=None, uFillTx=False, uFill=False, latin=None, ea=None, cs=None, sym=None, hlinkClick=None, hlinkMouseOver=None, rtl=None, t='Evolución Petroquímica'], br=None, fld=None, endParaRPr=None]'
+  Type: BarChart3D
+  Anchor: OneCellAnchor: col=15, row=86
+  Width: 15 cm, Height: 7.5 cm
+  Legend: None
+  X-axis delete: True
+  Y-axis delete: True
+  dTable: None
+
+Chart 8: Title='<openpyxl.chart.text.Text object>
+Parameters:
+strRef=None, rich=<openpyxl.chart.text.RichText object>
+Parameters:
+bodyPr=<openpyxl.drawing.text.RichTextProperties object>
+Parameters:
+rot=None, spcFirstLastPara=None, vertOverflow=None, horzOverflow=None, vert=None, wrap=None, lIns=None, tIns=None, rIns=None, bIns=None, numCol=None, spcCol=None, rtlCol=None, fromWordArt=None, anchor=None, anchorCtr=None, forceAA=None, upright=None, compatLnSpc=None, prstTxWarp=None, scene3d=None, noAutofit=False, normAutofit=False, spAutoFit=False, lstStyle=<openpyxl.drawing.text.ListStyle object>
+Parameters:
+defPPr=None, lvl1pPr=None, lvl2pPr=None, lvl3pPr=None, lvl4pPr=None, lvl5pPr=None, lvl6pPr=None, lvl7pPr=None, lvl8pPr=None, lvl9pPr=None, p=[<openpyxl.drawing.text.Paragraph object>
+Parameters:
+pPr=<openpyxl.drawing.text.ParagraphProperties object>
+Parameters:
+marL=None, marR=None, lvl=None, indent=None, algn=None, defTabSz=None, rtl=None, eaLnBrk=None, fontAlgn=None, latinLnBrk=None, hangingPunct=None, lnSpc=None, spcBef=None, spcAft=None, tabLst=None, defRPr=<openpyxl.drawing.text.CharacterProperties object>
+Parameters:
+kumimoji=None, lang=None, altLang=None, sz=1200.0, b=True, i=None, u=None, strike=None, kern=None, cap=None, spc=None, normalizeH=None, baseline=None, noProof=None, dirty=None, err=None, smtClean=None, smtId=None, bmk=None, ln=None, noFill=False, solidFill=None, gradFill=None, blipFill=None, pattFill=None, grpFill=False, effectLst=None, effectDag=None, highlight=None, uLnTx=False, uLn=None, uFillTx=False, uFill=False, latin=<openpyxl.drawing.text.Font object>
+Parameters:
+typeface='Calibri', panose=None, pitchFamily=None, charset=None, ea=None, cs=None, sym=None, hlinkClick=None, hlinkMouseOver=None, rtl=None, buClrTx=False, buClr=None, buSzTx=False, buSzPct=None, buSzPts=None, buFontTx=False, buFont=None, buNone=False, buAutoNum=False, buChar=None, buBlip=None, r=[<openpyxl.drawing.text.RegularTextRun object>
+Parameters:
+rPr=<openpyxl.drawing.text.CharacterProperties object>
+Parameters:
+kumimoji=None, lang='es-PE', altLang=None, sz=None, b=None, i=None, u=None, strike=None, kern=None, cap=None, spc=None, normalizeH=None, baseline=None, noProof=None, dirty=None, err=None, smtClean=None, smtId=None, bmk=None, ln=None, noFill=False, solidFill=None, gradFill=None, blipFill=None, pattFill=None, grpFill=False, effectLst=None, effectDag=None, highlight=None, uLnTx=False, uLn=None, uFillTx=False, uFill=False, latin=None, ea=None, cs=None, sym=None, hlinkClick=None, hlinkMouseOver=None, rtl=None, t='Montos Ordenes Mes a Mes'], br=None, fld=None, endParaRPr=None]'
+  Type: BarChart3D
+  Anchor: OneCellAnchor: col=29, row=86
+  Width: 15 cm, Height: 7.5 cm
+  Legend: None
+  X-axis delete: True
+  Y-axis delete: True
+  dTable: None
+
+Chart 9: Title='<openpyxl.chart.text.Text object>
+Parameters:
+strRef=None, rich=<openpyxl.chart.text.RichText object>
+Parameters:
+bodyPr=<openpyxl.drawing.text.RichTextProperties object>
+Parameters:
+rot=None, spcFirstLastPara=None, vertOverflow=None, horzOverflow=None, vert=None, wrap=None, lIns=None, tIns=None, rIns=None, bIns=None, numCol=None, spcCol=None, rtlCol=None, fromWordArt=None, anchor=None, anchorCtr=None, forceAA=None, upright=None, compatLnSpc=None, prstTxWarp=None, scene3d=None, noAutofit=False, normAutofit=False, spAutoFit=False, lstStyle=<openpyxl.drawing.text.ListStyle object>
+Parameters:
+defPPr=None, lvl1pPr=None, lvl2pPr=None, lvl3pPr=None, lvl4pPr=None, lvl5pPr=None, lvl6pPr=None, lvl7pPr=None, lvl8pPr=None, lvl9pPr=None, p=[<openpyxl.drawing.text.Paragraph object>
+Parameters:
+pPr=<openpyxl.drawing.text.ParagraphProperties object>
+Parameters:
+marL=None, marR=None, lvl=None, indent=None, algn=None, defTabSz=None, rtl=None, eaLnBrk=None, fontAlgn=None, latinLnBrk=None, hangingPunct=None, lnSpc=None, spcBef=None, spcAft=None, tabLst=None, defRPr=<openpyxl.drawing.text.CharacterProperties object>
+Parameters:
+kumimoji=None, lang=None, altLang=None, sz=1200.0, b=True, i=None, u=None, strike=None, kern=None, cap=None, spc=None, normalizeH=None, baseline=None, noProof=None, dirty=None, err=None, smtClean=None, smtId=None, bmk=None, ln=None, noFill=False, solidFill=None, gradFill=None, blipFill=None, pattFill=None, grpFill=False, effectLst=None, effectDag=None, highlight=None, uLnTx=False, uLn=None, uFillTx=False, uFill=False, latin=<openpyxl.drawing.text.Font object>
+Parameters:
+typeface='Calibri', panose=None, pitchFamily=None, charset=None, ea=None, cs=None, sym=None, hlinkClick=None, hlinkMouseOver=None, rtl=None, buClrTx=False, buClr=None, buSzTx=False, buSzPct=None, buSzPts=None, buFontTx=False, buFont=None, buNone=False, buAutoNum=False, buChar=None, buBlip=None, r=[<openpyxl.drawing.text.RegularTextRun object>
+Parameters:
+rPr=<openpyxl.drawing.text.CharacterProperties object>
+Parameters:
+kumimoji=None, lang='es-PE', altLang=None, sz=None, b=None, i=None, u=None, strike=None, kern=None, cap=None, spc=None, normalizeH=None, baseline=None, noProof=None, dirty=None, err=None, smtClean=None, smtId=None, bmk=None, ln=None, noFill=False, solidFill=None, gradFill=None, blipFill=None, pattFill=None, grpFill=False, effectLst=None, effectDag=None, highlight=None, uLnTx=False, uLn=None, uFillTx=False, uFill=False, latin=None, ea=None, cs=None, sym=None, hlinkClick=None, hlinkMouseOver=None, rtl=None, t='Evolución Anual Safety'], br=None, fld=None, endParaRPr=None]'
+  Type: BarChart3D
+  Anchor: OneCellAnchor: col=15, row=116
+  Width: 15 cm, Height: 7.5 cm
+  Legend: None
+  X-axis delete: True
+  Y-axis delete: True
+  dTable: None
+
+Chart 10: Title='<openpyxl.chart.text.Text object>
+Parameters:
+strRef=None, rich=<openpyxl.chart.text.RichText object>
+Parameters:
+bodyPr=<openpyxl.drawing.text.RichTextProperties object>
+Parameters:
+rot=None, spcFirstLastPara=None, vertOverflow=None, horzOverflow=None, vert=None, wrap=None, lIns=None, tIns=None, rIns=None, bIns=None, numCol=None, spcCol=None, rtlCol=None, fromWordArt=None, anchor=None, anchorCtr=None, forceAA=None, upright=None, compatLnSpc=None, prstTxWarp=None, scene3d=None, noAutofit=False, normAutofit=False, spAutoFit=False, lstStyle=<openpyxl.drawing.text.ListStyle object>
+Parameters:
+defPPr=None, lvl1pPr=None, lvl2pPr=None, lvl3pPr=None, lvl4pPr=None, lvl5pPr=None, lvl6pPr=None, lvl7pPr=None, lvl8pPr=None, lvl9pPr=None, p=[<openpyxl.drawing.text.Paragraph object>
+Parameters:
+pPr=<openpyxl.drawing.text.ParagraphProperties object>
+Parameters:
+marL=None, marR=None, lvl=None, indent=None, algn=None, defTabSz=None, rtl=None, eaLnBrk=None, fontAlgn=None, latinLnBrk=None, hangingPunct=None, lnSpc=None, spcBef=None, spcAft=None, tabLst=None, defRPr=<openpyxl.drawing.text.CharacterProperties object>
+Parameters:
+kumimoji=None, lang=None, altLang=None, sz=1200.0, b=True, i=None, u=None, strike=None, kern=None, cap=None, spc=None, normalizeH=None, baseline=None, noProof=None, dirty=None, err=None, smtClean=None, smtId=None, bmk=None, ln=None, noFill=False, solidFill=None, gradFill=None, blipFill=None, pattFill=None, grpFill=False, effectLst=None, effectDag=None, highlight=None, uLnTx=False, uLn=None, uFillTx=False, uFill=False, latin=<openpyxl.drawing.text.Font object>
+Parameters:
+typeface='Calibri', panose=None, pitchFamily=None, charset=None, ea=None, cs=None, sym=None, hlinkClick=None, hlinkMouseOver=None, rtl=None, buClrTx=False, buClr=None, buSzTx=False, buSzPct=None, buSzPts=None, buFontTx=False, buFont=None, buNone=False, buAutoNum=False, buChar=None, buBlip=None, r=[<openpyxl.drawing.text.RegularTextRun object>
+Parameters:
+rPr=<openpyxl.drawing.text.CharacterProperties object>
+Parameters:
+kumimoji=None, lang='es-PE', altLang=None, sz=None, b=None, i=None, u=None, strike=None, kern=None, cap=None, spc=None, normalizeH=None, baseline=None, noProof=None, dirty=None, err=None, smtClean=None, smtId=None, bmk=None, ln=None, noFill=False, solidFill=None, gradFill=None, blipFill=None, pattFill=None, grpFill=False, effectLst=None, effectDag=None, highlight=None, uLnTx=False, uLn=None, uFillTx=False, uFill=False, latin=None, ea=None, cs=None, sym=None, hlinkClick=None, hlinkMouseOver=None, rtl=None, t='Montos Ordenes Mes a Mes'], br=None, fld=None, endParaRPr=None]'
+  Type: BarChart3D
+  Anchor: OneCellAnchor: col=29, row=116
+  Width: 15 cm, Height: 7.5 cm
+  Legend: None
+  X-axis delete: True
+  Y-axis delete: True
+  dTable: None

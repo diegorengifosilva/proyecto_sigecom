@@ -8,66 +8,110 @@ export const ERPIcon = ({ name, className }) => {
 };
 
 export const StatusBadge = ({ status }) => {
-  const statusString = status ? String(status).toLowerCase() : '';
+  const statusString = status ? String(status).toLowerCase().trim() : '';
 
-  // 1. OPORTUNIDAD (Estado ID 11) - Indigo
-  if (statusString.includes('oportunidad')) {
+  // 1. PENDIENTE (Orange/Amber)
+  if (statusString === 'pendiente' || statusString.includes('pendiente')) {
     return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-tighter bg-indigo-50 text-indigo-700 border border-indigo-100 shadow-sm">
-        Oportunidad
-      </span>
-    );
-  }
-
-  // 2. PENDIENTE (Estado ID 2) - Ámbar
-  if (statusString.includes('pendiente')) {
-    return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-tighter bg-amber-50 text-amber-700 border border-amber-100 shadow-sm">
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200/60 shadow-sm">
         Pendiente
       </span>
     );
   }
 
-  // 3. ADJUDICADO (Estado ID 1) - Esmeralda
-  if (statusString.includes('adjudicado')) {
+  // 2. ADJUDICADO / ADJUDICADA (Green/Emerald)
+  if (statusString === 'adjudicado' || statusString === 'adjudicada' || statusString.includes('adjudicad')) {
     return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-tighter bg-emerald-50 text-emerald-700 border border-emerald-100 shadow-sm">
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200/60 shadow-sm">
         Adjudicado
       </span>
     );
   }
 
-  // 4. EN SEGUIMIENTO (Estado ID 7) - Azul
-  if (statusString.includes('seguimiento')) {
+  // 3. COTIZADO / COTIZADA (Teal)
+  if (statusString === 'cotizado' || statusString === 'cotizada') {
     return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-tighter bg-blue-50 text-blue-700 border border-blue-100 shadow-sm">
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-teal-50 text-teal-700 border border-teal-200/60 shadow-sm">
+        Cotizado
+      </span>
+    );
+  }
+
+  // 4. EN SEGUIMIENTO / SEGUIMIENTO (Blue)
+  if (statusString === 'en seguimiento' || statusString === 'seguimiento' || statusString.includes('seguimiento')) {
+    return (
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200/60 shadow-sm">
         En Seguimiento
       </span>
     );
   }
 
-  // 5. POSTERGADA (Estado ID 5) - Violeta/Púrpura suave
-  if (statusString.includes('postergada')) {
+  // 5. NO COTIZADO / NO COTIZADA (Sky/Cyan)
+  if (statusString === 'no cotizado' || statusString === 'no cotizada' || statusString.includes('no cotizado')) {
     return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-tighter bg-purple-50 text-purple-700 border border-purple-100 shadow-sm">
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-sky-50 text-sky-700 border border-sky-200/60 shadow-sm">
+        No Cotizado
+      </span>
+    );
+  }
+
+  // 6. RECHAZADO / RECHAZADA (Rose)
+  if (statusString === 'rechazado' || statusString === 'rechazada' || statusString.includes('rechazad')) {
+    return (
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-200/60 shadow-sm">
+        Rechazado
+      </span>
+    );
+  }
+
+  // 7. POSTERGADA (Purple)
+  if (statusString === 'postergada' || statusString.includes('postergada')) {
+    return (
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-200/60 shadow-sm">
         Postergada
       </span>
     );
   }
 
-  // 6. ANULADO / PERDIDA (Estados ID 4 y 3) - Gris Neutro
-  if (statusString.includes('anulado') || statusString.includes('perdida')) {
-    const label = statusString.includes('anulado') ? 'Anulado' : 'Perdida';
+  // 8. PERDIDA / PERDIDO (Slate/Gray)
+  if (statusString === 'perdida' || statusString === 'perdido' || statusString.includes('perdida') || statusString.includes('perdido')) {
     return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-tighter bg-gray-50 text-gray-500 border border-gray-100">
-        {label}
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200/60 shadow-sm">
+        Perdida
       </span>
     );
   }
 
-  // Fallback para cualquier otro estado (Facturado, Cobrado, etc.)
+  // 9. ANULADO / ANULADA (Red)
+  if (statusString === 'anulado' || statusString === 'anulada' || statusString.includes('anulad')) {
+    return (
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-red-50 text-red-700 border border-red-200/60 shadow-sm">
+        Anulado
+      </span>
+    );
+  }
+
+  // 10. FACTURADA / FACTURADO (Indigo)
+  if (statusString === 'facturada' || statusString === 'facturado' || statusString.includes('facturad')) {
+    return (
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200/60 shadow-sm">
+        Facturada
+      </span>
+    );
+  }
+
+  // 11. OPORTUNIDAD (Indigo fallback)
+  if (statusString.includes('oportunidad')) {
+    return (
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-100 shadow-sm">
+        Oportunidad
+      </span>
+    );
+  }
+
+  // Fallback
   return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-tighter bg-slate-50 text-slate-500 border border-slate-100">
+    <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-gray-50 text-gray-500 border border-gray-200 shadow-sm">
       {status}
     </span>
   );
@@ -323,7 +367,7 @@ export const ERPInput = ({ placeholder, value, onChange, icon, type = 'text', cl
   );
 };
 
-export const FilterDropdown = ({ label, value, options, onSelect, icon: Icon, onToggle, showSearch = true, gridLayout = false }) => {
+export const FilterDropdown = ({ label, value, options, onSelect, icon: Icon, onToggle, showSearch = true, gridLayout = false, alignRight = false }) => {
   const [isOpen, setIsOpen] = React.useState(false);
   const [localSearch, setLocalSearch] = React.useState("");
   const containerRef = React.useRef(null);
@@ -377,7 +421,7 @@ export const FilterDropdown = ({ label, value, options, onSelect, icon: Icon, on
       </div>
 
       {isOpen && (
-        <div className={`absolute z-50 mt-2 ${gridLayout ? 'w-64' : 'w-48'} bg-white border border-gray-100 rounded-2xl shadow-xl py-2 animate-in fade-in zoom-in duration-150 flex flex-col max-h-[480px]`}>
+        <div className={`absolute z-50 mt-2 ${alignRight ? 'right-0' : 'left-0'} ${gridLayout ? 'w-64' : 'w-48'} bg-white border border-gray-100 rounded-2xl shadow-xl py-2 animate-in fade-in zoom-in duration-150 flex flex-col max-h-[480px]`}>
           {showSearch && (
             <div className="px-3 pb-2 pt-1 border-b border-gray-100 flex items-center gap-2 shrink-0">
               <LucideIcons.Search className="h-3.5 w-3.5 text-gray-400" />

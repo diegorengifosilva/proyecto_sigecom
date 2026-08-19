@@ -35,9 +35,11 @@ INSTALLED_APPS = [
     'users',
     'core',
     'cotizaciones_api',
+    'compras_api',
     'logistica_api',
     'dashboard_api',
     'notificaciones_api',
+    'caja_chica_api',
     'rest_framework',
     'rest_framework_simplejwt',
     'corsheaders',
@@ -181,8 +183,8 @@ REST_FRAMEWORK = {
 # JWT
 # ---------------------------
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=2),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=180),
     'AUTH_HEADER_TYPES': ('Bearer',),
     'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
     'BLACKLIST_AFTER_ROTATION': True,
@@ -270,3 +272,19 @@ LOGGING = {
     'handlers': {'console': {'class': 'logging.StreamHandler'}},
     'root': {'handlers': ['console'], 'level': 'INFO'},
 }
+
+# =====================================================
+# CONFIGURACIÓN DE CORREO (SMTP)
+# =====================================================
+EMAIL_BACKEND = os.environ.get('DJANGO_EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = os.environ.get('DJANGO_EMAIL_HOST', 'mail.vc-corporation.com')
+EMAIL_PORT = int(os.environ.get('DJANGO_EMAIL_PORT', 465))
+EMAIL_USE_SSL = os.environ.get('DJANGO_EMAIL_USE_SSL', 'True') == 'True'
+EMAIL_USE_TLS = os.environ.get('DJANGO_EMAIL_USE_TLS', 'False') == 'True'
+EMAIL_HOST_USER = os.environ.get('DJANGO_EMAIL_HOST_USER', 'reportes.comercial@vc-corporation.com')
+EMAIL_HOST_PASSWORD = os.environ.get('DJANGO_EMAIL_HOST_PASSWORD', 'reportes.comercial1108')
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+
+# URL del Frontend para enlaces en correos electrónicos
+FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
+

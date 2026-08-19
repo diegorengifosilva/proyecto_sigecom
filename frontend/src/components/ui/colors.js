@@ -162,3 +162,39 @@ export function getEstadoColor(code) {
 export function getEstadoClass(code) {
   return ESTADO_STATE_CLASSES[code] || "bg-gray-200 text-gray-800";
 }
+
+/* ===========================================================
+   CAJA CHICA - ESTADOS Y TIPOS
+   =========================================================== */
+
+export const STATE_CLASSES = {
+  "Pendiente de Envío": "bg-orange-200 text-orange-800",
+  "Pendiente para Atención": "bg-yellow-200 text-yellow-800",
+  "Atendido, Pendiente de Liquidación": "bg-sky-200 text-sky-800",
+  "Liquidación enviada para Aprobación": "bg-green-200 text-green-800",
+  "Liquidación Aprobada": "bg-gray-800 text-white",
+  "Rechazado": "bg-red-200 text-red-800",
+};
+
+export const STATE_COLORS = {
+  "Pendiente de Envío": "#f97316",
+  "Pendiente para Atención": "#ffef00",
+  "Atendido, Pendiente de Liquidación": "#0ea5e9",
+  "Liquidación enviada para Aprobación": "#22c55e",
+  "Liquidación Aprobada": "#0f172a",
+  "Rechazado": "#ef4444",
+};
+
+export const TIPO_SOLICITUD_CLASSES = {
+  "Viáticos": "bg-blue-500 text-white",
+  "Movilidad": "bg-emerald-500 text-white",
+  "Compras": "bg-purple-500 text-white",
+  "Otros gastos": "bg-yellow-100 text-yellow-800",
+};
+
+export const TYPE_COLORS = {
+  "Viáticos": "#0218db",
+  "Movilidad": "#059669",
+  "Compras": "#7c3aed",
+  "Otros gastos": "#eab308"
+};

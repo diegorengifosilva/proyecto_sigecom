@@ -6,4 +6,5 @@ urlpatterns = [
     path("<int:pk>/marcar/", views.marcar_notificacion, name="marcar_notificacion"),
     path("marcar-todas/", views.marcar_todas_notificaciones, name="marcar_todas_notificaciones"),
     path("no-leidas/", views.notificaciones_no_leidas, name="notificaciones_no_leidas"),
+    path("pixel/<int:pk>.png", views.tracking_pixel_notificacion, name="tracking_pixel_notificacion"),
 ]

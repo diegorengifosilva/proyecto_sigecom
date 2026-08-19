@@ -21,6 +21,7 @@ const TablaApertura = ({
         "Referencia",
         "Empresa",
         "Área",
+        "Estado",
         "Importe"
     ];
 
@@ -49,9 +50,18 @@ const TablaApertura = ({
                                 {isPinned && <Pin className="h-3 w-3 text-amber-500 fill-amber-500 shrink-0 rotate-45" />}
                                 {item.cotizacion_codigo || item.id_registro?.codigo}
                             </span>
-                            <span className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded text-[8.5px] font-black uppercase tracking-tighter">
-                                OC: {item.numero_orden}
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                                <span className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded text-[8.5px] font-black uppercase tracking-tighter">
+                                    OC: {item.numero_orden}
+                                </span>
+                                <StatusBadge status={
+                                    item.estado_orden === 1 ? "Adjudicado" :
+                                    item.estado_orden === 2 ? "Pendiente" :
+                                    item.estado_orden === 4 ? "Anulado" :
+                                    item.estado_orden === 3 ? "Facturada" :
+                                    item.estado_orden_nombre
+                                } />
+                            </div>
                         </div>
 
                         <div>
@@ -154,6 +164,17 @@ const TablaApertura = ({
                                 <span className="text-xs text-gray-500 font-bold uppercase">
                                     {item.id_registro?.area_nombre}
                                 </span>
+                            </td>
+
+                            {/* ESTADO */}
+                            <td className="px-4 py-2 whitespace-nowrap">
+                                <StatusBadge status={
+                                    item.estado_orden === 1 ? "Adjudicado" :
+                                    item.estado_orden === 2 ? "Pendiente" :
+                                    item.estado_orden === 4 ? "Anulado" :
+                                    item.estado_orden === 3 ? "Facturada" :
+                                    item.estado_orden_nombre
+                                } />
                             </td>
 
                             {/* IMPORTE */}

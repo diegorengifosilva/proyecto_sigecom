@@ -429,6 +429,9 @@ class CotizacionModalSerializer(serializers.ModelSerializer):
     # ── ADJUNTOS ──
     adjuntos = CotizacionAdjuntoSerializer(many=True, read_only=True)
     envio = serializers.SerializerMethodField()
+    has_apertura = serializers.SerializerMethodField()
+    has_oportunidad = serializers.SerializerMethodField()
+    has_cotizacion = serializers.SerializerMethodField()
     
     # Nombres de unidades de tiempo
     unidad_suministro_nombre = serializers.CharField(
@@ -492,11 +495,23 @@ class CotizacionModalSerializer(serializers.ModelSerializer):
             "seguimiento",
 
             # ADJUNTOS
-            "adjuntos"
+            "adjuntos",
+            "has_apertura",
+            "has_oportunidad",
+            "has_cotizacion"
         ]
         read_only_fields = fields
 
     # ── Métodos de Lógica ──
+    def get_has_oportunidad(self, obj):
+        return obj.recepcion_solicitud is not None
+
+    def get_has_cotizacion(self, obj):
+        return obj.id_estado_id != 11
+
+    def get_has_apertura(self, obj):
+        return obj.aperturas.exists()
+
     def get_envio(self, obj):
         if obj.estado_envio in (2, 3):
             return 3

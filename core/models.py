@@ -6,12 +6,31 @@ from decimal import Decimal
 from simple_history.models import HistoricalRecords
 from django.contrib.auth.hashers import check_password, make_password
 import datetime
-from users.models import Usuario, Area
+
+
+class Rubro(models.Model):
+    id_rubro = models.AutoField(primary_key=True)
+    nombre = models.CharField(max_length=255)
+    activo = models.IntegerField(default=1)
+
+    class Meta:
+        managed = False
+        db_table = 'rubro'
+
+    def __str__(self):
+        return self.nombre
 
 class Cliente(models.Model):
     id_cliente = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=100)
     iniciales = models.CharField(max_length=45, blank=True, null=True)
+    id_rubro = models.ForeignKey(
+        Rubro, 
+        on_delete=models.SET_NULL, 
+        db_column='id_rubro', 
+        blank=True, 
+        null=True
+    )
     ruc = models.CharField(max_length=45, blank=True, null=True)
     direccion = models.CharField(max_length=600)
     tipo = models.IntegerField(blank=True, null=True)
@@ -276,19 +295,34 @@ class Nota(models.Model):
     def __str__(self):
         return f"{self.codigo} - {self.descripcion[:50]}..."
 
+class Modulo(models.Model):
+    id_modulo = models.AutoField(primary_key=True)
+    nombre = models.CharField(max_length=255)
+    activo = models.IntegerField(default=1)
+
+    class Meta:
+        managed = False
+        db_table = 'modulos'
+
+    def __str__(self):
+        return self.nombre
+
 class ObjetivoAnual(models.Model):
     id_objetivo = models.AutoField(primary_key=True)
-    anno = models.PositiveIntegerField(unique=True, db_column='anno')
-    monto = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    anno = models.PositiveIntegerField(db_column='anno')    
+    id_modulo = models.ForeignKey(
+        Modulo,
+        on_delete=models.SET_NULL,
+        db_column='id_modulo',
+        blank=True,
+        null=True
+    )
+    minimo = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    maximo = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     id_usuario = models.ForeignKey(
-        Usuario, 
+        'users.Usuario', 
         on_delete=models.PROTECT, 
         db_column='id_usuario' 
-    )
-    id_usuario = models.ForeignKey(
-        Usuario, 
-        on_delete=models.PROTECT,  
-        db_column='id_usuario'
     )
     activo = models.BooleanField(default=True, null=True, blank=True)
     fecha_creacion = models.DateTimeField(auto_now_add=True, null=True, blank=True)
@@ -296,9 +330,12 @@ class ObjetivoAnual(models.Model):
     class Meta:
         managed = False
         db_table = "objetivo_anual"
+        # Ahora el constraint de unicidad es por año + módulo (permite N módulos por año)
+        unique_together = ("anno", "id_modulo")
 
     def __str__(self):
-        return f"Objetivo {self.anno} - {self.id_usuario.nombre_completo} (${self.monto})"
+        modulo_str = f" - Módulo: {self.id_modulo.nombre}" if self.id_modulo else " - General"
+        return f"Objetivo {self.anno}{modulo_str} - Min: S/{self.minimo} / Max: S/{self.maximo}"
 
 class ObjetivoAnualArea(models.Model):
     id_objetivo_anno = models.AutoField(primary_key=True)
@@ -311,7 +348,7 @@ class ObjetivoAnualArea(models.Model):
     )
     
     id_area = models.ForeignKey(
-        Area,
+        'users.Area',
         on_delete=models.PROTECT,
         db_column='id_area'
     )
@@ -338,6 +375,5 @@ class ObjetivoAnualArea(models.Model):
         unique_together = ("id_objetivo", "id_area")
 
     def __str__(self):
-        return f"{self.id_area.nombre_area} - Objetivo Anual {self.id_objetivo.anno}"
-
+        return f"{self.id_area.nombre} - Objetivo Anual {self.id_objetivo.anno}"
 

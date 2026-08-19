@@ -6,8 +6,8 @@ import ClientesChart from "./charts/ClientesChart";
 import AreasChart from "./charts/AreasChart";
 import useTendencias from "@/services/useTendencias";
 
-export default function TendenciasCharts({ filtros }) {
-  const data = useTendencias(filtros.anio);
+export default function TendenciasCharts({ filtros, viewScope = "global", cotizaciones = [] }) {
+  const data = useTendencias(filtros.anio, viewScope);
 
   if (!data) {
     return (
@@ -38,10 +38,10 @@ export default function TendenciasCharts({ filtros }) {
 
       {/* GRID DE GRÁFICOS - Cada gráfico debe manejar su propio contenedor blanco internamente */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <VentasMensualesChart data={data.ventas_mensuales} />
-        <ComercialChart data={data.ranking_comercial} />
-        <ClientesChart data={data.clientes_recurrentes} />
-        <AreasChart data={data.areas} />
+        <VentasMensualesChart data={data.ventas_mensuales} viewScope={viewScope} cotizaciones={cotizaciones} />
+        <ComercialChart data={data.ranking_comercial} viewScope={viewScope} cotizaciones={cotizaciones} />
+        <ClientesChart data={data.clientes_recurrentes} viewScope={viewScope} cotizaciones={cotizaciones} />
+        <AreasChart data={data.areas} viewScope={viewScope} cotizaciones={cotizaciones} mes={filtros.mes} />
       </div>
     </div>
   );

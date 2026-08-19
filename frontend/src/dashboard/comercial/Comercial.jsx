@@ -26,13 +26,26 @@ const getSessionValue = (key, defaultValue) => {
   }
 };
 
+const EMPTY_ARRAY = [];
+const normalizeArrayFilter = (val, defaultVal = EMPTY_ARRAY) => {
+  if (!val || val === "%" || val === "TODAS") return defaultVal;
+  if (Array.isArray(val)) return val;
+  if (typeof val === "string") {
+    return [val];
+  }
+  return defaultVal;
+};
+
 const fetchCotizaciones = async ({ queryKey }) => {
   const [
     _key, anno, mes, probabilidad, comercialSearch, tecnicoSearch, envioFilter,
     suministrosValor, suministrosUnidad, serviciosValor, serviciosUnidad, ofertaValor, ofertaUnidad,
-    annoDesde, annoHasta, mesDesde, mesHasta
+    annoDesde, annoHasta, mesDesde, mesHasta, area, statusFilter
   ] = queryKey;
   const token = localStorage.getItem("access_token");
+
+  const normArea = normalizeArrayFilter(area);
+  const normStatus = normalizeArrayFilter(statusFilter);
 
   const { data } = await api.get("cotizaciones/lista_cotizaciones/", {
     params: {
@@ -51,7 +64,9 @@ const fetchCotizaciones = async ({ queryKey }) => {
       anno_desde: annoDesde,
       anno_hasta: annoHasta,
       mes_desde: mesDesde,
-      mes_hasta: mesHasta
+      mes_hasta: mesHasta,
+      area: normArea.length > 0 ? normArea.join(",") : "%",
+      estado: normStatus.length > 0 ? normStatus.join(",") : "%"
     },
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -65,20 +80,24 @@ const fetchCotizaciones = async ({ queryKey }) => {
 const fetchOportunidades = async ({ queryKey }) => {
   const [
     _key, anno, mes, comercialSearch, estadoOportunidad,
-    annoDesde, annoHasta, mesDesde, mesHasta
+    annoDesde, annoHasta, mesDesde, mesHasta, area
   ] = queryKey;
   const token = localStorage.getItem("access_token");
+
+  const normEstado = normalizeArrayFilter(estadoOportunidad);
+  const normArea = normalizeArrayFilter(area);
 
   const { data } = await api.get("cotizaciones/lista_oportunidades/", {
     params: {
       anno,
       mes,
       comercial_search: comercialSearch,
-      estado_oportunidad: estadoOportunidad, // 1, 2, 3, 4 o '%'
+      estado_oportunidad: normEstado.length > 0 ? normEstado.join(",") : "%",
       anno_desde: annoDesde,
       anno_hasta: annoHasta,
       mes_desde: mesDesde,
-      mes_hasta: mesHasta
+      mes_hasta: mesHasta,
+      area: normArea.length > 0 ? normArea.join(",") : "%"
     },
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -92,17 +111,20 @@ const fetchOportunidades = async ({ queryKey }) => {
 const fetchAperturas = async ({ queryKey }) => {
   const [
     _key, anno, mes, estadoOrden, prio, plazoValor, plazoUnidad,
-    annoDesde, annoHasta, mesDesde, mesHasta
+    annoDesde, annoHasta, mesDesde, mesHasta, area
   ] = queryKey;
   
   const token = localStorage.getItem("access_token");
+
+  const normEstado = normalizeArrayFilter(estadoOrden);
+  const normArea = normalizeArrayFilter(area);
 
   const { data } = await api.get("cotizaciones/lista_aperturas/", {
     params: {
       anno,
       mes,
       cliente: "%",              // Forzado a traer todos por defecto
-      estado_orden: estadoOrden,
+      estado_orden: normEstado.length > 0 ? normEstado.join(",") : "%",
       prio,
       envio: "%",                // Forzado por defecto
       plazo_val: plazoValor,
@@ -113,7 +135,8 @@ const fetchAperturas = async ({ queryKey }) => {
       anno_desde: annoDesde,
       anno_hasta: annoHasta,
       mes_desde: mesDesde,
-      mes_hasta: mesHasta                  
+      mes_hasta: mesHasta,
+      area: normArea.length > 0 ? normArea.join(",") : "%"
     },
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -139,6 +162,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
 
   useEffect(() => {
     setCurrentTab(defaultTab);
+    setActiveFilterTab("RANGO");
   }, [defaultTab]);
 
   // ESTADOS DE FILTROS
@@ -148,7 +172,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
         globalSearch: getSessionValue("comercial_filter_globalSearch", ""),
         selectedAnno: getSessionValue("comercial_filter_selectedAnno", new Date().getFullYear()),
         selectedMes: getSessionValue("comercial_filter_selectedMes", "%"),
-        statusFilter: getSessionValue("comercial_filter_statusFilter", "TODAS"),
+        statusFilter: getSessionValue("comercial_filter_statusFilter", []),
         envioFilter: getSessionValue("comercial_filter_envioFilter", "%"),
         probabilidadFilter: getSessionValue("comercial_filter_probabilidadFilter", "%"),
         responsableTipo: getSessionValue("comercial_filter_responsableTipo", "COMERCIAL"),
@@ -167,18 +191,19 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
         annoHasta: getSessionValue("comercial_filter_annoHasta", ""),
         mesDesde: getSessionValue("comercial_filter_mesDesde", ""),
         mesHasta: getSessionValue("comercial_filter_mesHasta", ""),
-        estadoOportunidad: getSessionValue("comercial_filter_estadoOportunidad", "%"),
-        estadoOrdenFilter: getSessionValue("comercial_filter_estadoOrdenFilter", "%"),
+        estadoOportunidad: getSessionValue("comercial_filter_estadoOportunidad", []),
+        estadoOrdenFilter: getSessionValue("comercial_filter_estadoOrdenFilter", []),
         prioFilter: getSessionValue("comercial_filter_prioFilter", "%"),
         plazoValor: getSessionValue("comercial_filter_plazoValor", ""),
-        plazoUnidad: getSessionValue("comercial_filter_plazoUnidad", "D")
+        plazoUnidad: getSessionValue("comercial_filter_plazoUnidad", "D"),
+        areaFilter: getSessionValue("comercial_filter_areaFilter", [])
       };
     }
     return {
       globalSearch: "",
       selectedAnno: new Date().getFullYear(),
       selectedMes: "%",
-      statusFilter: "TODAS",
+      statusFilter: [],
       envioFilter: "%",
       probabilidadFilter: "%",
       responsableTipo: "COMERCIAL",
@@ -197,11 +222,12 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
       annoHasta: "",
       mesDesde: "",
       mesHasta: "",
-      estadoOportunidad: "%",
-      estadoOrdenFilter: "%",
+      estadoOportunidad: [],
+      estadoOrdenFilter: [],
       prioFilter: "%",
       plazoValor: "",
-      plazoUnidad: "D"
+      plazoUnidad: "D",
+      areaFilter: []
     };
   };
 
@@ -248,14 +274,41 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
   const globalSearch = currentFilters.globalSearch;
   const setGlobalSearch = (val) => updateFilter("globalSearch", val);
 
-  const statusFilter = currentFilters.statusFilter;
+  const statusFilterRaw = currentFilters.statusFilter;
+  const statusFilter = normalizeArrayFilter(statusFilterRaw);
   const setStatusFilter = (val) => updateFilter("statusFilter", val);
 
   const selectedAnno = currentFilters.selectedAnno;
-  const setSelectedAnno = (val) => updateFilter("selectedAnno", val);
+  const setSelectedAnno = (val) => {
+    setTabFilters(prev => {
+      const currentVal = prev[currentTab]?.selectedAnno;
+      const nextVal = typeof val === 'function' ? val(currentVal) : val;
+      const updated = {
+        cotizaciones: { ...(prev.cotizaciones || getInitialTabFilters("cotizaciones")), selectedAnno: nextVal },
+        oportunidades: { ...(prev.oportunidades || getInitialTabFilters("oportunidades")), selectedAnno: nextVal },
+        aperturas: { ...(prev.aperturas || getInitialTabFilters("aperturas")), selectedAnno: nextVal },
+        programacion: { ...(prev.programacion || getInitialTabFilters("programacion")), selectedAnno: nextVal }
+      };
+      sessionStorage.setItem("comercial_tab_filters", JSON.stringify(updated));
+      return updated;
+    });
+  };
 
   const selectedMes = currentFilters.selectedMes;
-  const setSelectedMes = (val) => updateFilter("selectedMes", val);
+  const setSelectedMes = (val) => {
+    setTabFilters(prev => {
+      const currentVal = prev[currentTab]?.selectedMes;
+      const nextVal = typeof val === 'function' ? val(currentVal) : val;
+      const updated = {
+        cotizaciones: { ...(prev.cotizaciones || getInitialTabFilters("cotizaciones")), selectedMes: nextVal },
+        oportunidades: { ...(prev.oportunidades || getInitialTabFilters("oportunidades")), selectedMes: nextVal },
+        aperturas: { ...(prev.aperturas || getInitialTabFilters("aperturas")), selectedMes: nextVal },
+        programacion: { ...(prev.programacion || getInitialTabFilters("programacion")), selectedMes: nextVal }
+      };
+      sessionStorage.setItem("comercial_tab_filters", JSON.stringify(updated));
+      return updated;
+    });
+  };
 
   const envioFilter = currentFilters.envioFilter;
   const setEnvioFilter = (val) => updateFilter("envioFilter", val);
@@ -311,10 +364,12 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
   const mesHasta = currentFilters.mesHasta;
   const setMesHasta = (val) => updateFilter("mesHasta", val);
 
-  const estadoOportunidad = currentFilters.estadoOportunidad;
+  const estadoOportunidadRaw = currentFilters.estadoOportunidad;
+  const estadoOportunidad = normalizeArrayFilter(estadoOportunidadRaw);
   const setEstadoOportunidad = (val) => updateFilter("estadoOportunidad", val);
 
-  const estadoOrdenFilter = currentFilters.estadoOrdenFilter;
+  const estadoOrdenFilterRaw = currentFilters.estadoOrdenFilter;
+  const estadoOrdenFilter = normalizeArrayFilter(estadoOrdenFilterRaw);
   const setEstadoOrdenFilter = (val) => updateFilter("estadoOrdenFilter", val);
 
   const prioFilter = currentFilters.prioFilter;
@@ -325,6 +380,10 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
 
   const plazoUnidad = currentFilters.plazoUnidad;
   const setPlazoUnidad = (val) => updateFilter("plazoUnidad", val);
+
+  const areaFilterRaw = currentFilters.areaFilter;
+  const areaFilter = normalizeArrayFilter(areaFilterRaw);
+  const setAreaFilter = (val) => updateFilter("areaFilter", val);
 
   const [showNewModal, setShowNewModal] = useState(false);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
@@ -562,17 +621,23 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
   const [currentPageOportunidades, setCurrentPageOportunidades] = useState(() => getSessionValue("comercial_filter_currentPageOportunidades", 1));
   const [pageSize, setPageSize] = useState(10);
 
+  // Helper objects to reference each tab's filters independently for background queries
+  const fCoti = tabFilters.cotizaciones || getInitialTabFilters("cotizaciones");
+  const fOpor = tabFilters.oportunidades || getInitialTabFilters("oportunidades");
+  const fAper = tabFilters.aperturas || getInitialTabFilters("aperturas");
+
   // 1. QUERY DE COTIZACIONES (Existente)
   const { 
     data: dataCotizaciones, 
     isLoading: isLoadingCotizaciones 
   } = useQuery({
     queryKey: [
-      "cotizaciones", selectedAnno, selectedMes, probabilidadFilter, comercialSearch, tecnicoSearch, envioFilter,
-      suministrosValor, suministrosUnidad, serviciosValor, serviciosUnidad, ofertaValor, ofertaUnidad,
-      annoDesde, annoHasta, mesDesde, mesHasta
+      "cotizaciones", fCoti.selectedAnno, fCoti.selectedMes, fCoti.probabilidadFilter, fCoti.comercialSearch, fCoti.tecnicoSearch, fCoti.envioFilter,
+      fCoti.suministrosValor, fCoti.suministrosUnidad, fCoti.serviciosValor, fCoti.serviciosUnidad, fCoti.ofertaValor, fCoti.ofertaUnidad,
+      fCoti.annoDesde, fCoti.annoHasta, fCoti.mesDesde, fCoti.mesHasta, fCoti.areaFilter, fCoti.statusFilter
     ],
     queryFn: fetchCotizaciones,
+    refetchInterval: 4000, // Background poll every 4 seconds
   });
 
   // 2. NUEVA QUERY DE OPORTUNIDADES
@@ -581,8 +646,9 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
     data: dataOportunidades, 
     isLoading: isLoadingOportunidades 
   } = useQuery({
-    queryKey: ["oportunidades", selectedAnno, selectedMes, comercialSearch, estadoOportunidad, annoDesde, annoHasta, mesDesde, mesHasta],
+    queryKey: ["oportunidades", fOpor.selectedAnno, fOpor.selectedMes, fOpor.comercialSearch, fOpor.estadoOportunidad, fOpor.annoDesde, fOpor.annoHasta, fOpor.mesDesde, fOpor.mesHasta, fOpor.areaFilter],
     queryFn: fetchOportunidades,
+    refetchInterval: 4000, // Background poll every 4 seconds
   });
 
   // 3. APERTURAS
@@ -601,7 +667,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
   const hasAnyActiveFilterOrSearch = useMemo(() => {
     return (
       globalSearch !== "" ||
-      statusFilter !== "TODAS" ||
+      statusFilter.length > 0 ||
       selectedAnno !== new Date().getFullYear() ||
       selectedMes !== "%" ||
       envioFilter !== "%" ||
@@ -617,17 +683,18 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
       annoHasta !== "" ||
       mesDesde !== "" ||
       mesHasta !== "" ||
-      estadoOportunidad !== "%" ||
-      estadoOrdenFilter !== "%" ||
+      estadoOportunidad.length > 0 ||
+      estadoOrdenFilter.length > 0 ||
       prioFilter !== "%" ||
-      plazoValor !== ""
+      plazoValor !== "" ||
+      areaFilter.length > 0
     );
   }, [
     globalSearch, statusFilter, selectedAnno, selectedMes, envioFilter,
     probabilidadFilter, responsableTipo, comercialSearch, tecnicoSearch,
     responsableNombre, suministrosValor, serviciosValor, ofertaValor,
     annoDesde, annoHasta, mesDesde, mesHasta, estadoOportunidad,
-    estadoOrdenFilter, prioFilter, plazoValor
+    estadoOrdenFilter, prioFilter, plazoValor, areaFilter
   ]);
 
   const handleClearAllFilters = () => {
@@ -661,6 +728,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
     setPrioFilter("%");
     setPlazoValor("");
     setPlazoUnidad("D");
+    setAreaFilter("%");
 
     const keysToClear = [
       "comercial_filter_globalSearch",
@@ -692,7 +760,8 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
       "comercial_filter_estadoOrdenFilter",
       "comercial_filter_prioFilter",
       "comercial_filter_plazoValor",
-      "comercial_filter_plazoUnidad"
+      "comercial_filter_plazoUnidad",
+      "comercial_filter_areaFilter"
     ];
     keysToClear.forEach(key => sessionStorage.removeItem(key));
   };
@@ -704,19 +773,21 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
   } = useQuery({
     queryKey: [
       "aperturas", 
-      selectedAnno,       // Sincronizado con el dashboard superior
-      selectedMes,        // Sincronizado con el dashboard superior
-      estadoOrdenFilter,  // Caerá exactamente en estadoOrden en el fetch
-      prioFilter,         // Caerá exactamente en prio en el fetch
-      plazoValor,         // Caerá exactamente en plazoValor en el fetch
-      plazoUnidad,        // Caerá exactamente en plazoUnidad en el fetch
-      annoDesde,
-      annoHasta,
-      mesDesde,
-      mesHasta
+      fAper.selectedAnno,       // Sincronizado con el dashboard superior
+      fAper.selectedMes,        // Sincronizado con el dashboard superior
+      fAper.estadoOrdenFilter,  // Caerá exactamente en estadoOrden en el fetch
+      fAper.prioFilter,         // Caerá exactamente en prio en el fetch
+      fAper.plazoValor,         // Caerá exactamente en plazoValor en el fetch
+      fAper.plazoUnidad,        // Caerá exactamente en plazoUnidad en el fetch
+      fAper.annoDesde,
+      fAper.annoHasta,
+      fAper.mesDesde,
+      fAper.mesHasta,
+      fAper.areaFilter
     ],
     queryFn: fetchAperturas,
     keepPreviousData: true,
+    refetchInterval: 4000, // Background poll every 4 seconds
   });
 
   const cotizaciones = dataCotizaciones?.tabla || [];
@@ -828,8 +899,8 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
         item.total_cotizacion?.toString().includes(searchLower) ||
         formattedTotal.includes(searchLower);
 
-      const matchesStatus = statusFilter === "TODAS" ||
-        item.estado_nombre?.toUpperCase() === statusFilter;
+      const matchesStatus = statusFilter.length === 0 ||
+        statusFilter.includes(item.estado_nombre?.toUpperCase());
 
       return matchesSearch && matchesStatus;
     });
@@ -980,8 +1051,6 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
   // Calcular filtros activos
   const activeFiltersCount = useMemo(() => {
     let count = 0;
-    if (selectedAnno !== "%") count++;
-    if (selectedMes !== "%") count++;
     if (envioFilter !== "%") count++;
     if (probabilidadFilter !== "%") count++;
     if (comercialSearch !== "%") count++;
@@ -990,13 +1059,12 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
     if (serviciosValor !== "") count++;
     if (ofertaValor !== "") count++;
     if (annoDesde || mesDesde || annoHasta || mesHasta) count++;
+    if (areaFilter.length > 0) count++;
     return count;
-  }, [selectedAnno, selectedMes, envioFilter, probabilidadFilter, comercialSearch, tecnicoSearch, suministrosValor, serviciosValor, ofertaValor, annoDesde, mesDesde, annoHasta, mesHasta]);
+  }, [envioFilter, probabilidadFilter, comercialSearch, tecnicoSearch, suministrosValor, serviciosValor, ofertaValor, annoDesde, mesDesde, annoHasta, mesHasta, areaFilter]);
 
   const hasAnyActiveFilter = useMemo(() => {
     return (
-      selectedAnno !== "%" ||
-      selectedMes !== "%" ||
       envioFilter !== "%" ||
       probabilidadFilter !== "%" ||
       comercialSearch !== "%" ||
@@ -1007,9 +1075,10 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
       !!annoDesde ||
       !!mesDesde ||
       !!annoHasta ||
-      !!mesHasta
+      !!mesHasta ||
+      areaFilter.length > 0
     );
-  }, [selectedAnno, selectedMes, envioFilter, probabilidadFilter, comercialSearch, tecnicoSearch, suministrosValor, serviciosValor, ofertaValor, annoDesde, mesDesde, annoHasta, mesHasta]);
+  }, [envioFilter, probabilidadFilter, comercialSearch, tecnicoSearch, suministrosValor, serviciosValor, ofertaValor, annoDesde, mesDesde, annoHasta, mesHasta, areaFilter]);
 
   // ========
   // FECHAS
@@ -1156,6 +1225,8 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
     if (annoHasta) params.append("anno_hasta", annoHasta);
     if (mesDesde) params.append("mes_desde", mesDesde);
     if (mesHasta) params.append("mes_hasta", mesHasta);
+    
+    if (areaFilter !== "%") params.append("area", areaFilter);
     
     // Global search and field if active
     if (globalSearch) {
@@ -1471,9 +1542,9 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
 
             {/* PANEL DESPLEGABLE */}
             {showAdvancedFilters && (
-              <div className="absolute left-0 mt-2 w-[500px] bg-white border border-gray-100 rounded-2xl shadow-2xl z-[100] p-0 animate-in fade-in zoom-in duration-200 origin-top-left overflow-hidden flex flex-col">
+              <div className="absolute left-0 mt-2 w-[560px] bg-white border border-gray-100 rounded-2xl shadow-2xl z-[100] p-0 animate-in fade-in zoom-in duration-200 origin-top-left flex flex-col">
                 {/* Header */}
-                <div className="bg-gray-50/50 px-4 py-3 border-b border-gray-100 flex justify-between items-center shrink-0">
+                <div className="bg-gray-50/50 px-4 py-3 border-b border-gray-100 flex justify-between items-center shrink-0 rounded-t-2xl">
                   <h4 className="text-[10px] font-black text-gray-600 uppercase tracking-widest">Filtros Avanzados</h4>
                   <button
                     onClick={resetFilters}
@@ -1485,14 +1556,32 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
 
                 <div className="flex-1 flex min-h-0">
                   {/* Panel Izquierdo: Categorías */}
-                  <div className="w-[160px] border-r border-gray-100 bg-gray-50/50 flex flex-col p-1.5 gap-1 shrink-0">
-                    {[
-                      { id: "RANGO", label: "Rango Operativo" },
-                      { id: "ESTADO", label: "Estado de Envío" },
-                      { id: "PROBABILIDAD", label: "Probabilidad" },
-                      { id: "RESPONSABLE", label: "Responsable" },
-                      { id: "TIEMPOS", label: "Tiempos" },
-                    ].map((tab) => (
+                  <div className="w-[160px] border-r border-gray-100 bg-gray-50/50 flex flex-col p-1.5 gap-1 shrink-0 rounded-bl-2xl">
+                    {(() => {
+                      const tabs = [
+                        { id: "RANGO", label: "Rango Operativo" },
+                      ];
+
+                      if (currentTab === "cotizaciones") {
+                        tabs.push({ id: "ESTADO", label: "Estado de Envío" });
+                      }
+
+                      tabs.push({ id: "AREAS", label: "Áreas" });
+
+                      if (currentTab === "cotizaciones") {
+                        tabs.push({ id: "PROBABILIDAD", label: "Probabilidad" });
+                      }
+
+                      if (currentTab === "cotizaciones" || currentTab === "oportunidades") {
+                        tabs.push({ id: "RESPONSABLE", label: "Responsable" });
+                      }
+
+                      if (currentTab === "cotizaciones" || currentTab === "oportunidades") {
+                        tabs.push({ id: "TIEMPOS", label: "Tiempos" });
+                      }
+
+                      return tabs;
+                    })().map((tab) => (
                       <button
                         key={tab.id}
                         onClick={() => setActiveFilterTab(tab.id)}
@@ -1507,7 +1596,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
                   </div>
 
                   {/* Panel Derecho: Contenido */}
-                  <div className={`flex-1 p-4 transition-all duration-300 ${isDropdownOpen ? 'pb-60' : ''}`}>
+                  <div className={`flex-1 p-4 transition-all duration-300 rounded-br-2xl ${isDropdownOpen ? 'pb-60' : ''}`}>
 
                     {/* ESTADO */}
                     {activeFilterTab === "ESTADO" && (
@@ -1919,6 +2008,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
                                 onToggle={setIsDropdownOpen}
                                 showSearch={true}
                                 gridLayout={true}
+                                alignRight={true}
                               />
                               <FilterDropdown
                                 label="Mes"
@@ -1929,9 +2019,69 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
                                 onToggle={setIsDropdownOpen}
                                 showSearch={true}
                                 gridLayout={true}
+                                alignRight={true}
                               />
                             </div>
                           </div>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* AREAS */}
+                    {activeFilterTab === "AREAS" && (
+                      <div className="space-y-4 animate-in fade-in slide-in-from-right-2 duration-300">
+                        <div className="grid grid-cols-1 gap-2">
+                          {[
+                            { id: "2", n: "MINERÍA", desc: "Sector Minero", bg: "bg-amber-50", text: "text-amber-700", dot: "bg-amber-500" },
+                            { id: "1", n: "INDUSTRIA", desc: "Sector Industrial", bg: "bg-blue-50", text: "text-blue-700", dot: "bg-blue-500" },
+                            { id: "4", n: "PETROQUÍMICA", desc: "Sector Petroquímico", bg: "bg-purple-50", text: "text-purple-700", dot: "bg-purple-500" },
+                            { id: "8", n: "SEGURIDAD DE MAQUINARIA", desc: "Sistemas de Seguridad", bg: "bg-rose-50", text: "text-rose-700", dot: "bg-rose-500" },
+                          ].map((opt) => {
+                            const currentArr = Array.isArray(areaFilter) ? areaFilter : [];
+                            const isSelected = currentArr.includes(opt.id);
+
+                            return (
+                              <button
+                                key={opt.id}
+                                onClick={() => {
+                                  setAreaFilter(prev => {
+                                    const arr = Array.isArray(prev) ? prev : [];
+                                    if (arr.includes(opt.id)) {
+                                      return arr.filter(id => id !== opt.id);
+                                    } else {
+                                      return [...arr, opt.id];
+                                    }
+                                  });
+                                }}
+                                className={`group relative flex items-center justify-between p-3 rounded-xl border transition-all duration-300 ${isSelected
+                                    ? `${opt.bg} ${opt.text} border-transparent ring-2 ring-indigo-500/20 shadow-sm`
+                                    : 'bg-white border-gray-100 hover:border-indigo-100 hover:bg-indigo-50/30 text-gray-500'
+                                  }`}
+                              >
+                                <div className="flex items-center gap-3">
+                                  {/* Indicador Circular Animado */}
+                                  <div className={`w-2 h-2 rounded-full shadow-sm transition-all duration-300 ${isSelected ? `${opt.dot} scale-125` : 'bg-gray-300 group-hover:bg-gray-400'
+                                    }`} />
+
+                                  <div className="flex flex-col text-left">
+                                    <span className={`text-[10px] font-black tracking-wide uppercase transition-colors ${isSelected ? opt.text : 'text-gray-600 group-hover:text-indigo-600'
+                                      }`}>
+                                      {opt.n}
+                                    </span>
+                                    <span className="text-[8px] font-bold opacity-60 uppercase tracking-tight">
+                                      {opt.desc}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Check visual minimalista */}
+                                <div className={`flex items-center justify-center w-5 h-5 rounded-lg transition-all duration-300 ${isSelected ? 'bg-white/50 shadow-inner scale-100 opacity-100' : 'scale-50 opacity-0'
+                                  }`}>
+                                  <div className={`w-1.5 h-1.5 rounded-full ${opt.dot}`} />
+                                </div>
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
                     )}
@@ -1961,51 +2111,83 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
               { label: "NO COTIZADO", value: "2" },
               { label: "RECHAZADO", value: "3" },
               { label: "COTIZADO", value: "4" }
-            ].map((opt) => (
-              <button
-                key={opt.label}
-                onClick={() => setEstadoOportunidad(prev => prev === opt.value ? "%" : opt.value)}
-                className={`whitespace-nowrap px-3 py-1.5 text-[9px] font-black rounded-xl transition-all ${estadoOportunidad === opt.value
-                    ? "bg-indigo-600 text-white shadow-lg shadow-indigo-100"
-                    : "text-gray-500 hover:bg-gray-50 hover:text-gray-900"
-                  }`}
-              >
-                {opt.label}
-              </button>
-            ))
+            ].map((opt) => {
+              const currentArr = Array.isArray(estadoOportunidad) ? estadoOportunidad : [];
+              const isActive = currentArr.includes(opt.value);
+              return (
+                <button
+                  key={opt.label}
+                  onClick={() => setEstadoOportunidad(prev => {
+                    const arr = Array.isArray(prev) ? prev : [];
+                    if (arr.includes(opt.value)) {
+                      return arr.filter(v => v !== opt.value);
+                    } else {
+                      return [...arr, opt.value];
+                    }
+                  })}
+                  className={`whitespace-nowrap px-3 py-1.5 text-[9px] font-black rounded-xl transition-all ${isActive
+                      ? "bg-indigo-600 text-white shadow-lg shadow-indigo-100"
+                      : "text-gray-500 hover:bg-gray-50 hover:text-gray-900"
+                    }`}
+                >
+                  {opt.label}
+                </button>
+              );
+            })
           ) : currentTab === "aperturas" ? (
             [
               { label: "PENDIENTE", value: "2" },
               { label: "ADJUDICADO", value: "1" },
               { label: "ANULADO", value: "4" }
-            ].map((opt) => (
-              <button
-                key={opt.label}
-                onClick={() => setEstadoOrdenFilter(prev => prev === opt.value ? "%" : opt.value)}
-                className={`whitespace-nowrap px-3 py-1.5 text-[9px] font-black rounded-xl transition-all ${estadoOrdenFilter === opt.value
-                    ? "bg-indigo-600 text-white shadow-lg shadow-indigo-100"
-                    : "text-gray-500 hover:bg-gray-50 hover:text-gray-900"
-                  }`}
-              >
-                {opt.label}
-              </button>
-            ))
+            ].map((opt) => {
+              const currentArr = Array.isArray(estadoOrdenFilter) ? estadoOrdenFilter : [];
+              const isActive = currentArr.includes(opt.value);
+              return (
+                <button
+                  key={opt.label}
+                  onClick={() => setEstadoOrdenFilter(prev => {
+                    const arr = Array.isArray(prev) ? prev : [];
+                    if (arr.includes(opt.value)) {
+                      return arr.filter(v => v !== opt.value);
+                    } else {
+                      return [...arr, opt.value];
+                    }
+                  })}
+                  className={`whitespace-nowrap px-3 py-1.5 text-[9px] font-black rounded-xl transition-all ${isActive
+                      ? "bg-indigo-600 text-white shadow-lg shadow-indigo-100"
+                      : "text-gray-500 hover:bg-gray-50 hover:text-gray-900"
+                    }`}
+                >
+                  {opt.label}
+                </button>
+              );
+            })
           ) : (
             [
               "PENDIENTE", "EN SEGUIMIENTO",
               "ADJUDICADO", "POSTERGADA", "PERDIDA", "ANULADO"
-            ].map((status) => (
-              <button
-                key={status}
-                onClick={() => setStatusFilter(prev => prev === status ? "TODAS" : status)}
-                className={`whitespace-nowrap px-3 py-1.5 text-[9px] font-black rounded-xl transition-all ${statusFilter === status
-                    ? "bg-indigo-600 text-white shadow-lg shadow-indigo-100"
-                    : "text-gray-500 hover:bg-gray-50 hover:text-gray-900"
-                  }`}
-              >
-                {status}
-              </button>
-            ))
+            ].map((status) => {
+              const isActive = statusFilter.includes(status);
+              return (
+                <button
+                  key={status}
+                  onClick={() => setStatusFilter(prev => {
+                    const arr = Array.isArray(prev) ? prev : [];
+                    if (arr.includes(status)) {
+                      return arr.filter(s => s !== status);
+                    } else {
+                      return [...arr, status];
+                    }
+                  })}
+                  className={`whitespace-nowrap px-3 py-1.5 text-[9px] font-black rounded-xl transition-all ${isActive
+                      ? "bg-indigo-600 text-white shadow-lg shadow-indigo-100"
+                      : "text-gray-500 hover:bg-gray-50 hover:text-gray-900"
+                    }`}
+                >
+                  {status}
+                </button>
+              );
+            })
           )}
         </div>
       </div>

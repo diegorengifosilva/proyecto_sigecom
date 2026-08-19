@@ -7,6 +7,7 @@ from simple_history.models import HistoricalRecords
 from django.contrib.auth.hashers import check_password, make_password
 import datetime
 
+
 class Area(models.Model):
     id_area = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=100)
@@ -75,7 +76,15 @@ class Usuario(models.Model):
     id_cargo = models.ForeignKey('Cargo', on_delete=models.PROTECT, db_column='id_cargo')
     fecha_ingreso = models.DateField(blank=True, null=True)
     activo = models.IntegerField(default=1) # 0=Inactivo, 1=Activo
-    
+
+    # NUEVA RELACIÓN MUCHOS A MUCHOS (N:M)
+    modulos = models.ManyToManyField(
+        'core.Modulo',
+        db_table='usuario_modulo',
+        related_name='usuarios',
+        blank=True
+    )
+
     # Financiero
     id_banco = models.ForeignKey('Banco', on_delete=models.PROTECT, db_column='id_banco')
     nro_cuenta = models.CharField(max_length=100, blank=True, null=True)
@@ -113,3 +122,14 @@ class Usuario(models.Model):
 
     def __str__(self):
         return self.nombre_completo
+
+class UsuarioModulo(models.Model):
+    id_usuario_modulo = models.AutoField(primary_key=True)
+    id_usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE, db_column='id_usuario')
+    id_modulo = models.ForeignKey('core.Modulo', on_delete=models.CASCADE, db_column='id_modulo')
+
+    class Meta:
+        managed = False
+        db_table = 'usuario_modulo'
+        unique_together = ('id_usuario', 'id_modulo')
+

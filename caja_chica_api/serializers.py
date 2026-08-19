@@ -1,0 +1,715 @@
+# caja_chica_api/serializers.py
+
+from rest_framework import serializers
+from django.db import transaction, models
+from django.contrib.auth import get_user_model
+from django.db.models import Sum
+import datetime
+import uuid
+from .models import (
+    DocumentoGasto,
+    CorreccionOCR,
+    CajaDiaria,
+    Solicitud,
+    ArqueoCaja,
+    ArqueoMovimiento,
+    ArqueoAdjunto,
+    Notificacion,
+    EstadoCaja,
+    Liquidacion,
+    Actividad,
+    GuiaItem,
+    GuiaSalida,
+    SolicitudGastoEstadoHistorial,
+    SolicitudCajaChica
+)
+from django.contrib.auth import get_user_model
+from django.utils.timezone import localtime
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from django.contrib.auth.hashers import make_password
+from decimal import Decimal, InvalidOperation
+
+User = get_user_model()
+
+#========================================================================================
+#==================#
+# REGISTER Y LOGIN #
+#==================#
+from caja_chica_api.models import SegUsuario
+# Serializador para devolver información del usuario
+class SegUsuarioSerializer(serializers.ModelSerializer):
+    area_nombre = serializers.SerializerMethodField()
+    cargo_nombre = serializers.SerializerMethodField()
+    banco_nombre = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SegUsuario
+        fields = [
+            'usuario_usu',
+            'nomb_cort_usu',  # Nombre completo
+            'nom', 'ape',      # Nombres y apellidos separados
+            'area', 'area_nombre',
+            'cargo', 'cargo_nombre',
+            'ban', 'banco_nombre',
+            'banc',            # Número de cuenta
+        ]
+
+    def get_area_nombre(self, obj):
+        return obj.get_area_nombre() if hasattr(obj, 'get_area_nombre') else None
+
+    def get_cargo_nombre(self, obj):
+        return obj.get_cargo_nombre() if hasattr(obj, 'get_cargo_nombre') else None
+
+    def get_banco_nombre(self, obj):
+        return obj.get_banco_nombre() if hasattr(obj, 'get_banco_nombre') else None
+
+# Token Perzonalizado para login
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+
+        # Reemplazamos el identificador por usuario_usu
+        token['user_id'] = user.usuario_usu
+
+        # Agregamos datos útiles al token
+        token['nombre'] = user.nomb_cort_usu or ''
+        token['area'] = user.area or ''
+        token['cargo'] = user.cargo or ''
+        token['banco'] = user.ban or ''
+        token['cuenta'] = user.banc or ''
+
+        return token
+    
+#========================================================================================
+
+##====================##
+## PANTALLA PRINCIPAL ##
+##====================##
+
+#========================================================================================
+
+##====================##
+## SOLICITUD DE GASTO ##
+##====================##
+# Serializer principal
+class SolicitudGastoSerializer(serializers.ModelSerializer):
+    solicitante_nombre = serializers.SerializerMethodField(read_only=True)
+    solicitante_area = serializers.SerializerMethodField(read_only=True)
+    destinatario_nombre = serializers.SerializerMethodField(read_only=True)
+    solicitante = serializers.PrimaryKeyRelatedField(read_only=True)
+    destinatario_id = serializers.PrimaryKeyRelatedField(
+        source="destinatario",
+        queryset=get_user_model().objects.all(),
+        required=False,
+        allow_null=True
+    )
+    estado_display = serializers.CharField(source="get_estado_display", read_only=True)
+
+    class Meta:
+        model = Solicitud
+        fields = '__all__'
+        read_only_fields = ['solicitante', 'estado', 'creado', 'numero_solicitud', 'codigo', 'comentario']
+
+    # ---------- Métodos extra ----------
+    def get_solicitante_nombre(self, obj):
+        try:
+            return obj.solicitante.nombre_completo if obj.solicitante else None
+        except AttributeError:
+            return None
+
+    def get_solicitante_area(self, obj):
+        try:
+            return obj.solicitante.id_area.nombre if obj.solicitante and obj.solicitante.id_area else None
+        except AttributeError:
+            return None
+
+    def get_destinatario_nombre(self, obj):
+        try:
+            return obj.destinatario.nombre_completo if obj.destinatario else ""
+        except AttributeError:
+            return ""
+
+   # ---------- Crear ----------
+    def create(self, validated_data):
+        request = self.context.get("request")
+        if request and hasattr(request, "user"):
+            validated_data["solicitante"] = request.user
+
+        # Asignar destinatario si viene
+        destinatario = validated_data.pop("destinatario_id", None)
+        if destinatario:
+            validated_data["destinatario"] = destinatario
+
+        if not validated_data.get("tipo_solicitud"):
+            validated_data["tipo_solicitud"] = "Otros Gastos"
+
+        if not validated_data.get('numero_solicitud'):
+            hoy = datetime.date.today()
+            anio = hoy.year
+            ultimo = Solicitud.objects.filter(numero_solicitud__startswith=f"SG-{anio}").order_by("-id").first()
+            nuevo_num = int(ultimo.numero_solicitud.split("-")[-1]) + 1 if ultimo else 1
+            validated_data['numero_solicitud'] = f"SG-{anio}-{nuevo_num:04d}"
+
+        if not validated_data.get('codigo'):
+            validated_data['codigo'] = str(uuid.uuid4()).split("-")[0].upper()
+
+        validated_data['estado'] = validated_data.get('estado', 'Pendiente de Envío')
+
+        return super().create(validated_data)
+
+# Serializer simplificado
+class SolicitudGastoSimpleSerializer(serializers.ModelSerializer):
+    liquidacion_numero_operacion = serializers.SerializerMethodField()
+    solicitante_nombre = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Solicitud
+        fields = [
+            'id', 'numero_solicitud',
+            'total_soles', 'total_dolares',
+            'liquidacion_numero_operacion',
+            'solicitante_nombre', 'estado',
+            'comentario',
+        ]
+        read_only_fields = ['numero_solicitud', 'estado']
+
+    def get_liquidacion_numero_operacion(self, obj):
+        return getattr(obj.liquidacion, 'numero_operacion', None) if obj.liquidacion else None
+
+    def get_solicitante_nombre(self, obj):
+        if obj.solicitante:
+            nombre = getattr(obj.solicitante, 'nombre', '')
+            apellido = getattr(obj.solicitante, 'apellido', '')
+            return f"{nombre} {apellido}".strip()
+        return None
+
+# ========== Serializer para la tabla ==========
+class MisSolicitudesTablaSerializer(serializers.ModelSerializer):
+    solicitante_nombre = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Solicitud
+        fields = [
+            "id",
+            "numero_solicitud",
+            "fecha",
+            "hora",
+            "solicitante_nombre",
+            "destinatario",
+            "tipo_solicitud",
+            "area",
+            "estado",
+            "total_soles",
+            "total_dolares",
+            "fecha_transferencia",
+            "fecha_liquidacion",
+            "banco",
+            "numero_cuenta",
+            "concepto_gasto",
+            "observacion",
+            "comentario",
+        ]
+
+    def get_solicitante_nombre(self, obj):
+        return obj.solicitante.get_full_name() or obj.solicitante.username
+
+# ========== Serializer para el detalle ==========
+class MisSolicitudesDetalleSerializer(serializers.ModelSerializer):
+    solicitante_nombre = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Solicitud
+        fields = [
+            "id",
+            "numero_solicitud",
+            "fecha",
+            "hora",
+            "solicitante_nombre",
+            "destinatario",
+            "tipo_solicitud",
+            "area",
+            "estado",
+            "total_soles",
+            "total_dolares",
+            "fecha_transferencia",
+            "fecha_liquidacion",
+            "banco",
+            "numero_cuenta",
+            "concepto_gasto",
+            "observacion",
+            "creado",
+            "solicitante",
+            "comentario"
+        ]
+
+    def get_solicitante_nombre(self, obj):
+        return obj.solicitante.get_full_name() or obj.solicitante.username
+
+# ========== Serializer historial ==========
+class SolicitudGastoEstadoHistorialSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SolicitudGastoEstadoHistorial
+        fields = "__all__"
+        read_only_fields = ("fecha_cambio",)
+
+#========================================================================================
+
+##=========================##
+## ATENCIÓN DE SOLICITUDES ##
+##=========================##
+class SolicitudSerializer(serializers.ModelSerializer):
+    # Nombre completo del solicitante usando CustomUser
+    solicitante_nombre = serializers.SerializerMethodField()
+    
+    # Tipo de solicitud si tienes choices en el modelo
+    tipo_descripcion = serializers.CharField(source="get_tipo_solicitud_display", read_only=True)
+
+    class Meta:
+        model = Solicitud
+        fields = "__all__"
+        read_only_fields = ["solicitante", "solicitante_nombre", "tipo_descripcion"]
+
+    def get_solicitante_nombre(self, obj):
+        """Devuelve el nombre completo del solicitante según CustomUser"""
+        if obj.solicitante:
+            return obj.solicitante.nombre_completo
+        return "-"
+
+    def create(self, validated_data):
+        """Asigna automáticamente el solicitante con el usuario autenticado"""
+        validated_data['solicitante'] = self.context['request'].user
+        return super().create(validated_data)
+
+#========================================================================================
+
+##===============##
+## LIQUIDACIONES ##
+##===============##
+class LiquidacionSerializer(serializers.ModelSerializer):
+    usuario_nombre = serializers.CharField(source="usuario.username", read_only=True)
+    solicitud = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Liquidacion
+        fields = [
+            "id",
+            "numero_operacion",
+            "usuario",
+            "usuario_nombre",
+            "fecha",
+            "total_soles",
+            "total_dolares",
+            "estado",          # 👈 ahora es directamente el nombre legible
+            "observaciones",
+            "saldo_a_pagar",
+            "vuelto",
+            "solicitud",
+        ]
+        read_only_fields = [
+            "numero_operacion",
+            "total_soles",
+            "total_dolares",
+            "usuario_nombre",
+            "saldo_a_pagar",
+            "vuelto",
+        ]
+
+    def get_solicitud(self, obj):
+        """Devuelve info resumida de la solicitud vinculada."""
+        if not obj.solicitud:
+            return None
+        return {
+            "id": obj.solicitud.id,
+            "numero_solicitud": obj.solicitud.numero_solicitud,
+            "tipo_solicitud": obj.solicitud.tipo_solicitud,
+            "concepto_gasto": obj.solicitud.concepto_gasto,
+            "total_soles": obj.solicitud.total_soles,
+            "total_dolares": obj.solicitud.total_dolares,
+            "estado": obj.solicitud.estado,  # 👈 mismo formato legible
+        }
+    
+    def get_total_documentado(self, obj):
+        documentos = getattr(obj, "documentos", None)
+        if not documentos:
+            return Decimal("0.00")
+        return sum([d.total or Decimal("0.00") for d in documentos.all()])
+
+class SolicitudLiquidacionSerializer(serializers.ModelSerializer):
+    solicitante_nombre = serializers.CharField(source="solicitante.username", read_only=True)
+
+    class Meta:
+        model = Solicitud
+        fields = [
+            "id",
+            "numero_solicitud",
+            "tipo_solicitud",
+            "monto_soles",
+            "monto_dolares",
+            "fecha",
+            "estado",
+            "solicitante_nombre",
+        ]
+
+class DocumentoGastoSerializer(serializers.ModelSerializer):
+    # Ahora usamos directamente el campo del modelo, no un SerializerMethodField
+    archivo_url = serializers.URLField(read_only=True)
+
+    numero_documento = serializers.CharField(
+        allow_null=True, required=False, default="ND"
+    )
+    fecha = serializers.DateField(
+        allow_null=True, required=False
+    )
+    total = serializers.DecimalField(
+        max_digits=15, decimal_places=2, allow_null=True, required=False, default=Decimal("0.00")
+    )
+    tipo_documento = serializers.CharField(
+        allow_null=True, required=False
+    )
+
+    class Meta:
+        model = DocumentoGasto
+        fields = [
+            "id",
+            "solicitud",
+            "numero_operacion",
+            "fecha",
+            "tipo_documento",
+            "numero_documento",
+            "ruc",
+            "razon_social",
+            "total",
+            "nombre_archivo",
+            "archivo",
+            "archivo_url",  # ahora directo del modelo
+            "creado"
+        ]
+
+    def to_representation(self, instance):
+        """Normaliza tipo_documento y asegura que se respete OCR"""
+        data = super().to_representation(instance)
+        tipo = data.get("tipo_documento")
+        if tipo:
+            tipo = tipo.strip().replace("_", " ").title()
+            data["tipo_documento"] = tipo
+        else:
+            data["tipo_documento"] = "Desconocido"
+        return data
+
+class CorreccionOCRSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CorreccionOCR
+        fields = "__all__"
+
+#========================================================================================
+
+##===========================##
+## APROBACIÓN DE LIQUIDACIÓN ##
+##===========================##
+
+#========================================================================================
+
+##============##
+## CAJA CHICA ##
+##============##
+class CajaDiariaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CajaDiaria
+        fields = [
+            'fecha',
+            'monto_base',
+            'monto_inicial',
+            'monto_gastado',
+            'monto_sobrante',
+            'cerrada',
+            'observaciones'
+        ]
+
+#========================================================================================
+
+##=========================##
+## REGISTRO DE ACTIVIDADES ##
+##=========================##
+
+#========================================================================================
+
+##==================##
+## GUÍAS DE SALIDAS ##
+##==================##
+class GuiaItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GuiaItem
+        fields = ('id', 'cantidad', 'descripcion')
+
+class GuiaSalidaSerializer(serializers.ModelSerializer):
+    items = GuiaItemSerializer(many=True)
+
+    class Meta:
+        model = GuiaSalida
+        fields = ('id', 'fecha', 'origen', 'destino', 'responsable', 'estado', 'observaciones', 'items')
+        read_only_fields = ('id', 'fecha')
+
+    def create(self, validated_data):
+        items_data = validated_data.pop('items', [])
+        guia = GuiaSalida.objects.create(**validated_data)
+        for item in items_data:
+            GuiaItem.objects.create(guia=guia, **item)
+        return guia
+
+    def update(self, instance, validated_data):
+        items_data = validated_data.pop('items', None)  # si no viene, no tocamos items
+        for attr, val in validated_data.items():
+            setattr(instance, attr, val)
+        instance.save()
+
+        if items_data is not None:
+            instance.items.all().delete()
+            for item in items_data:
+                GuiaItem.objects.create(guia=instance, **item)
+
+        return instance
+
+#========================================================================================
+
+##=========================##
+## ESTADÍSTICAS Y REPORTES ##
+##=========================##
+
+#========================================================================================
+
+##===============##
+## EDITAR PERFIL ##
+##===============##
+
+#========================================================================================
+
+##====================##
+## CAMBIAR CONTRASEÑA ##
+##====================##
+
+#========================================================================================
+
+
+
+
+class ArqueoMovimientoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ArqueoMovimiento
+        fields = '__all__'
+
+class ArqueoAdjuntoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ArqueoAdjunto
+        fields = '__all__'
+
+class ArqueoCajaSerializer(serializers.ModelSerializer):
+    usuario = serializers.StringRelatedField(read_only=True)
+    usuario_id = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(),
+        source='usuario',
+        write_only=True,
+        required=False
+    )
+
+    solicitudes = SolicitudGastoSimpleSerializer(many=True, read_only=True)  # solicitudes relacionadas
+    movimientos = ArqueoMovimientoSerializer(many=True, read_only=True)
+    adjuntos = ArqueoAdjuntoSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = ArqueoCaja
+        fields = [
+            'id',
+            'numero_operacion',
+            'fecha',
+            'usuario',
+            'usuario_id',
+            'entradas',
+            'saldo_final',
+            'observaciones',
+            'cerrada',
+            'created_at',
+            'updated_at',
+            'solicitudes',
+            'movimientos',
+            'adjuntos',
+        ]
+        read_only_fields = ['numero_operacion', 'created_at', 'updated_at']
+
+    def create(self, validated_data):
+        # Genera número de operación si no viene
+        if not validated_data.get('numero_operacion'):
+            from .utils import generar_numero_operacion
+            validated_data['numero_operacion'] = generar_numero_operacion()
+        return super().create(validated_data)
+
+class ArqueoCajaSimpleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ArqueoCaja
+        fields = ['id', 'numero_operacion', 'fecha', 'saldo_final', 'cerrada']
+
+class NotificacionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notificacion
+        fields = '__all__'
+
+class EstadoCajaSerializer(serializers.ModelSerializer):
+    usuario_username = serializers.CharField(source="usuario.username", read_only=True)
+    fecha_hora_local = serializers.SerializerMethodField()
+
+    class Meta:
+        model = EstadoCaja
+        fields = [
+            'id',
+            'estado',
+            'fecha_hora',
+            'fecha_hora_local',
+            'usuario',
+            'usuario_username'
+        ]
+        read_only_fields = [
+            'id',
+            'usuario',
+            'usuario_username',
+            'fecha_hora',
+            'fecha_hora_local'
+        ]
+
+    def get_fecha_hora_local(self, obj):
+        """
+        Convierte fecha_hora a la zona horaria local y formato legible.
+        Usa obj.fecha_hora ya cargado, sin consultas adicionales.
+        """
+        if obj.fecha_hora:
+            return localtime(obj.fecha_hora).strftime('%Y-%m-%d %H:%M:%S')
+        return None
+
+    def create(self, validated_data):
+        """
+        Asigna el usuario autenticado al crear el registro.
+        """
+        request = self.context.get('request')
+        if request and hasattr(request, "user") and request.user.is_authenticated:
+            validated_data['usuario'] = request.user
+        return super().create(validated_data)
+    
+class SolicitudParaLiquidarSerializer(serializers.ModelSerializer):
+    solicitante_nombre = serializers.CharField(source='solicitante.get_full_name', read_only=True)
+    fecha_aprobacion = serializers.DateField(source='fecha', read_only=True)
+    monto_aprobado = serializers.DecimalField(source='monto_soles', max_digits=12, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = Solicitud
+        fields = [
+            'id',
+            'numero_solicitud',
+            'fecha_aprobacion',
+            'hora',
+            'solicitante_nombre',
+            'destinatario',
+            'tipo_solicitud',
+            'estado',
+            'monto_aprobado',
+            'monto_dolares',
+            'fecha_transferencia',
+            'fecha_liquidacion',
+            'banco',
+            'numero_cuenta',
+            'concepto',
+            'observacion',
+        ]
+
+class ActividadSerializer(serializers.ModelSerializer):
+    usuario = serializers.StringRelatedField()  # Muestra el username
+
+    class Meta:
+        model = Actividad
+        fields = ['id', 'usuario', 'tipo', 'accion', 'descripcion', 'fecha']
+
+
+class SolicitudCajaChicaSerializer(serializers.ModelSerializer):
+    id_registro = serializers.SerializerMethodField()
+    area = serializers.SerializerMethodField()
+    regus = serializers.SerializerMethodField()
+    fecha = serializers.SerializerMethodField()
+    
+    # Aliases para compatibilidad con el frontend
+    nro_solicitud = serializers.CharField(source="cog", read_only=True, default="")
+    codigo = serializers.CharField(read_only=True, default="")
+    nombre = serializers.CharField(source="id_solicitante.nombre_completo", read_only=True, default="")
+    monto_usd = serializers.SerializerMethodField()
+    monto_pen = serializers.SerializerMethodField()
+    estado_nombre = serializers.CharField(source="id_estado.nombre", read_only=True, default="")
+    tipo = serializers.SerializerMethodField()
+    referencia = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SolicitudCajaChica
+        fields = [
+            'id_caja_chica',
+            'id_registro',
+            'nivel_grupo',
+            'cog',
+            'codigo',
+            'nro_solicitud',
+            'num',
+            'fecha',
+            'id_area',
+            'area',
+            'id_solicitante',
+            'regus',
+            'id_destinatario',
+            'referencia',
+            'tipo',
+            'tipo_moneda',
+            'monto_soles',
+            'tipo_cambio',
+            'monto_dolares',
+            'monto_usd',
+            'monto_pen',
+            'concepto',
+            'fecha_transferencia',
+            'fecha_liquidacion',
+            'observacion',
+            'id_estado',
+            'estado_nombre',
+            'luo',
+            'lud',
+            'fecha_salida',
+            'tipo_movimiento',
+            'tipo_gasto',
+            'nombre',
+        ]
+
+    def get_id_registro(self, obj):
+        return f"caja_{obj.id_registro or obj.id_caja_chica}"
+
+    def get_area(self, obj):
+        return obj.id_area.nombre if obj.id_area else ""
+
+    def get_regus(self, obj):
+        return obj.id_solicitante.usuario if obj.id_solicitante else ""
+
+    def get_fecha(self, obj):
+        val = obj.fecha or obj.fecha_transferencia or obj.fecha_salida
+        if not val:
+            return None
+        return val.strftime("%Y-%m-%d")
+
+    def get_referencia(self, obj):
+        return f"Caja Chica: {obj.observacion or ''}".strip().upper()
+
+    def get_tipo(self, obj):
+        return "Caja Chica"
+
+    def get_monto_usd(self, obj):
+        if obj.tipo_moneda in ('D', 'd', 'USD', 'usd'):
+            return float(obj.monto_dolares or 0.00)
+        return 0.00
+
+    def get_monto_pen(self, obj):
+        if obj.tipo_moneda in ('S', 's', 'PEN', 'pen'):
+            return float(obj.monto_soles or 0.00)
+        return 0.00
+
+

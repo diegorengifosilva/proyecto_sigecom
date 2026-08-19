@@ -96,6 +96,10 @@ urlpatterns = [
     # SEGUIMIENTO DE COTIZACIONES
     # path("dashboard/seguimiento-cotizaciones/", views.lista_seguimiento_cotizaciones, name="lista_seguimiento_cotizaciones"),
 
+    # VISTAS DE ANÁLISIS
+    path("vistas_analisis/", views.vistas_analisis_api, name="vistas_analisis_api"),
+    path("vistas_analisis/<int:id_vista>/", views.vista_analisis_delete_api, name="vista_analisis_delete_api"),
+
     # Todas las rutas de ViewSets bajo /api/
     path('', include(router.urls)),
 

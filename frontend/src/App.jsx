@@ -30,6 +30,23 @@ import GastosAnalisis from "./dashboard/Tablas/Gastos_Analisis/GastosAnalisis";
 import LogisticaDashboard from "./dashboard/logistica/LogisticaDashboard";
 import LogisticaDetallePage from "./dashboard/logistica/LogisticaDetallePage";
 import LogisticaTablas from "./dashboard/logistica/LogisticaTablas";
+import Compras from "./dashboard/compras/Compras";
+import CompraDetallePage from "./dashboard/compras/CompraDetallePage";
+
+// CAJA CHICA
+import CajaChicaHome from "./dashboard/caja_chica/principal/DashboardHome";
+import SolicitudDashboard from "./dashboard/caja_chica/solicitudes/SolicitudDashboard";
+import NuevaSolicitud from "./dashboard/caja_chica/solicitudes/NuevaSolicitud";
+import MisSolicitudes from "./dashboard/caja_chica/solicitudes/MisSolicitudes";
+import DetallesSolicitud from "./dashboard/caja_chica/solicitudes/DetallesSolicitud";
+import AtencionSolicitudes from "./dashboard/caja_chica/atencion_solicitudes/AtencionSolicitudes";
+import LiquidacionesPendientes from "./dashboard/caja_chica/liquidaciones/LiquidacionesPendientes";
+import PresentarDocumentacionModal from "./dashboard/caja_chica/liquidaciones/PresentarDocumentacionModal";
+import SubirArchivoModal from "./dashboard/caja_chica/liquidaciones/SubirArchivoModal";
+import AprobacionLiquidaciones from "./dashboard/caja_chica/aprobacion_liquidacion/AprobacionLiquidaciones";
+import CajaChicaArqueo from "./dashboard/caja_chica/caja_chica/CajaChica";
+import RegistroActividades from "./dashboard/caja_chica/registro_actividades/RegistroActividades";
+import Reportes from "./dashboard/caja_chica/reportes/Reportes";
 
 import { KeyboardProvider } from "@/context/KeyboardContext.jsx";
 import MockModulePage from "@/dashboard/layout/MockModulePage";
@@ -120,7 +137,32 @@ export default function App() {
 
               {/* Otros Módulos */}
               <Route path="proyectos" element={<MockModulePage title="Proyectos" />} />
-              <Route path="compras" element={<MockModulePage title="Compras" />} />
+
+              {/* Módulo Compras */}
+              <Route path="compras">
+                <Route index element={<Navigate to="programacion" replace />} />
+                <Route path="programacion" element={<Compras defaultTab="programacion" />} />
+                <Route path="atencion" element={<Compras defaultTab="atencion" />} />
+                <Route path="atencion/:id_solicitud" element={<CompraDetallePage />} />
+                <Route path="liquidaciones" element={<Compras defaultTab="liquidaciones" />} />
+              </Route>
+
+              {/* Módulo Caja Chica */}
+              <Route path="caja-chica">
+                <Route index element={<CajaChicaHome />} />
+                <Route path="solicitud" element={<SolicitudDashboard />} />
+                <Route path="solicitud/nueva" element={<NuevaSolicitud />} />
+                <Route path="solicitud/mis-solicitudes" element={<MisSolicitudes />} />
+                <Route path="solicitudes/:nro_solicitud" element={<DetallesSolicitud />} />
+                <Route path="atencion-solicitudes" element={<AtencionSolicitudes />} />
+                <Route path="liquidaciones/presentar" element={<LiquidacionesPendientes />} />
+                <Route path="liquidaciones/presentar/:id" element={<PresentarDocumentacionModal />} />
+                <Route path="liquidaciones/solicitud/:id/documento" element={<SubirArchivoModal />} />
+                <Route path="gastos/aprobacion-liquidacion" element={<AprobacionLiquidaciones />} />
+                <Route path="movimientos/arqueo" element={<CajaChicaArqueo />} />
+                <Route path="registros/actividades" element={<RegistroActividades />} />
+                <Route path="reportes" element={<Reportes />} />
+              </Route>
               <Route path="almacen" element={<MockModulePage title="Almacén" />} />
               <Route path="finanzas" element={<MockModulePage title="Finanzas" />} />
               <Route path="audit" element={<MockModulePage title="Auditoría" />} />

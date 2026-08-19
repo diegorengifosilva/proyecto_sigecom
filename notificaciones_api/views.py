@@ -5,11 +5,12 @@ from rest_framework import status
 from datetime import date, timedelta
 from django.utils import timezone
 from django.db import models
+from django.http import HttpResponse
 import calendar
 
 from .models import Notificacion
 from .serializers import NotificacionSerializer
-from cotizaciones_api.models import Cotizacion
+from cotizaciones_api.models import Cotizacion, CotizacionApertura
 from logistica_api.models import LogisticaDashboard, LogisticaDashboardDetalle
 from core.models import Producto
 
@@ -41,6 +42,16 @@ def calculate_target_date(start_date, val, code):
     return None
 
 def generar_notificaciones_usuario(usuario):
+    # 0. Limpieza automática: eliminar notificaciones leídas de más de 30 días
+    try:
+        Notificacion.objects.filter(
+            usuario=usuario,
+            leido=True,
+            fecha__lt=timezone.now() - timedelta(days=30)
+        ).delete()
+    except Exception as e:
+        logger.error(f"Error en limpieza automatica de notificaciones: {e}")
+
     # 1. Determinar accesos a módulos
     is_admin = False
     if usuario.id_cargo and hasattr(usuario.id_cargo, 'nivel') and usuario.id_cargo.nivel is not None:
@@ -58,31 +69,27 @@ def generar_notificaciones_usuario(usuario):
 
     hoy = date.today()
 
-    # GENERAR ALERTAS COMERCIALES
     if has_comercial:
         # A. Validez de Oferta (cotizaciones pendientes: id_estado_id = 2)
-        # Filtramos por las cotizaciones creadas en los últimos 90 días para evitar excesivas lecturas
+        # Filtramos por las cotizaciones creadas en 2026 asociadas al id_comercial
         cotis_pendientes = Cotizacion.objects.using("default").filter(
             id_estado_id=2,
             validez_oferta__isnull=False,
-            fecha__gte=timezone.now() - timedelta(days=90)
+            anno=2026,
+            id_comercial=usuario
         )
-        
-        # Si no es acceso total, filtramos por sus propias cotizaciones
-        if not has_total_access:
-            cotis_pendientes = cotis_pendientes.filter(id_comercial=usuario)
 
         for coti in cotis_pendientes:
             exp_date = calculate_target_date(coti.fecha, coti.validez_oferta, coti.id_unidad_tiempo_validez.codigo if coti.id_unidad_tiempo_validez else 'D')
             if exp_date:
-                # Alerta por vencer (próximos 3 días)
-                if hoy <= exp_date <= hoy + timedelta(days=3):
-                    ref_id = f"coti_val_{coti.id_registro}"
+                # Alerta por vencer (próximos 5 días)
+                if hoy <= exp_date <= hoy + timedelta(days=5):
+                    ref_id = f"coti_val_vence_{coti.id_registro}"
                     if not Notificacion.objects.filter(usuario=usuario, referencia_id=ref_id).exists():
                         Notificacion.objects.create(
                             usuario=usuario,
                             tipo="atencion",
-                            modulo="comercial",
+                            id_modulo_id=1,
                             titulo="Validez de oferta por vencer",
                             descripcion=f"La cotización {coti.codigo or coti.id_registro} para el cliente {coti.id_cliente.nombre if coti.id_cliente else 'S/C'} vence el {exp_date}.",
                             referencia_id=ref_id,
@@ -95,7 +102,7 @@ def generar_notificaciones_usuario(usuario):
                         Notificacion.objects.create(
                             usuario=usuario,
                             tipo="urgente",
-                            modulo="comercial",
+                            id_modulo_id=1,
                             titulo="Cotización con oferta vencida",
                             descripcion=f"La oferta de la cotización {coti.codigo or coti.id_registro} expiró el {exp_date}.",
                             referencia_id=ref_id,
@@ -106,60 +113,89 @@ def generar_notificaciones_usuario(usuario):
         oportunidades = Cotizacion.objects.using("default").filter(
             id_estado_id=11,
             estado_oportunidad=1,
-            fecha_limite__isnull=False
+            fecha_limite__isnull=False,
+            anno=2026,
+            id_comercial=usuario
         )
-        if not has_total_access:
-            oportunidades = oportunidades.filter(id_comercial=usuario)
 
         for op in oportunidades:
             limite_dt = op.fecha_limite.date() if hasattr(op.fecha_limite, "date") else op.fecha_limite
             if limite_dt:
+                # 1. Alerta Crítica (Urgente, 2 días o menos)
                 if hoy <= limite_dt <= hoy + timedelta(days=2):
-                    ref_id = f"op_limite_{op.id_registro}"
+                    ref_id = f"op_limite_critico_{op.id_registro}"
                     if not Notificacion.objects.filter(usuario=usuario, referencia_id=ref_id).exists():
                         Notificacion.objects.create(
                             usuario=usuario,
                             tipo="urgente",
-                            modulo="comercial",
-                            titulo="Fecha límite de oportunidad por vencer",
-                            descripcion=f"La oportunidad {op.codigo or op.id_registro} tiene fecha límite de presentación el {limite_dt}.",
+                            id_modulo_id=1,
+                            titulo="Fecha límite de oportunidad CRÍTICA",
+                            descripcion=f"La oportunidad {op.codigo or op.id_registro} vence en menos de 48 horas (límite: {limite_dt}). Por favor, priorizar la presentación.",
                             referencia_id=ref_id,
-                            metadata={"id_registro": op.id_registro, "codigo": op.codigo, "tipo_alerta": "limite_oportunidad"}
+                            metadata={"id_registro": op.id_registro, "codigo": op.codigo, "tipo_alerta": "limite_oportunidad_critico"}
+                        )
+                # 2. Alerta Preventiva (Atención, 5 días o menos)
+                elif hoy <= limite_dt <= hoy + timedelta(days=5):
+                    ref_id = f"op_limite_preventivo_{op.id_registro}"
+                    if not Notificacion.objects.filter(usuario=usuario, referencia_id=ref_id).exists():
+                        Notificacion.objects.create(
+                            usuario=usuario,
+                            tipo="atencion",
+                            id_modulo_id=1,
+                            titulo="Fecha límite de oportunidad por vencer",
+                            descripcion=f"La oportunidad {op.codigo or op.id_registro} tiene fecha límite de presentación el {limite_dt} (en menos de 5 días).",
+                            referencia_id=ref_id,
+                            metadata={"id_registro": op.id_registro, "codigo": op.codigo, "tipo_alerta": "limite_oportunidad_preventivo"}
                         )
 
-        # C. Sugerencias Comerciales / Alertas de Retraso
-        # 1. Cotizaciones pendientes por mucho tiempo (> 15 días)
-        cotis_demoradas = Cotizacion.objects.using("default").filter(
+        # C. Alertas de Retraso / Inactividad de Cotizaciones
+        # Filtramos cotizaciones pendientes del año 2026 del comercial correspondiente
+        cotis_inactivas = Cotizacion.objects.using("default").filter(
             id_estado_id=2,
-            fecha__lte=timezone.now() - timedelta(days=15),
-            fecha__gte=timezone.now() - timedelta(days=120)
+            anno=2026,
+            id_comercial=usuario
         )
-        if not has_total_access:
-            cotis_demoradas = cotis_demoradas.filter(id_comercial=usuario)
 
-        for coti in cotis_demoradas:
-            ref_id = f"coti_delay_{coti.id_registro}"
-            if not Notificacion.objects.filter(usuario=usuario, referencia_id=ref_id).exists():
-                dias_pendientes = (hoy - coti.fecha.date()).days
-                Notificacion.objects.create(
-                    usuario=usuario,
-                    tipo="atencion",
-                    modulo="comercial",
-                    titulo="Cotización pendiente prolongada",
-                    descripcion=f"La cotización {coti.codigo or coti.id_registro} lleva {dias_pendientes} días en estado Pendiente. Se sugiere realizar seguimiento comercial.",
-                    referencia_id=ref_id,
-                    metadata={"id_registro": coti.id_registro, "codigo": coti.codigo, "tipo_alerta": "delay_coti"}
-                )
+        for coti in cotis_inactivas:
+            dias_transcurridos = (hoy - coti.fecha.date()).days
+            
+            # Verificar si han transcurrido múltiplos de 15 días (ej: 15, 30, 45, 60...)
+            if dias_transcurridos > 0 and dias_transcurridos % 15 == 0:
+                # Caso 1: Pendiente de Seguimiento (estado_envio == 2, es decir, enviada al cliente)
+                if coti.estado_envio == 2:
+                    ref_id = f"coti_delay_seg_{coti.id_registro}_{dias_transcurridos}"
+                    if not Notificacion.objects.filter(usuario=usuario, referencia_id=ref_id).exists():
+                        Notificacion.objects.create(
+                            usuario=usuario,
+                            tipo="atencion",
+                            id_modulo_id=1,
+                            titulo="Cotización pendiente de seguimiento",
+                            descripcion=f"La cotización {coti.codigo or coti.id_registro} lleva {dias_transcurridos} días en estado Pendiente. Se sugiere realizar seguimiento comercial.",
+                            referencia_id=ref_id,
+                            metadata={"id_registro": coti.id_registro, "codigo": coti.codigo, "tipo_alerta": "delay_coti_seguimiento"}
+                        )
+                # Caso 2: Pendiente de Envío (estado_envio es 1, 0 o None, no enviada al cliente)
+                elif coti.estado_envio != 2:
+                    ref_id = f"coti_delay_env_{coti.id_registro}_{dias_transcurridos}"
+                    if not Notificacion.objects.filter(usuario=usuario, referencia_id=ref_id).exists():
+                        Notificacion.objects.create(
+                            usuario=usuario,
+                            tipo="atencion",
+                            id_modulo_id=1,
+                            titulo="Cotización pendiente de envío al cliente",
+                            descripcion=f"La cotización {coti.codigo or coti.id_registro} fue creada hace {dias_transcurridos} días y aún figura como 'Pendiente de Envío'. Por favor, verificar y enviar al cliente.",
+                            referencia_id=ref_id,
+                            metadata={"id_registro": coti.id_registro, "codigo": coti.codigo, "tipo_alerta": "delay_coti_envio"}
+                        )
 
-        # 2. Oportunidades sin cotización formal (> 5 días)
+        # D. Oportunidades sin cotización formal (> 7 días)
         ops_sin_coti = Cotizacion.objects.using("default").filter(
             id_estado_id=11,
             estado_oportunidad=1,
-            fecha__lte=timezone.now() - timedelta(days=5),
-            fecha__gte=timezone.now() - timedelta(days=60)
+            anno=2026,
+            fecha__lte=timezone.now() - timedelta(days=7),
+            id_comercial=usuario
         )
-        if not has_total_access:
-            ops_sin_coti = ops_sin_coti.filter(id_comercial=usuario)
 
         for op in ops_sin_coti:
             ref_id = f"op_no_convert_{op.id_registro}"
@@ -168,12 +204,115 @@ def generar_notificaciones_usuario(usuario):
                 Notificacion.objects.create(
                     usuario=usuario,
                     tipo="informativo",
-                    modulo="comercial",
+                    id_modulo_id=1,
                     titulo="Sugerencia: Convertir oportunidad",
                     descripcion=f"La oportunidad {op.codigo or op.id_registro} lleva {dias_abierta} días abierta sin emitirse como cotización. Se recomienda formalizar oferta.",
                     referencia_id=ref_id,
                     metadata={"id_registro": op.id_registro, "codigo": op.codigo, "tipo_alerta": "sugerencia_conversion"}
                 )
+
+        # E. Recordatorio de Visita Técnica programada (3 días de anticipación)
+        oportunidades_visita = Cotizacion.objects.using("default").filter(
+            id_estado_id=11,
+            estado_oportunidad=1,
+            visita_tecnica__isnull=False,
+            anno=2026,
+            id_comercial=usuario
+        )
+
+        for op in oportunidades_visita:
+            visita_dt = op.visita_tecnica.date() if hasattr(op.visita_tecnica, "date") else op.visita_tecnica
+            if visita_dt and visita_dt == hoy + timedelta(days=3):
+                ref_id = f"op_visita_{op.id_registro}"
+                if not Notificacion.objects.filter(usuario=usuario, referencia_id=ref_id).exists():
+                    Notificacion.objects.create(
+                        usuario=usuario,
+                        tipo="informativo",
+                        id_modulo_id=1,
+                        titulo="Recordatorio de Visita Técnica",
+                        descripcion=f"En 3 días (el {visita_dt}) tienes programada la visita técnica para la oportunidad {op.codigo or op.id_registro} del cliente {op.id_cliente.nombre if op.id_cliente else 'S/C'}.",
+                        referencia_id=ref_id,
+                        metadata={"id_registro": op.id_registro, "codigo": op.codigo, "tipo_alerta": "visita_tecnica"}
+                    )
+
+        # F. Alertas del Bloque de Aperturas
+        # Obtenemos las aperturas activas del comercial correspondiente
+        aperturas_activas = CotizacionApertura.objects.using("default").filter(
+            estado_orden__in=[1, 2, 3], # 1: Pendiente, 2: Aprobada, 3: Facturada
+            id_registro__anno=2026,
+            id_registro__id_comercial=usuario
+        ).select_related('id_registro')
+            
+        for ap in aperturas_activas:
+            coti = ap.id_registro
+            if not coti:
+                continue
+                
+            # Determinar fecha de inicio/apertura usando la trazabilidad
+            seg = coti.seguimientos.filter(detalle__icontains="Apertura").order_by('fecha').first()
+            f_apertura = seg.fecha.date() if seg else coti.fecha.date()
+            dias_transcurridos = (hoy - f_apertura).days
+            
+            # 1. Apertura Pendiente Prolongada (estado_orden == 1, modulo 15 días)
+            if ap.estado_orden == 1:
+                if dias_transcurridos > 0 and dias_transcurridos % 15 == 0:
+                    ref_id = f"ap_delay_pend_{ap.id_apertura}_{dias_transcurridos}"
+                    if not Notificacion.objects.filter(usuario=usuario, referencia_id=ref_id).exists():
+                        Notificacion.objects.create(
+                            usuario=usuario,
+                            tipo="atencion",
+                            id_modulo_id=1,
+                            titulo="Orden de apertura pendiente prolongada",
+                            descripcion=f"La orden de apertura para la cotización {coti.codigo or coti.id_registro} del cliente {coti.id_cliente.nombre if coti.id_cliente else 'S/C'} continúa en estado Pendiente después de {dias_transcurridos} días.",
+                            referencia_id=ref_id,
+                            metadata={"id_registro": coti.id_registro, "codigo": coti.codigo, "tipo_alerta": "apertura_pendiente_prolongada"}
+                        )
+            
+            # 2. Apertura sin número de Orden de Compra (OC) registrado (modulo 7 días, desde el día 7)
+            if not ap.numero_orden:
+                if dias_transcurridos >= 7 and dias_transcurridos % 7 == 0:
+                    ref_id = f"ap_no_oc_{ap.id_apertura}_{dias_transcurridos}"
+                    if not Notificacion.objects.filter(usuario=usuario, referencia_id=ref_id).exists():
+                        Notificacion.objects.create(
+                            usuario=usuario,
+                            tipo="atencion",
+                            id_modulo_id=1,
+                            titulo="Orden de apertura sin OC registrada",
+                            descripcion=f"La orden de apertura para la cotización {coti.codigo or coti.id_registro} del cliente {coti.id_cliente.nombre if coti.id_cliente else 'S/C'} no tiene un número de Orden de Compra (OC) registrado después de {dias_transcurridos} días.",
+                            referencia_id=ref_id,
+                            metadata={"id_registro": coti.id_registro, "codigo": coti.codigo, "tipo_alerta": "apertura_sin_oc"}
+                        )
+            
+            # 3. Vencimiento de Fecha de Entrega Real (fecha_entrega)
+            if ap.fecha_entrega:
+                entrega_dt = ap.fecha_entrega.date() if hasattr(ap.fecha_entrega, "date") else ap.fecha_entrega
+                if entrega_dt:
+                    # A. Alerta Crítica (Urgente, 2 días o menos)
+                    if hoy <= entrega_dt <= hoy + timedelta(days=2):
+                        ref_id = f"ap_entrega_crit_{ap.id_apertura}"
+                        if not Notificacion.objects.filter(usuario=usuario, referencia_id=ref_id).exists():
+                            Notificacion.objects.create(
+                                usuario=usuario,
+                                tipo="urgente",
+                                id_modulo_id=1,
+                                titulo="Plazo de Entrega Real CRÍTICO",
+                                descripcion=f"CRÍTICO: El plazo de Entrega Real para la orden de apertura OC: {ap.numero_orden or coti.codigo} del cliente {coti.id_cliente.nombre if coti.id_cliente else 'S/C'} vence en menos de 48 horas (límite: {entrega_dt}).",
+                                referencia_id=ref_id,
+                                metadata={"id_registro": coti.id_registro, "codigo": coti.codigo, "tipo_alerta": "apertura_entrega_critico"}
+                            )
+                    # B. Alerta Preventiva (Atención, 5 días o menos)
+                    elif hoy <= entrega_dt <= hoy + timedelta(days=5):
+                        ref_id = f"ap_entrega_prev_{ap.id_apertura}"
+                        if not Notificacion.objects.filter(usuario=usuario, referencia_id=ref_id).exists():
+                            Notificacion.objects.create(
+                                usuario=usuario,
+                                tipo="atencion",
+                                id_modulo_id=1,
+                                titulo="Plazo de Entrega Real por vencer",
+                                descripcion=f"El plazo de Entrega Real para la orden de apertura OC: {ap.numero_orden or coti.codigo} del cliente {coti.id_cliente.nombre if coti.id_cliente else 'S/C'} vence el {entrega_dt} (en menos de 5 días).",
+                                referencia_id=ref_id,
+                                metadata={"id_registro": coti.id_registro, "codigo": coti.codigo, "tipo_alerta": "apertura_entrega_preventivo"}
+                            )
 
     # GENERAR ALERTAS DE LOGÍSTICA
     if has_logistica:
@@ -190,7 +329,7 @@ def generar_notificaciones_usuario(usuario):
                 Notificacion.objects.create(
                     usuario=usuario,
                     tipo="atencion",
-                    modulo="logistica",
+                    id_modulo_id=2,
                     titulo=f"Stock crítico: {art.codigo or art.id_producto}",
                     descripcion=f"El artículo '{art.nombre}' está por debajo de su stock mínimo. Stock actual: {art.cantidad}, mínimo requerido: {art.stock_min}.",
                     referencia_id=ref_id,
@@ -210,7 +349,7 @@ def generar_notificaciones_usuario(usuario):
                 Notificacion.objects.create(
                     usuario=usuario,
                     tipo="informativo",
-                    modulo="logistica",
+                    id_modulo_id=2,
                     titulo=f"Nuevo movimiento de almacén: {op_desc}",
                     descripcion=f"Se registró una {op_desc.lower()} #{mov.num_reg} el {mov.fec} por un valor de {simbolo} {monto or 0.00}.",
                     referencia_id=ref_id,
@@ -229,7 +368,7 @@ def generar_notificaciones_usuario(usuario):
                 Notificacion.objects.create(
                     usuario=usuario,
                     tipo="atencion",
-                    modulo="logistica",
+                    id_modulo_id=2,
                     titulo="Almacén sin actividad reciente",
                     descripcion="No se han registrado entradas ni salidas de inventario en los últimos 7 días. Se sugiere revisar ordenes pendientes.",
                     referencia_id=ref_id,
@@ -255,7 +394,7 @@ def generar_notificaciones_usuario(usuario):
                     Notificacion.objects.create(
                         usuario=usuario,
                         tipo="informativo",
-                        modulo="logistica",
+                        id_modulo_id=2,
                         titulo="Sugerencia: Stock sin rotación",
                         descripcion=f"El artículo '{art.nombre}' tiene un stock acumulado de {art.cantidad} unidades y no registra salidas en los últimos 30 días.",
                         referencia_id=ref_id,
@@ -267,10 +406,9 @@ def generar_notificaciones_usuario(usuario):
 def notificaciones_usuario(request):
     usuario = request.user
     
-    try:
-        generar_notificaciones_usuario(usuario)
-    except Exception as e:
-        print(f"Error generando notificaciones: {e}")
+    # En la carga normal de la página (F5) no regeneramos notificaciones
+    # para evitar duplicidad y mejorar el rendimiento de la aplicación.
+    # Las notificaciones se calculan a través del comando enviar_alertas_diarias.
 
     notificaciones = Notificacion.objects.filter(usuario=usuario)[:30]
     serializer = NotificacionSerializer(notificaciones, many=True)
@@ -290,10 +428,8 @@ def marcar_notificacion(request, pk):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def notificaciones_no_leidas(request):
-    try:
-        generar_notificaciones_usuario(request.user)
-    except Exception:
-        pass
+    # En la consulta de conteo no regeneramos notificaciones en local
+    pass
         
     total = Notificacion.objects.filter(
         usuario=request.user,
@@ -309,3 +445,16 @@ def marcar_todas_notificaciones(request):
         leido=False
     ).update(leido=True)
     return Response({"ok": True})
+
+def tracking_pixel_notificacion(request, pk):
+    try:
+        notif = Notificacion.objects.get(pk=pk)
+        if not notif.leido:
+            notif.leido = True
+            notif.save()
+    except Notificacion.DoesNotExist:
+        pass
+
+    # GIF de 1x1 transparente
+    pixel_data = b'\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\x00\x00\x00\x21\xf9\x04\x01\x00\x00\x00\x00\x2c\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02\x4c\x01\x00\x3b'
+    return HttpResponse(pixel_data, content_type="image/gif")

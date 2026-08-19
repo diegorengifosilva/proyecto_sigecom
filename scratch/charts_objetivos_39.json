@@ -1,0 +1,122 @@
+[
+  {
+    "index": 1,
+    "class": "BarChart3D",
+    "width": 15,
+    "height": 7.5,
+    "anchor": "O2",
+    "title": "Monto Logrado por A\u00f1o HH+UTILIDAD",
+    "series": [
+      {
+        "index": 1,
+        "title": "<openpyxl.chart.series.SeriesLabel object>\nParameters:\nstrRef=<openpyxl.chart.data_source.StrRef object>\nParameters:\nf='Objetivos!$M$2', strCache=<openpyxl.chart.data_source.StrData object>\nParameters:\nptCount=1, pt=[<openpyxl.chart.data_source.StrVal object>\nParameters:\nidx=0, v='Logrado'], v=None",
+        "val_ref": "Objetivos!$M$3:$M$15",
+        "cat_ref": "None"
+      }
+    ],
+    "dataLabels": {
+      "showVal": true,
+      "showCatName": false,
+      "showSerName": false,
+      "showPercent": false,
+      "numFmt": null,
+      "showLegendKey": false
+    },
+    "axis": {
+      "x_axis_delete": false,
+      "y_axis_delete": true
+    },
+    "view3D": {
+      "rotX": 15.0,
+      "rotY": 20,
+      "rAngAx": true
+    },
+    "grouping": "clustered",
+    "shape": "box",
+    "legend": "None"
+  },
+  {
+    "index": 2,
+    "class": "BarChart3D",
+    "width": 15,
+    "height": 7.5,
+    "anchor": "B22",
+    "title": "Avance objetivo M\u00e1ximo al Mes en curso (8/12)",
+    "series": [
+      {
+        "index": 1,
+        "title": "<openpyxl.chart.series.SeriesLabel object>\nParameters:\nstrRef=<openpyxl.chart.data_source.StrRef object>\nParameters:\nf='Objetivos!$B$14', strCache=<openpyxl.chart.data_source.StrData object>\nParameters:\nptCount=1, pt=[<openpyxl.chart.data_source.StrVal object>\nParameters:\nidx=0, v='Avance'], v=None",
+        "val_ref": "Objetivos!$B$15:$B$19",
+        "cat_ref": "Objetivos!$A$15:$A$19"
+      },
+      {
+        "index": 2,
+        "title": "<openpyxl.chart.series.SeriesLabel object>\nParameters:\nstrRef=<openpyxl.chart.data_source.StrRef object>\nParameters:\nf='Objetivos!$C$14', strCache=<openpyxl.chart.data_source.StrData object>\nParameters:\nptCount=1, pt=[<openpyxl.chart.data_source.StrVal object>\nParameters:\nidx=0, v='Faltante'], v=None",
+        "val_ref": "Objetivos!$C$15:$C$19",
+        "cat_ref": "Objetivos!$A$15:$A$19"
+      }
+    ],
+    "dataLabels": {
+      "showVal": true,
+      "showCatName": false,
+      "showSerName": false,
+      "showPercent": false,
+      "numFmt": null,
+      "showLegendKey": false
+    },
+    "axis": {
+      "x_axis_delete": false,
+      "y_axis_delete": true
+    },
+    "view3D": {
+      "rotX": 15.0,
+      "rotY": 20,
+      "rAngAx": true
+    },
+    "grouping": "stacked",
+    "shape": "cylinder",
+    "legend": "None"
+  },
+  {
+    "index": 3,
+    "class": "BarChart3D",
+    "width": 15,
+    "height": 7.5,
+    "anchor": "I22",
+    "title": "Avance objetivo M\u00ednimo al Mes en curso (8/12)",
+    "series": [
+      {
+        "index": 1,
+        "title": "<openpyxl.chart.series.SeriesLabel object>\nParameters:\nstrRef=<openpyxl.chart.data_source.StrRef object>\nParameters:\nf='Objetivos!$D$14', strCache=<openpyxl.chart.data_source.StrData object>\nParameters:\nptCount=1, pt=[<openpyxl.chart.data_source.StrVal object>\nParameters:\nidx=0, v='Avance'], v=None",
+        "val_ref": "Objetivos!$D$15:$D$19",
+        "cat_ref": "Objetivos!$A$15:$A$19"
+      },
+      {
+        "index": 2,
+        "title": "<openpyxl.chart.series.SeriesLabel object>\nParameters:\nstrRef=<openpyxl.chart.data_source.StrRef object>\nParameters:\nf='Objetivos!$E$14', strCache=<openpyxl.chart.data_source.StrData object>\nParameters:\nptCount=1, pt=[<openpyxl.chart.data_source.StrVal object>\nParameters:\nidx=0, v='Faltante'], v=None",
+        "val_ref": "Objetivos!$E$15:$E$19",
+        "cat_ref": "Objetivos!$A$15:$A$19"
+      }
+    ],
+    "dataLabels": {
+      "showVal": true,
+      "showCatName": false,
+      "showSerName": false,
+      "showPercent": false,
+      "numFmt": null,
+      "showLegendKey": false
+    },
+    "axis": {
+      "x_axis_delete": false,
+      "y_axis_delete": true
+    },
+    "view3D": {
+      "rotX": 15.0,
+      "rotY": 20,
+      "rAngAx": true
+    },
+    "grouping": "stacked",
+    "shape": "cylinder",
+    "legend": "None"
+  }
+]
