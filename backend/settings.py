@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'dashboard_api',
     'notificaciones_api',
     'caja_chica_api',
+    'buzon_api',
     'rest_framework',
     'rest_framework_simplejwt',
     'corsheaders',
@@ -188,6 +189,7 @@ SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
     'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
     'BLACKLIST_AFTER_ROTATION': True,
+    'USER_ID_FIELD': 'usuario',
 }
 
 # ---------
@@ -287,4 +289,6 @@ DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
 # URL del Frontend para enlaces en correos electrónicos
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
+# Force dev server reload
+
 

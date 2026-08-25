@@ -52,6 +52,7 @@ export default defineConfig(({ mode }) => {
     server: {
       host: "0.0.0.0", // escucha en todas las interfaces de red
       port: 5173,
+      allowedHosts: true, // permite cualquier host en desarrollo local
       strictPort: false,
       open: false,
       fs: {
@@ -77,6 +78,6 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
-    base: '/',
+    base: './',
   };
 });

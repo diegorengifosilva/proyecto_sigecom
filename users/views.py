@@ -28,11 +28,13 @@ from .models import (
     Area,
     Cargo,
     Usuario,
+    Banco,
     )
 from .serializers import (
     AreasSerializer,
     CargosSerializer,
     UsuarioSerializer,
+    BancosSerializer,
 )
 
 @api_view(["GET"])
@@ -279,3 +281,63 @@ def cambiar_contrasena(request):
     usuario.save(using="default")
 
     return Response({"success": "Contraseña cambiada con éxito."}, status=status.HTTP_200_OK)
+
+@csrf_exempt
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def gestionar_usuario_modulos(request, id_usuario):
+    """
+    Asigna o remueve los módulos asignados de un usuario específico.
+    """
+    try:
+        usuario = Usuario.objects.using("default").get(pk=id_usuario)
+    except Usuario.DoesNotExist:
+        return Response({"error": "Usuario no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+
+    modulo_nombres = request.data.get("modulos", [])
+    
+    from core.models import Modulo
+    modulos = Modulo.objects.using("default").filter(nombre__in=modulo_nombres)
+    
+    # Actualizar ManyToMany modulos
+    usuario.modulos.set(modulos)
+    
+    return Response({
+        "success": True,
+        "modulos": list(usuario.modulos.values_list('nombre', flat=True))
+    }, status=status.HTTP_200_OK)
+
+@api_view(["GET", "PUT"])
+@permission_classes([IsAuthenticated])
+def detalle_usuario(request, id_usuario):
+    try:
+        usuario = Usuario.objects.using("default").get(pk=id_usuario)
+    except Usuario.DoesNotExist:
+        return Response({"error": "Usuario no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == "GET":
+        serializer = UsuarioSerializer(usuario)
+        return Response(serializer.data)
+
+    elif request.method == "PUT":
+        data = request.data.copy()
+        
+        # Hashing the password if new password is sent
+        nueva_contrasena = data.get("nueva_contrasena")
+        if nueva_contrasena:
+            usuario.contrasena = make_password(nueva_contrasena)
+            usuario.save(using="default")
+
+        # Serializer partial update
+        serializer = UsuarioSerializer(usuario, data=data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def lista_bancos(request):
+    bancos = Banco.objects.using("default").filter(activo=1).order_by("nombre")
+    serializer = BancosSerializer(bancos, many=True)
+    return Response(serializer.data)

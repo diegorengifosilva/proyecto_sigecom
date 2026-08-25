@@ -1761,7 +1761,7 @@ const EditableGroupRow = ({
                       </div>
                     </div>
                     
-                    <div className="overflow-x-auto overflow-visible">
+                    <div className="overflow-x-auto overflow-y-hidden">
                       <table className="min-w-full table-fixed divide-y divide-slate-100">
                         <thead className="bg-slate-100/50 border-b border-slate-200">
                           <tr>
@@ -2238,17 +2238,17 @@ const EditableGroupRow = ({
                       </div>
                     </div>
                     
-                    <div className="overflow-x-auto overflow-visible">
+                    <div className="overflow-x-auto overflow-y-hidden">
                       <table className="min-w-full table-fixed divide-y divide-slate-100">
                         <thead className="bg-slate-100/50 border-b border-slate-200">
                           <tr>
                             <th className="w-[15%] px-3 py-2 text-center text-[10px] font-black text-slate-750 uppercase tracking-wider">Código Gasto</th>
                             <th className="w-[35%] px-3 py-2 text-center text-[10px] font-black text-slate-750 uppercase tracking-wider">Descripción</th>
                             <th className="w-[10%] px-3 py-2 text-center text-[10px] font-black text-slate-750 uppercase tracking-wider">Cantidad</th>
-                            <th className="w-[10%] px-3 py-2 text-center text-[10px] font-black text-slate-750 uppercase tracking-wider">Días</th>
-                            <th className="w-[12%] px-3 py-2 text-center text-[10px] font-black text-slate-750 uppercase tracking-wider">Precio</th>
-                            <th className="w-[13%] px-3 py-2 text-center text-[10px] font-black text-slate-750 uppercase tracking-wider">Total</th>
-                            <th className="w-[5%] px-3 py-2"></th>
+                            <th className="w-[15%] px-3 py-2 text-center text-[10px] font-black text-slate-750 uppercase tracking-wider">Días</th>
+                            <th className="w-[15%] px-3 py-2 text-center text-[10px] font-black text-slate-750 uppercase tracking-wider">Precio</th>
+                            <th className="w-[8%] px-3 py-2 text-center text-[10px] font-black text-slate-750 uppercase tracking-wider">Total</th>
+                            <th className="w-[3%] px-3 py-2"></th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
@@ -2553,7 +2553,7 @@ const EditableGroupRow = ({
                       </div>
                     </div>
                     
-                    <div className="overflow-x-auto overflow-visible">
+                    <div className="overflow-x-auto overflow-y-hidden">
                       <table className="min-w-full table-fixed divide-y divide-slate-100">
                         <thead className="bg-slate-100/50 border-b border-slate-200">
                           <tr>
@@ -3955,11 +3955,25 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     localStorage.setItem('sigecom_ocultar_totales_suministros_map', JSON.stringify(ocultarTotalesMap));
   }, [ocultarTotalesMap]);
 
-  const toggleOcultarTotalesGrupo = (codigoGrupo) => {
+  const toggleOcultarTotalesGrupo = async (codigoGrupo) => {
+    const newValue = !ocultarTotalesMap[codigoGrupo];
     setOcultarTotalesMap(prev => ({
       ...prev,
-      [codigoGrupo]: !prev[codigoGrupo]
+      [codigoGrupo]: newValue
     }));
+
+    // Sincronizar en base de datos
+    const gp = Object.values(gruposSuministros).find(g => g.codigo_grupo === codigoGrupo);
+    if (gp && gp.id && typeof gp.id !== 'string') {
+      try {
+        await api.put(`cotizaciones/lista_suministros/${numReg}/`, {
+          id_suministro: gp.id,
+          total_por_grupo: newValue ? 1 : 0
+        });
+      } catch (err) {
+        console.error("Error al actualizar total_por_grupo:", err);
+      }
+    }
   };
 
   const isReadOnly = Number(data?.estado_envio ?? 0) === 2;
@@ -5580,6 +5594,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     handleExportarGrupoXLS,
     handleExportarGeneralXLS,
     handleImportarDesdeXLS,
+    handleDescargarPlantillaXLS,
     handleGuardarOrden,
     sensors,
     handleDragEnd,
@@ -5588,6 +5603,24 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     isSuministrosDirty,
     saveSuministros,
   } = useCotizacionSuministros(numReg);
+
+  useEffect(() => {
+    if (!gruposSuministros) return;
+    setOcultarTotalesMap(prev => {
+      let changed = false;
+      const next = { ...prev };
+      Object.values(gruposSuministros).forEach(gp => {
+        if (gp.total_por_grupo !== undefined && gp.total_por_grupo !== null) {
+          const dbVal = gp.total_por_grupo === 1;
+          if (next[gp.codigo_grupo] !== dbVal) {
+            next[gp.codigo_grupo] = dbVal;
+            changed = true;
+          }
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [gruposSuministros]);
 
   const sortedGrupos = useMemo(() => {
     return Object.values(gruposSuministros || {}).sort((a, b) => (a.orden || 0) - (b.orden || 0));
@@ -6107,7 +6140,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     if (!isSuministrosDirty || isReadOnly) return;
     const timer = setTimeout(async () => {
       try {
-        await saveSuministros();
+        await saveSuministros(ocultarTotalesMap);
         await loadAllData(true);
       } catch (err) {
         console.error("Error al autoguardar suministros:", err);
@@ -7077,18 +7110,18 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 {...dndAttributes}
                 data-drag-handle
                 onClick={(e) => e.stopPropagation()}
-                className="cursor-grab active:cursor-grabbing p-0.5 text-gray-300 hover:text-gray-500 rounded transition-colors"
+                className="cursor-grab active:cursor-grabbing p-0.5 text-slate-500 hover:text-slate-800 rounded transition-colors"
               >
                 <Icon name="grip-vertical" className="h-3 w-3" />
               </div>
             ) : (
-              <div className="p-0.5 text-gray-200">
+              <div className="p-0.5 text-slate-400">
                 <Icon name="grip-vertical" className="h-3 w-3" />
               </div>
             )}
 
             <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-0' : '-rotate-90'}`}>
-              <Icon name="chevron-down" className="h-3.5 w-3.5 text-gray-400" />
+              <Icon name="chevron-down" className="h-3.5 w-3.5 text-slate-600" />
             </div>
 
             <div className="flex flex-col" onClick={(e) => e.stopPropagation()}>
@@ -7229,13 +7262,13 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
               transition={{ duration: 0.2 }}
             >
               {/* Tabla de Items */}
-              <div className="w-full overflow-x-auto border-t border-gray-100">
+              <div className="w-full overflow-x-auto overflow-y-hidden border-t border-gray-100">
                 <table className="min-w-[850px] md:min-w-full table-fixed">
                   <thead className="bg-slate-100 border-b border-slate-200">
                     <tr>
                       <th className="w-[1.5%] py-1.5"></th>
                       <th className={isVenta ? "w-[14%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[15%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Código / Marca</th>
-                      <th className={isVenta ? "w-[26.5%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[29.5%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Descripción</th>
+                      <th className="px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Descripción</th>
                       <th className={isVenta ? "w-[6%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[7%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Cantidad</th>
                       <th className={isVenta ? "w-[11%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[12%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Costo Unit.</th>
                       {isVenta && (
@@ -7248,7 +7281,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                           <th className={isVenta ? "w-[11%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[13%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Venta Total</th>
                         </>
                       )}
-                      <th className="w-[5%] py-1.5"></th>
+                      <th className="w-[60px] py-1.5 text-center"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
@@ -7384,7 +7417,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                               <input
                                 id={`quick-add-descripcion-${grupo.codigo_grupo}`}
                                 type="text"
-                                className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-0.5 font-semibold text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-center"
+                                className="w-full text-[10px] border border-gray-300 rounded px-1.5 py-0.5 font-semibold text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-center"
                                 value={currentForm.descripcion || ""}
                                 placeholder="Descripción..."
                                 onChange={e => handleRowChange("descripcion", e.target.value.toUpperCase(), "add", grupo.codigo_grupo)}
@@ -7402,7 +7435,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                           <td className="px-3 py-1.5">
                             <input
                               type="number"
-                              className="w-full text-[11px] border border-gray-300 text-center rounded px-1 py-0.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              className="w-full text-[10px] border border-gray-300 text-center rounded px-1 py-0.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
                               value={currentForm.cantidad === undefined || currentForm.cantidad === null ? "" : currentForm.cantidad}
                               onChange={e => handleRowChange("cantidad", e.target.value, "add", grupo.codigo_grupo)}
                               onFocus={(e) => e.target.select()}
@@ -7414,7 +7447,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                               type="number"
                               step="0.01"
                               placeholder="0.00"
-                              className="w-full text-[11px] border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-center"
+                              className="w-full text-[10px] border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-center"
                               value={currentForm.costo_precio === undefined || currentForm.costo_precio === null ? "" : currentForm.costo_precio}
                               onChange={e => handleRowChange("costo_precio", e.target.value, "add", grupo.codigo_grupo)}
                               onFocus={(e) => e.target.select()}
@@ -7423,7 +7456,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                           {isVenta && (
                             <td className="px-3 py-1.5 text-center">
                               <div className="flex flex-col items-center justify-center text-center gap-1">
-                                <span className="text-[11px] font-bold text-gray-700">
+                                <span className="text-[10px] font-bold text-gray-700">
                                   {formatMoneySymbol(Number(currentForm.costo_envio || 0))}
                                 </span>
                                 {tipoVenta === "T" && (
@@ -7444,7 +7477,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                                 </span>
                                 <input
                                   type="text"
-                                  className="w-full text-[11px] border border-gray-300 text-right pr-1 pl-4 rounded py-0.5 font-bold text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                                  className="w-full text-[10px] border border-gray-300 text-right pr-1 pl-4 rounded py-0.5 font-bold text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
                                   value={currentForm.utilidad === undefined || currentForm.utilidad === null ? "" : currentForm.utilidad}
                                   onChange={(e) => handleDecimalChange(e, (val) => handleRowChange("utilidad", val, "add", grupo.codigo_grupo))}
                                   onFocus={(e) => e.target.select()}
@@ -7466,11 +7499,11 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                           {!ocultarTotalesGrupo && (
                             <>
                               {/* Venta Precio */}
-                              <td className="px-3 py-1.5 text-center text-[11.5px] font-semibold text-gray-500">
+                              <td className="px-3 py-1.5 text-center text-[10px] font-semibold text-gray-500">
                                 {formatMoneySymbol(Number(currentForm.precio_venta || 0))}
                               </td>
                               {/* Venta Total */}
-                              <td className="px-3 py-1.5 text-center text-[11.5px] font-black text-indigo-600">
+                              <td className="px-3 py-1.5 text-center text-[10px] font-black text-indigo-600">
                                 {formatMoneySymbol(Number(currentForm.venta_total || 0))}
                               </td>
                             </>
@@ -7621,9 +7654,22 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                         type="button"
                         title="Duplicar Grupo"
                         onClick={(e) => { e.stopPropagation(); handleDuplicarGrupo(grupo.codigo_grupo); }}
-                        className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded transition-colors"
+                        className="p-1.5 2xl:p-1 hover:bg-amber-50 rounded transition-colors"
                       >
-                        <Icon name="copy" className="h-3.5 w-3.5" />
+                        <Icon name="copy" className="h-[12px] w-[12px] 2xl:h-3.5 2xl:w-3.5 text-amber-600" />
+                      </button>
+
+                      {/* Botón: DESCARGAR PLANTILLA */}
+                      <button
+                        type="button"
+                        title="Descargar Plantilla de Importación (.xlsx)"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDescargarPlantillaXLS();
+                        }}
+                        className="p-1.5 2xl:p-1 hover:bg-indigo-50 rounded transition-colors"
+                      >
+                        <Icon name="download" className="h-[12px] w-[12px] 2xl:h-3.5 2xl:w-3.5 text-indigo-500" />
                       </button>
 
                       {/* Botón: IMPORTAR DATOS */}
@@ -7635,25 +7681,12 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                           setXlsImportGrupoActivo(grupo.codigo_grupo);
                           xlsInputRef.current?.click();
                         }}
-                        className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded transition-colors"
+                        className="p-1.5 2xl:p-1 hover:bg-teal-50 rounded transition-colors"
                       >
-                        <Icon name="file-up" className="h-3.5 w-3.5" />
+                        <Icon name="upload" className="h-[12px] w-[12px] 2xl:h-3.5 2xl:w-3.5 text-teal-600" />
                       </button>
                     </>
                   )}
-
-                  {/* Botón: EXPORTAR DATOS */}
-                  <button
-                    type="button"
-                    title="Exportar Grupo a Excel"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleExportarGrupoXLS(grupo.codigo_grupo);
-                    }}
-                    className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded transition-colors"
-                  >
-                    <Icon name="file-down" className="h-3.5 w-3.5" />
-                  </button>
 
                   <div className="w-[1px] h-3.5 bg-gray-200 mx-0.5" />
 
@@ -7665,9 +7698,9 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                       e.stopPropagation();
                       toggleOcultarTotalesGrupo(grupo.codigo_grupo);
                     }}
-                    className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded transition-colors"
+                    className="p-1.5 2xl:p-1 hover:bg-sky-50 rounded transition-colors"
                   >
-                    <Icon name={ocultarTotalesGrupo ? "eye-off" : "eye"} className="h-3.5 w-3.5" />
+                    <Icon name={ocultarTotalesGrupo ? "eye-off" : "eye"} className="h-[12px] w-[12px] 2xl:h-3.5 2xl:w-3.5 text-sky-600" />
                   </button>
 
                   {!isReadOnly && (
@@ -7682,9 +7715,9 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                           e.stopPropagation();
                           handleEliminarGrupo(grupo.codigo_grupo);
                         }}
-                        className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                        className="p-1.5 2xl:p-1 hover:bg-red-50 rounded transition-colors"
                       >
-                        <Icon name="trash-2" className="h-3.5 w-3.5" />
+                        <Icon name="trash-2" className="h-[12px] w-[12px] 2xl:h-3.5 2xl:w-3.5 text-red-500" />
                       </button>
                     </>
                   )}
@@ -7891,7 +7924,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 id={`quick-add-srv-desc-${subgrupoId}`}
                 type="text"
                 className={cn(
-                  "w-full text-[10.5px] border rounded px-1.5 py-0.5 uppercase font-semibold text-gray-700 bg-white",
+                  "w-full text-[10px] border rounded px-1.5 py-0.5 uppercase font-semibold text-gray-700 bg-white",
                   inlineDescError.subgrupoId === sg.id_servicio ? "border-red-400 ring-1 ring-red-100" : "border-gray-300"
                 )}
                 placeholder="DESCRIPCIÓN DE LA TAREA..."
@@ -7914,37 +7947,38 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           <td className="px-2 py-1 text-center">
             <input
               type="number"
-              className="w-full text-center text-[10.5px] border border-gray-300 text-center rounded px-1 py-0.5 font-bold bg-white"
+              className="w-full text-center text-[10px] border border-gray-300 text-center rounded px-1 py-0.5 font-bold bg-white"
               value={form.cantidad_hombres === undefined || form.cantidad_hombres === null ? "" : form.cantidad_hombres}
               onChange={(e) => setForm({ cantidad_hombres: parseInt(e.target.value) || 0 })}
               onFocus={(e) => e.target.select()}
             />
           </td>
-          {/* DÍAS */}
+          {/* DÍAS / HORAS */}
           <td className="px-2 py-1 text-center">
-            <input
-              type="number"
-              className="w-full text-center text-[10.5px] border border-gray-300 text-center rounded px-1 py-0.5 font-semibold bg-white"
-              value={form.cantidad_dias === undefined || form.cantidad_dias === null ? "" : form.cantidad_dias}
-              onChange={(e) => setForm({ cantidad_dias: parseInt(e.target.value) || 0 })}
-              onFocus={(e) => e.target.select()}
-            />
-          </td>
-          {/* HORAS */}
-          <td className="px-2 py-1 text-center">
-            <input
-              type="number"
-              className="w-full text-center text-[10.5px] border border-gray-300 text-center rounded px-1 py-0.5 bg-white"
-              value={form.horas === undefined || form.horas === null ? "" : form.horas}
-              onChange={(e) => setForm({ horas: parseInt(e.target.value) || 0 })}
-              onFocus={(e) => e.target.select()}
-            />
+            <div className="flex flex-col gap-1 items-center">
+              <input
+                type="number"
+                placeholder="Días"
+                className="w-full text-center text-[10px] border border-gray-300 rounded px-1 py-0.5 font-semibold bg-white"
+                value={form.cantidad_dias === undefined || form.cantidad_dias === null ? "" : form.cantidad_dias}
+                onChange={(e) => setForm({ cantidad_dias: parseInt(e.target.value) || 0 })}
+                onFocus={(e) => e.target.select()}
+              />
+              <input
+                type="number"
+                placeholder="Horas"
+                className="w-full text-center text-[9px] border border-gray-300 rounded px-1 py-0.5 font-black text-indigo-700 bg-indigo-50/50"
+                value={form.horas === undefined || form.horas === null ? "" : form.horas}
+                onChange={(e) => setForm({ horas: parseInt(e.target.value) || 0 })}
+                onFocus={(e) => e.target.select()}
+              />
+            </div>
           </td>
           {/* COSTO H/D */}
           <td className="px-2 py-1 text-center">
             <input
               type="number"
-              className="w-full text-[10.5px] border border-gray-300 text-center rounded px-1 py-0.5 bg-white"
+              className="w-full text-[10px] border border-gray-300 text-center rounded px-1 py-0.5 bg-white"
               value={form.costo_hombre_dia === undefined || form.costo_hombre_dia === null ? "" : form.costo_hombre_dia}
               onChange={(e) => setForm({ costo_hombre_dia: parseFloat(e.target.value) || 0 })}
               onFocus={(e) => e.target.select()}
@@ -7959,7 +7993,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 </span>
                 <input
                   type="text"
-                  className="w-full text-[10.5px] border border-gray-300 text-right pr-1 pl-4 rounded py-0.5 font-bold text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                  className="w-full text-[10px] border border-gray-300 text-right pr-1 pl-4 rounded py-0.5 font-bold text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
                   value={form.utilidad === undefined || form.utilidad === null ? calculatedUtilidad.toFixed(2) : form.utilidad}
                   onChange={(e) => handleDecimalChange(e, (val) => {
                     const num = parseFloat(val) || 0;
@@ -7984,11 +8018,11 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
             </div>
           </td>
           {/* COTIZADO H/D */}
-          <td className="px-3 py-1.5 text-[10.5px] text-gray-600 text-right font-medium">
+          <td className="px-3 py-1.5 text-[10px] text-gray-600 text-right font-medium">
             {formatMoneySymbol(calculatedCotizadoHD)}
           </td>
           {/* COTIZADO TOTAL */}
-          <td className="px-3 py-1.5 text-[10.5px] text-gray-900 text-right font-black">
+          <td className="px-3 py-1.5 text-[10px] text-gray-900 text-right font-black">
             {formatMoneySymbol(calculatedCotizadoTotal)}
           </td>
           <td className="px-3 py-1 text-right">
@@ -8046,7 +8080,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 id={`quick-add-srv-desc-${subgrupoId}`}
                 type="text"
                 className={cn(
-                  "w-full text-[10.5px] border rounded px-1.5 py-0.5 uppercase font-semibold text-gray-700 bg-white",
+                  "w-full text-[10px] border rounded px-1.5 py-0.5 uppercase font-semibold text-gray-700 bg-white",
                   inlineDescError.subgrupoId === sg.id_servicio ? "border-red-400 ring-1 ring-red-100" : "border-gray-300"
                 )}
                 placeholder="CONCEPTO DEL GASTO..."
@@ -8069,7 +8103,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           <td className="px-2 py-1 text-center">
             <input
               type="number"
-              className="w-full text-center text-[10.5px] border border-gray-300 text-center rounded px-1 py-0.5 font-bold bg-white"
+              className="w-full text-center text-[10px] border border-gray-300 text-center rounded px-1 py-0.5 font-bold bg-white"
               value={form.cantidad_hombres === undefined || form.cantidad_hombres === null ? "" : form.cantidad_hombres}
               onChange={(e) => setForm({ cantidad_hombres: parseInt(e.target.value) || 0 })}
               onFocus={(e) => e.target.select()}
@@ -8079,7 +8113,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           <td className="px-2 py-1 text-center">
             <input
               type="number"
-              className="w-full text-center text-[10.5px] border border-gray-300 text-center rounded px-1 py-0.5 font-semibold bg-white"
+              className="w-full text-center text-[10px] border border-gray-300 text-center rounded px-1 py-0.5 font-semibold bg-white"
               value={form.cantidad_dias === undefined || form.cantidad_dias === null ? "" : form.cantidad_dias}
               onChange={(e) => setForm({ cantidad_dias: parseInt(e.target.value) || 0 })}
               onFocus={(e) => e.target.select()}
@@ -8089,14 +8123,14 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           <td className="px-2 py-1 text-right">
             <input
               type="number"
-              className="w-full text-[10.5px] border border-gray-300 text-right rounded px-1 py-0.5 bg-white"
+              className="w-full text-[10px] border border-gray-300 text-right rounded px-1 py-0.5 bg-white"
               value={form.cotizado_hombre_dia === undefined || form.cotizado_hombre_dia === null ? "" : form.cotizado_hombre_dia}
               onChange={(e) => setForm({ cotizado_hombre_dia: parseFloat(e.target.value) || 0 })}
               onFocus={(e) => e.target.select()}
             />
           </td>
           {/* TOTAL */}
-          <td className="px-3 py-1.5 text-[10.5px] text-gray-900 text-right font-black">
+          <td className="px-3 py-1.5 text-[10px] text-gray-900 text-right font-black">
             {formatMoneySymbol(calculatedCotizadoTotal)}
           </td>
           <td className="px-3 py-1 text-right">
@@ -8158,7 +8192,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 id={`quick-add-srv-desc-${subgrupoId}`}
                 type="text"
                 className={cn(
-                  "w-full text-[10.5px] border rounded px-1.5 py-0.5 uppercase font-semibold text-gray-700 bg-white",
+                  "w-full text-[10px] border rounded px-1.5 py-0.5 uppercase font-semibold text-gray-700 bg-white",
                   inlineDescError.subgrupoId === sg.id_servicio ? "border-red-400 ring-1 ring-red-100" : "border-gray-300"
                 )}
                 placeholder="DESCRIPCIÓN DEL CONCEPTO..."
@@ -8181,7 +8215,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           <td className="px-2 py-1 text-center">
             <input
               type="number"
-              className="w-full text-center text-[10.5px] border border-gray-300 text-center rounded px-1 py-0.5 font-bold bg-white"
+              className="w-full text-center text-[10px] border border-gray-300 text-center rounded px-1 py-0.5 font-bold bg-white"
               value={form.cantidad_hombres === undefined || form.cantidad_hombres === null ? "" : form.cantidad_hombres}
               onChange={(e) => setForm({ cantidad_hombres: parseInt(e.target.value) || 0 })}
               onFocus={(e) => e.target.select()}
@@ -8191,7 +8225,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           <td className="px-2 py-1 text-center">
             <input
               type="number"
-              className="w-full text-[10.5px] border border-gray-300 text-center rounded px-1 py-0.5 bg-white"
+              className="w-full text-[10px] border border-gray-300 text-center rounded px-1 py-0.5 bg-white"
               value={form.costo_hombre_dia === undefined || form.costo_hombre_dia === null ? "" : form.costo_hombre_dia}
               onChange={(e) => setForm({ costo_hombre_dia: parseFloat(e.target.value) || 0 })}
               onFocus={(e) => e.target.select()}
@@ -8206,7 +8240,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 </span>
                 <input
                   type="text"
-                  className="w-full text-[10.5px] border border-gray-300 text-right pr-1 pl-4 rounded py-0.5 font-bold text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                  className="w-full text-[10px] border border-gray-300 text-right pr-1 pl-4 rounded py-0.5 font-bold text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
                   value={form.utilidad === undefined || form.utilidad === null ? calculatedUtilidad.toFixed(2) : form.utilidad}
                   onChange={(e) => handleDecimalChange(e, (val) => {
                     const num = parseFloat(val) || 0;
@@ -8231,11 +8265,11 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
             </div>
           </td>
           {/* VENTA PRECIO */}
-          <td className="px-3 py-1.5 text-[10.5px] text-gray-600 text-right font-medium">
+          <td className="px-3 py-1.5 text-[10px] text-gray-600 text-right font-medium">
             {formatMoneySymbol(calculatedCotizadoHD)}
           </td>
           {/* VENTA TOTAL */}
-          <td className="px-3 py-1.5 text-[10.5px] text-gray-900 text-right font-black">
+          <td className="px-3 py-1.5 text-[10px] text-gray-900 text-right font-black">
             {formatMoneySymbol(calculatedCotizadoTotal)}
           </td>
           <td className="px-3 py-1 text-right">
@@ -8294,18 +8328,18 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 {...dndAttributes}
                 data-drag-handle
                 onClick={(e) => e.stopPropagation()}
-                className="cursor-grab active:cursor-grabbing p-0.5 text-gray-300 hover:text-gray-500 rounded transition-colors"
+                className="cursor-grab active:cursor-grabbing p-0.5 text-slate-500 hover:text-slate-800 rounded transition-colors"
               >
                 <Icon name="grip-vertical" className="h-3 w-3" />
               </div>
             ) : (
-              <div className="p-0.5 text-gray-200">
+              <div className="p-0.5 text-slate-400">
                 <Icon name="grip-vertical" className="h-3 w-3" />
               </div>
             )}
 
             <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-0' : '-rotate-90'}`}>
-              <Icon name="chevron-down" className="h-3.5 w-3.5 text-gray-400" />
+              <Icon name="chevron-down" className="h-3.5 w-3.5 text-slate-700" />
             </div>
 
             <div className="flex flex-col min-w-0" onClick={(e) => e.stopPropagation()}>
@@ -8393,17 +8427,17 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                   type="button"
                   title="Duplicar Grupo de Servicios"
                   onClick={(e) => { e.stopPropagation(); handleDuplicarServicio(grupo.id_servicio); }}
-                  className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded transition-colors"
+                  className="p-1.5 2xl:p-1 hover:bg-amber-50 rounded transition-colors"
                 >
-                  <Icon name="copy" className="h-3.5 w-3.5" />
+                  <Icon name="copy" className="h-[12px] w-[12px] 2xl:h-3.5 2xl:w-3.5 text-amber-600" />
                 </button>
                 <button
                   type="button"
                   title="Eliminar Grupo Completo"
                   onClick={(e) => { e.stopPropagation(); handleEliminarGrupoServicio(grupo.id_servicio, grupo.tituloGeneral); }}
-                  className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                  className="p-1.5 2xl:p-1 hover:bg-red-50 rounded transition-colors"
                 >
-                  <Icon name="trash-2" className="h-3.5 w-3.5" />
+                  <Icon name="trash-2" className="h-[12px] w-[12px] 2xl:h-3.5 2xl:w-3.5 text-red-500" />
                 </button>
               </div>
             )}
@@ -8577,7 +8611,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                               toggleSubgrupo(sgKey);
                             }}
                           >
-                            <Icon name="chevron-down" className="h-3 w-3 text-gray-400 cursor-pointer" />
+                            <Icon name="chevron-down" className="h-3 w-3 text-slate-700 cursor-pointer font-bold" />
                           </div>
                           {editingSubgrupoId === sg.id_servicio ? (
                             <input
@@ -8639,22 +8673,26 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                             exit={{ height: 0, opacity: 0 }}
                             transition={{ duration: 0.15 }}
                           >
-                            <div className="w-full overflow-x-auto">
+                            <div className="w-full overflow-x-auto overflow-y-hidden">
                               <table className="min-w-[850px] md:min-w-full table-fixed border-collapse">
                                 {sg.tipoCodigo?.endsWith("04") && (
                                   <thead className="bg-slate-100 border-b border-slate-200">
                                     <tr>
                                       <th className="w-[1.5%] py-1.5"></th>
                                       <th className="w-[14%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Código Personal</th>
-                                      <th className="w-[26.5%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Descripción</th>
+                                      <th className="px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Descripción</th>
                                       <th className="w-[5%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Cantidad</th>
-                                      <th className="w-[5%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Días</th>
-                                      <th className="w-[5%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Horas</th>
+                                      <th className="w-[8%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Días / Horas</th>
                                       <th className="w-[8%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Costo H/D</th>
                                       <th className="w-[10%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Utilidad</th>
                                       <th className="w-[8%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Cotizado H/D</th>
-                                      <th className="w-[13%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Cotizado Total</th>
-                                      <th className="w-[4%] py-1.5"></th>
+                                      <th className="w-[9%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">
+                                        <div className="flex flex-col items-center justify-center leading-none">
+                                          <span>Cotizado</span>
+                                          <span>Total</span>
+                                        </div>
+                                      </th>
+                                      <th className="w-[60px] py-1.5"></th>
                                     </tr>
                                   </thead>
                                 )}
@@ -8664,12 +8702,12 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                                     <tr>
                                       <th className="w-[1.5%] py-1.5"></th>
                                       <th className="w-[15%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Código Gasto</th>
-                                      <th className="w-[42.5%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Descripción</th>
+                                      <th className="px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Descripción</th>
                                       <th className="w-[6%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Cantidad</th>
                                       <th className="w-[6%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Días</th>
                                       <th className="w-[9%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Precio</th>
                                       <th className="w-[16%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Total</th>
-                                      <th className="w-[4%] py-1.5"></th>
+                                      <th className="w-[60px] py-1.5 text-center"></th>
                                     </tr>
                                   </thead>
                                 )}
@@ -8679,13 +8717,13 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                                     <tr>
                                       <th className="w-[1.5%] py-1.5"></th>
                                       <th className="w-[15%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Código Gasto</th>
-                                      <th className="w-[33.5%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Descripción</th>
+                                      <th className="px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Descripción</th>
                                       <th className="w-[6%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Cantidad</th>
                                       <th className="w-[8%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Precio</th>
                                       <th className="w-[10%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Utilidad</th>
                                       <th className="w-[10%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Venta Precio</th>
                                       <th className="w-[12%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Venta Total</th>
-                                      <th className="w-[4%] py-1.5"></th>
+                                      <th className="w-[60px] py-1.5 text-center"></th>
                                     </tr>
                                   </thead>
                                 )}
@@ -10190,7 +10228,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
             className="flex items-center justify-between w-full px-5 py-4 bg-gray-50 hover:bg-gray-100/80 transition-colors border-b border-gray-200"
           >
             <div className="flex items-center gap-3">
-              <Icon name={expandedCategories.includes('Suministros') ? 'chevron-down' : 'chevron-right'} className="h-4 w-4 text-gray-500" />
+              <Icon name={expandedCategories.includes('Suministros') ? 'chevron-down' : 'chevron-right'} className="h-4 w-4 text-indigo-600 font-bold" />
               <h3 className="text-[13px] font-black text-gray-900 uppercase tracking-widest">Suministros</h3>
               <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 text-[10px] font-bold rounded-md uppercase">
                 {Object.keys(gruposSuministros || {}).length} Grupos
@@ -10310,7 +10348,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
             className="flex items-center justify-between w-full px-5 py-4 bg-gray-50 hover:bg-gray-100/80 transition-colors border-b border-gray-200"
           >
             <div className="flex items-center gap-3">
-              <Icon name={expandedCategories.includes('Servicios') ? 'chevron-down' : 'chevron-right'} className="h-4 w-4 text-gray-500" />
+              <Icon name={expandedCategories.includes('Servicios') ? 'chevron-down' : 'chevron-right'} className="h-4 w-4 text-indigo-600 font-bold" />
               <h3 className="text-[13px] font-black text-gray-900 uppercase tracking-widest">Servicios</h3>
               <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 text-[10px] font-bold rounded-md uppercase">
                 {Object.keys(gruposServicios || {}).length} Grupos
@@ -10433,7 +10471,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
             <div className="flex items-center">
               <Icon
                 name={expandedCategories.includes('Condiciones') ? 'chevron-down' : 'chevron-right'}
-                className="h-5 w-5 text-gray-500 mr-2"
+                className="h-5 w-5 text-indigo-600 font-bold mr-2"
               />
               <h3 className="text-[13px] font-black text-gray-900 uppercase tracking-widest">Condiciones Generales</h3>
             </div>
@@ -10893,27 +10931,24 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
               </h3>
             </div>
 
-            <div className="p-4 space-y-4">
+            <div className="p-2 space-y-2">
               {/* Referencia */}
               <div className="group relative bg-gray-50/80 p-3 rounded-xl border border-gray-100 transition-all">
                 <div className="flex justify-between items-center mb-1">
-                  <label className="text-[9.5px] font-bold text-slate-500 uppercase tracking-tighter">
-                    Referencia del Proyecto
+                  <label className="text-[9.5px] font-black text-indigo-700 uppercase tracking-wider mb-0.5 block">
+                    Referencia
                   </label>
-                  {!isReadOnly && (
-                    <Icon name="pencil" className="h-2.5 w-2.5 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
-                  )}
                 </div>
 
                 <div className="relative min-h-[1.5rem] flex items-center">
-                  <p className="text-[10.5px] font-black uppercase leading-snug text-gray-900 break-words w-full">
+                  <p className="text-[11px] font-black uppercase leading-snug text-gray-900 break-words w-full">
                     {data.referencia || 'SIN REFERENCIA ASIGNADA'}
                   </p>
 
                   {!isReadOnly && (
                     <textarea
                       rows="2"
-                      className="absolute inset-0 w-full h-full opacity-0 focus:opacity-100 bg-white border border-indigo-300 rounded-lg px-2 py-1 text-[10px] font-black text-gray-900 uppercase outline-none resize-none shadow-sm"
+                      className="absolute inset-0 w-full h-full opacity-0 focus:opacity-100 bg-white border border-indigo-300 rounded-lg px-2 py-1 text-[11px] font-black text-gray-900 uppercase outline-none resize-none shadow-sm"
                       defaultValue={data.referencia}
                       onBlur={(e) => {
                         if (e.target.dataset.saved === "true") {
@@ -10951,7 +10986,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                       onChange={(e) => handleFieldChange("probabilidad", e.target.value)}
                       options={probOptions}
                       disabled={isReadOnly}
-                      className="bg-transparent border-none p-0 h-auto font-black text-[10px] text-gray-900 focus:ring-0 cursor-pointer"
+                      className="bg-transparent border-none p-0 h-auto font-black text-[11px] text-gray-900 focus:ring-0 cursor-pointer"
                     />
                     {!isReadOnly && (
                       <div className="absolute -right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
@@ -10969,7 +11004,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                     onChange={(e) => handleFieldChange("igv", e.target.value)}
                     options={igvOptions}
                     disabled={isReadOnly}
-                    className="bg-transparent border-none p-0 h-auto font-black text-[10px] text-gray-900 focus:ring-0 cursor-pointer"
+                    className="bg-transparent border-none p-0 h-auto font-black text-[11px] text-gray-900 focus:ring-0 cursor-pointer"
                   />
                 </CompactField>
               </div>
@@ -10985,7 +11020,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                       onChange={(e) => handleFieldChange("tipo_moneda", e.target.value)}
                       options={monedasOptions}
                       disabled={isReadOnly}
-                      className="bg-transparent border-none p-0 h-auto font-black text-[10px] text-gray-900 focus:ring-0 cursor-pointer"
+                      className="bg-transparent border-none p-0 h-auto font-black text-[11px] text-gray-900 focus:ring-0 cursor-pointer"
                     />
                     {!isReadOnly && (
                       <div className="absolute -right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
@@ -10997,7 +11032,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
 
                 <CompactField label="T. Cambio" className="group relative">
                   <div className="relative cursor-pointer min-h-[15px] flex items-center">
-                    <span className="text-[10px] font-black text-gray-900 truncate">
+                    <span className="text-[11px] font-black text-gray-900 truncate">
                       {data.tipo_cambio || '0.00'}
                     </span>
                     {!isReadOnly && (
@@ -11006,7 +11041,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                         <input
                           type="number"
                           step="0.001"
-                          className="absolute inset-0 w-full h-full opacity-0 focus:opacity-100 bg-white border border-indigo-300 rounded px-1 text-[10px] font-black text-gray-900 outline-none"
+                          className="absolute inset-0 w-full h-full opacity-0 focus:opacity-100 bg-white border border-indigo-300 rounded px-1 text-[11px] font-black text-gray-900 outline-none"
                           defaultValue={data.tipo_cambio}
                           onBlur={(e) => {
                             if (e.target.dataset.saved === "true") {
@@ -11039,7 +11074,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
               <div className="grid grid-cols-2 gap-3">
                 <CompactField label="Forma Pago" className="group relative">
                   <div className="relative cursor-pointer min-h-[15px] flex items-center">
-                    <span className="text-[10px] font-black text-gray-900 truncate">
+                    <span className="text-[11px] font-black text-gray-900 truncate">
                       {data.forma_pago || '---'}
                     </span>
                     {!isReadOnly && (
@@ -11047,7 +11082,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                         <Icon name="pencil" className="h-2.5 w-2.5 ml-1 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
                         <input
                           type="text"
-                          className="absolute inset-0 w-full h-full opacity-0 focus:opacity-100 bg-white border border-indigo-300 rounded px-1 text-[10px] font-black text-gray-900 uppercase outline-none"
+                          className="absolute inset-0 w-full h-full opacity-0 focus:opacity-100 bg-white border border-indigo-300 rounded px-1 text-[11px] font-black text-gray-900 uppercase outline-none"
                           defaultValue={data.forma_pago}
                           onBlur={(e) => {
                             if (e.target.dataset.saved === "true") {
@@ -11077,7 +11112,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
 
                 <CompactField label="Lugar Entrega" className="group relative">
                   <div className="relative cursor-pointer min-h-[15px] flex items-center">
-                    <span className="text-[10px] font-black text-gray-900 truncate">
+                    <span className="text-[11px] font-black text-gray-900 truncate">
                       {data.lugar || '---'}
                     </span>
                     {!isReadOnly && (
@@ -11085,7 +11120,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                         <Icon name="pencil" className="h-2.5 w-2.5 ml-1 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
                         <input
                           type="text"
-                          className="absolute inset-0 w-full h-full opacity-0 focus:opacity-100 bg-white border border-indigo-300 rounded px-1 text-[10px] font-black text-gray-900 uppercase outline-none"
+                          className="absolute inset-0 w-full h-full opacity-0 focus:opacity-100 bg-white border border-indigo-300 rounded px-1 text-[11px] font-black text-gray-900 uppercase outline-none"
                           defaultValue={data.lugar}
                           onBlur={(e) => {
                             if (e.target.dataset.saved === "true") {
@@ -11550,27 +11585,27 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
               <div className="grid grid-cols-2 gap-4 transition-all duration-300">
                 {/* Afecto a */}
                 <div className="flex flex-col gap-1 bg-slate-50 border border-slate-200 rounded-xl p-3 hover:border-slate-300 transition-colors group">
-                  <span className="text-[9px] font-black text-slate-455 uppercase tracking-wider">Afecto a</span>
+                  <span className="text-[9.5px] font-black text-indigo-700 uppercase tracking-wider">Afecto a</span>
                   <div className="relative">
                     <select
                       disabled={isReadOnly}
                       value={descuentoAfecto}
                       onChange={(e) => setDescuentoAfecto(e.target.value)}
-                      className="bg-transparent border-none p-0 h-auto font-black text-xs text-slate-855 focus:ring-0 cursor-pointer w-full appearance-none pr-5 uppercase outline-none"
+                      className="bg-transparent border-none p-0 h-auto font-black text-[12px] text-slate-900 focus:ring-0 cursor-pointer w-full appearance-none pr-5 uppercase outline-none"
                     >
                       <option value="t">TOTAL GENERAL</option>
                       <option value="su">SUMINISTROS</option>
                       <option value="ser">SERVICIOS</option>
                     </select>
                     {!isReadOnly && (
-                      <Icon name="chevron-down" className="absolute right-0 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 group-hover:text-slate-655 transition-colors pointer-events-none" />
+                      <Icon name="chevron-down" className="absolute right-0 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-600 group-hover:text-slate-700 transition-colors pointer-events-none" />
                     )}
                   </div>
                 </div>
 
                 {/* Porcentaje */}
                 <div className="flex flex-col gap-1 bg-slate-50 border border-slate-200 rounded-xl p-3 hover:border-slate-300 transition-colors group">
-                  <span className="text-[9px] font-black text-slate-455 uppercase tracking-wider">Porcentaje</span>
+                  <span className="text-[9.5px] font-black text-indigo-700 uppercase tracking-wider">Porcentaje</span>
                   <div className="relative flex items-center w-full">
                     <input
                       type="number"
@@ -11579,15 +11614,15 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                       value={descuentoPorcentaje}
                       onChange={(e) => handleDecimalChange(e, handleDescuentoPorcentajeChange)}
                       placeholder="0.00"
-                      className="bg-transparent border-none p-0 h-auto font-black text-xs text-slate-855 focus:ring-0 outline-none w-full pr-5 font-mono"
+                      className="bg-transparent border-none p-0 h-auto font-black text-[12px] text-slate-900 focus:ring-0 outline-none w-full pr-5 font-mono"
                     />
-                    <span className="absolute right-0 text-xs font-bold text-slate-405">%</span>
+                    <span className="absolute right-0 text-[12px] font-black text-slate-500">%</span>
                   </div>
                 </div>
 
                 {/* Importe */}
                 <div className="flex flex-col gap-1 bg-slate-50 border border-slate-200 rounded-xl p-3 hover:border-slate-300 transition-colors group col-span-2">
-                  <span className="text-[9px] font-black text-slate-455 uppercase tracking-wider">Importe Descuento</span>
+                  <span className="text-[9.5px] font-black text-indigo-700 uppercase tracking-wider">Importe Descuento</span>
                   <div className="relative flex items-center w-full">
                     <input
                       type="number"
@@ -11596,9 +11631,9 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                       value={descuentoImporte}
                       onChange={(e) => handleDecimalChange(e, handleDescuentoImporteChange)}
                       placeholder="0.00"
-                      className="bg-transparent border-none p-0 h-auto font-black text-xs text-slate-855 focus:ring-0 outline-none w-full pr-6 font-mono"
+                      className="bg-transparent border-none p-0 h-auto font-black text-[12px] text-slate-900 focus:ring-0 outline-none w-full pr-6 font-mono"
                     />
-                    <span className="absolute right-0 text-xs font-bold text-slate-455">
+                    <span className="absolute right-0 text-[12px] font-black text-slate-500">
                       {data?.tipo_moneda === 'S' || data?.tipo_moneda === 'PEN' ? 'S/' : '$'}
                     </span>
                   </div>
@@ -11618,24 +11653,24 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 <div className="bg-gray-50/80 p-3.5 rounded-xl border border-gray-150 space-y-2.5">
                   <div className="flex items-center gap-1.5 pb-1.5 border-b border-gray-200/50">
                     <Icon name="calculator" className="h-3.5 w-3.5 text-teal-650" />
-                    <span className="text-[9px] font-black text-slate-700 uppercase tracking-wider">Base de Cálculo</span>
+                    <span className="text-[9.5px] font-black text-indigo-700 uppercase tracking-wider">Base de Cálculo</span>
                   </div>
                   <div className="space-y-1.5">
-                    <div className="flex justify-between items-center text-[10px] font-bold">
+                    <div className="flex justify-between items-center text-[11.5px] font-bold">
                       <span className="text-slate-500">Total Original:</span>
-                      <span className="text-slate-900 font-mono font-black">
+                      <span className="text-slate-900 font-mono font-black text-[12px]">
                         {formatMoneySymbol((Number(descuentoTotales.total || 0) + Number(descuentoTotales.des_m || 0)))}
                       </span>
                     </div>
-                    <div className="flex justify-between items-center text-[9.5px]">
-                      <span className="text-slate-550">Suministros:</span>
-                      <span className="text-slate-770 font-mono">
+                    <div className="flex justify-between items-center text-[11.5px] font-bold">
+                      <span className="text-slate-500">Suministros:</span>
+                      <span className="text-slate-900 font-mono font-black text-[12px]">
                         {formatMoneySymbol(Number(descuentoTotales.suministros || 0))}
                       </span>
                     </div>
-                    <div className="flex justify-between items-center text-[9.5px]">
-                      <span className="text-slate-550">Servicios:</span>
-                      <span className="text-slate-770 font-mono">
+                    <div className="flex justify-between items-center text-[11.5px] font-bold">
+                      <span className="text-slate-500">Servicios:</span>
+                      <span className="text-slate-900 font-mono font-black text-[12px]">
                         {formatMoneySymbol(Number(descuentoTotales.servicios || 0))}
                       </span>
                     </div>
@@ -11651,19 +11686,19 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 )}>
                   <div className="flex items-center gap-1.5 pb-1.5 border-b border-teal-200/25">
                     <Icon name="trending-up" className={cn("h-3.5 w-3.5", descuentoAplicar ? "text-teal-650" : "text-gray-400")} />
-                    <span className={cn("text-[9px] font-black uppercase tracking-wider", descuentoAplicar ? "text-teal-700" : "text-slate-500")}>Resultado Final</span>
+                    <span className={cn("text-[9.5px] font-black uppercase tracking-wider", descuentoAplicar ? "text-indigo-700" : "text-indigo-700/50")}>Resultado Final</span>
                   </div>
                   <div className="space-y-1.5">
-                    <div className="flex justify-between items-center text-[10px] font-bold">
+                    <div className="flex justify-between items-center text-[11px] font-bold">
                       <span className="text-slate-555">Descuento:</span>
-                      <span className="font-black text-red-655 italic">
+                      <span className="font-black text-red-600 font-mono text-[12px] italic">
                         {descuentoAplicar ? `- ${formatMoneySymbol(Number(descuentoImporte || 0))}` : '0.00'}
                       </span>
                     </div>
                     <div className="pt-1.5 border-t border-slate-200/50">
-                      <div className="flex justify-between items-center text-[10px] font-black">
+                      <div className="flex justify-between items-center text-[12px] font-black">
                         <span className={descuentoAplicar ? "text-teal-700" : "text-slate-650"}>Total Final:</span>
-                        <span className={cn("font-mono text-xs", descuentoAplicar ? "text-teal-700 font-black" : "text-slate-800")}>
+                        <span className={cn("font-mono text-[14px]", descuentoAplicar ? "text-teal-700 font-black" : "text-slate-800")}>
                           {formatMoneySymbol((Number(descuentoTotales.total || 0) + Number(descuentoTotales.des_m || 0) - (descuentoAplicar ? Number(descuentoImporte || 0) : 0)))}
                         </span>
                       </div>
@@ -12238,16 +12273,16 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 onClick={() => {
                   const payload = {
                     referencia: copyReferencia,
-                    id_area: copyIdArea,
-                    id_cliente: copyIdCliente,
-                    id_representante: copyIdRepresentante,
+                    id_area: copyIdArea ? Number(copyIdArea) : null,
+                    id_cliente: copyIdCliente || null,
+                    id_representante: copyIdRepresentante || null,
                     id_tipo: copyIdTipo,
-                    tipo_venta: copyIdTipo === "V" ? copyTipoVenta : null
+                    tipo_venta: copyIdTipo === "V" ? copyTipoVenta || null : null
                   };
 
                   // Validaciones básicas
-                  if (!payload.referencia || !payload.id_area || !payload.id_cliente || !payload.id_representante || !payload.id_tipo) {
-                    toast.warn("Por favor complete todos los campos requeridos.");
+                  if (!payload.referencia || !payload.id_tipo) {
+                    toast.warn("Por favor complete los campos requeridos (Referencia y Tipo).");
                     return;
                   }
                   if (payload.id_tipo === "V" && !payload.tipo_venta) {
@@ -13677,14 +13712,14 @@ const SortableItemRow = ({
           className="px-0.5 text-center align-middle cursor-grab active:cursor-grabbing hover:bg-gray-100/50"
           onDoubleClick={(e) => e.stopPropagation()}
         >
-          <Icon name="grip-vertical" className="h-3 w-3 text-gray-300 group-hover:text-gray-500 mx-auto transition-colors" />
+          <Icon name="grip-vertical" className="h-3 w-3 text-slate-400 group-hover:text-slate-700 mx-auto transition-colors" />
         </td>
       ) : (
         <td 
           className="px-0.5 text-center align-middle cursor-default"
           onDoubleClick={(e) => e.stopPropagation()}
         >
-          <Icon name="grip-vertical" className="h-3 w-3 text-gray-100 mx-auto" />
+          <Icon name="grip-vertical" className="h-3 w-3 text-slate-300 mx-auto" />
         </td>
       )}
       {/* P/N / Marca */}
@@ -13699,7 +13734,7 @@ const SortableItemRow = ({
       >
         <div className="flex flex-col items-center justify-center text-center">
           <span 
-            className="text-[12px] font-bold text-gray-900 cursor-pointer"
+            className="text-[10px] font-bold text-gray-900 cursor-pointer"
             onDoubleClick={(e) => {
               if (!isReadOnly) {
                 e.stopPropagation();
@@ -13711,7 +13746,7 @@ const SortableItemRow = ({
           </span>
           {item.marca_nombre && (
             <span 
-              className="text-[9.5px] font-semibold text-teal-600 uppercase tracking-tighter cursor-pointer"
+              className="text-[8.5px] font-semibold text-teal-600 uppercase tracking-tighter cursor-pointer"
               onDoubleClick={(e) => {
                 if (!isReadOnly) {
                   e.stopPropagation();
@@ -13735,17 +13770,17 @@ const SortableItemRow = ({
         }}
       >
         <div className="flex flex-col items-center justify-center text-center">
-          <span className="text-[12px] text-gray-600 font-semibold leading-tight line-clamp-2" title={item.descripcion}>
+          <span className="text-[10px] text-gray-600 font-semibold leading-tight line-clamp-2" title={item.descripcion}>
             {item.descripcion}
           </span>
           {item.observacion && (
-            <span className="text-[9.5px] text-gray-400 italic mt-0.5">{item.observacion}</span>
+            <span className="text-[8.5px] text-gray-400 italic mt-0.5">{item.observacion}</span>
           )}
         </div>
       </td>
       {/* Cantidad */}
       <td 
-        className="px-3 py-1 text-[12px] text-gray-900 text-center font-bold"
+        className="px-3 py-1 text-[10px] text-gray-900 text-center font-bold"
         onDoubleClick={(e) => {
           if (!isReadOnly) {
             e.stopPropagation();
@@ -13757,7 +13792,7 @@ const SortableItemRow = ({
       </td>
       {/* Costo Unitario */}
       <td 
-        className="px-3 py-1 text-[12.5px] text-slate-700 font-semibold text-center"
+        className="px-3 py-1 text-[10px] text-slate-700 font-semibold text-center"
         onDoubleClick={(e) => {
           if (!isReadOnly) {
             e.stopPropagation();
@@ -13770,13 +13805,13 @@ const SortableItemRow = ({
       {/* Envío */}
       {isVenta && (
         <td 
-          className="px-3 py-1 text-center text-[12.5px] text-slate-700 font-semibold"
+          className="px-3 py-1 text-center text-[10px] text-slate-700 font-semibold"
           onDoubleClick={(e) => e.stopPropagation()}
         >
           <div className="flex flex-col items-center justify-center text-center gap-0.5">
             <span>{formatMoney(item.costo_envio)}</span>
             {tipoVenta === "T" && (
-              <span className="text-[10px] font-black text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded-full border border-indigo-100">
+              <span className="text-[8.5px] font-black text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded-full border border-indigo-100">
                 {Number(item.porcentaje_envio || 0).toFixed(2)}%
               </span>
             )}
@@ -13790,7 +13825,7 @@ const SortableItemRow = ({
       >
         <div className="flex flex-col items-center justify-center text-center gap-0.5">
           <span 
-            className="text-[12.5px] font-extrabold text-slate-800 cursor-pointer select-none"
+            className="text-[10px] font-extrabold text-slate-800 cursor-pointer select-none"
             onDoubleClick={(e) => {
               if (!isReadOnly) {
                 e.stopPropagation();
@@ -13802,7 +13837,7 @@ const SortableItemRow = ({
             {formatMoneySymbol(Number(item.utilidad || 0))}
           </span>
           <span 
-            className="text-[10px] font-black text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded-full border border-indigo-100 cursor-pointer select-none"
+            className="text-[8.5px] font-black text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded-full border border-indigo-100 cursor-pointer select-none"
             onDoubleClick={(e) => {
               if (!isReadOnly) {
                 e.stopPropagation();
@@ -13819,14 +13854,14 @@ const SortableItemRow = ({
         <>
           {/* Precio Unitario */}
           <td 
-            className="px-3 py-1 text-[12.5px] text-slate-700 font-semibold text-center"
+            className="px-3 py-1 text-[10px] text-slate-700 font-semibold text-center"
             onDoubleClick={(e) => e.stopPropagation()}
           >
             {formatMoney(item.precio_venta)}
           </td>
           {/* Venta Total */}
           <td 
-            className="px-3 py-1 text-[12.5px] font-black text-slate-900 text-center"
+            className="px-3 py-1 text-[10px] font-black text-slate-900 text-center"
             onDoubleClick={(e) => e.stopPropagation()}
           >
             {formatMoney(item.venta_total)}
@@ -14043,6 +14078,81 @@ const SortableItemServicioRow = ({
 
   const isEditingItem = editingItemServicioId === item.id_servicio;
   const rowRef = useRef(null);
+
+  // Popover Resumen hover state
+  const [isHovered, setIsHovered] = useState(false);
+  const hoverTimer = useRef(null);
+  const triggerRef = useRef(null);
+  const [coords, setCoords] = useState(null);
+
+  const updateCoords = () => {
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setCoords({
+        top: rect.top + window.scrollY,
+        left: rect.left + window.scrollX
+      });
+    }
+  };
+
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const deleteConfirmRef = useRef(null);
+
+  useEffect(() => {
+    if (!showDeleteConfirm) return;
+
+    const handleClickOutside = (e) => {
+      if (deleteConfirmRef.current && !deleteConfirmRef.current.contains(e.target)) {
+        setShowDeleteConfirm(false);
+      }
+    };
+
+    const handleKeyDownGlobal = (e) => {
+      if (e.key === "Escape") {
+        setShowDeleteConfirm(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDownGlobal);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDownGlobal);
+    };
+  }, [showDeleteConfirm]);
+
+  const handleMouseEnter = () => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    updateCoords();
+    setIsHovered(true);
+  };
+
+  const handleMouseLeave = () => {
+    hoverTimer.current = setTimeout(() => {
+      setIsHovered(false);
+    }, 250);
+  };
+
+  // Pre-calculate values for tooltips
+  const rowHombres = Number(item.cantidad_hombres || 0);
+  const rowDias = Number(item.cantidad_dias || 0);
+  const rowCosto = Number(item.costo_hombre_dia || 0);
+  const rowPorcentaje = Number(item.porcentaje || 0);
+
+  let srvCostoTotal = 0;
+  let srvUtilidad = 0;
+  let srvCotizadoHD = 0;
+  let srvCotizadoTotal = Number(item.cotizado_total || 0);
+
+  if (sg.tipoCodigo?.endsWith("04")) {
+    srvCostoTotal = rowHombres * rowDias * rowCosto;
+    srvUtilidad = srvCostoTotal * (rowPorcentaje / 100);
+    srvCotizadoHD = rowCosto * (1 + rowPorcentaje / 100);
+  } else if (sg.tipoCodigo?.endsWith("06")) {
+    srvCostoTotal = rowHombres * rowCosto;
+    srvUtilidad = srvCostoTotal * (rowPorcentaje / 100);
+    srvCotizadoHD = rowCosto * (1 + rowPorcentaje / 100);
+  }
 
   const setMergedRef = (el) => {
     setNodeRef(el);
@@ -14337,38 +14447,40 @@ const SortableItemServicioRow = ({
             />
           </td>
           <td className="px-2 py-1 text-center">
-            <input
-              type="number"
-              data-field="cantidad_dias"
-              onKeyDown={handleKeyDown}
-              className="w-full text-center text-[10.5px] border border-gray-300 text-center rounded px-1 py-0.5 font-semibold bg-white"
-              value={editingServicioForm.cantidad_dias === undefined || editingServicioForm.cantidad_dias === null ? "" : editingServicioForm.cantidad_dias}
-              onChange={(e) => {
-                const days = parseInt(e.target.value) || 0;
-                const finalHombres = Number(editingServicioForm.cantidad_hombres || 0);
-                const finalCosto = Number(editingServicioForm.costo_hombre_dia || 0);
-                const costoTotal = finalHombres * days * finalCosto;
-                const finalPorcentaje = Number(editingServicioForm.porcentaje || 0);
-                const newUtil = costoTotal * (finalPorcentaje / 100);
-                setEditingServicioForm({
-                  ...editingServicioForm,
-                  cantidad_dias: days,
-                  utilidad: Number(newUtil.toFixed(2))
-                });
-              }}
-              onFocus={(e) => e.target.select()}
-            />
-          </td>
-          <td className="px-2 py-1 text-center">
-            <input
-              type="number"
-              data-field="horas"
-              onKeyDown={handleKeyDown}
-              className="w-full text-center text-[10.5px] border border-gray-300 text-center rounded px-1 py-0.5 bg-white"
-              value={editingServicioForm.horas === undefined || editingServicioForm.horas === null ? "" : editingServicioForm.horas}
-              onChange={(e) => setEditingServicioForm({ ...editingServicioForm, horas: parseInt(e.target.value) || 0 })}
-              onFocus={(e) => e.target.select()}
-            />
+            <div className="flex flex-col gap-1 items-center">
+              <input
+                type="number"
+                data-field="cantidad_dias"
+                placeholder="Días"
+                onKeyDown={handleKeyDown}
+                className="w-full text-center text-[10px] border border-gray-300 rounded px-1 py-0.5 font-semibold bg-white"
+                value={editingServicioForm.cantidad_dias === undefined || editingServicioForm.cantidad_dias === null ? "" : editingServicioForm.cantidad_dias}
+                onChange={(e) => {
+                  const days = parseInt(e.target.value) || 0;
+                  const finalHombres = Number(editingServicioForm.cantidad_hombres || 0);
+                  const finalCosto = Number(editingServicioForm.costo_hombre_dia || 0);
+                  const costoTotal = finalHombres * days * finalCosto;
+                  const finalPorcentaje = Number(editingServicioForm.porcentaje || 0);
+                  const newUtil = costoTotal * (finalPorcentaje / 100);
+                  setEditingServicioForm({
+                    ...editingServicioForm,
+                    cantidad_dias: days,
+                    utilidad: Number(newUtil.toFixed(2))
+                  });
+                }}
+                onFocus={(e) => e.target.select()}
+              />
+              <input
+                type="number"
+                data-field="horas"
+                placeholder="Horas"
+                onKeyDown={handleKeyDown}
+                className="w-full text-center text-[9px] border border-gray-300 rounded px-1 py-0.5 font-black text-indigo-700 bg-indigo-50/50"
+                value={editingServicioForm.horas === undefined || editingServicioForm.horas === null ? "" : editingServicioForm.horas}
+                onChange={(e) => setEditingServicioForm({ ...editingServicioForm, horas: parseInt(e.target.value) || 0 })}
+                onFocus={(e) => e.target.select()}
+              />
+            </div>
           </td>
           <td className="px-2 py-1 text-right">
             <input
@@ -14887,12 +14999,12 @@ const SortableItemServicioRow = ({
             {...attributes}
             data-drag-handle
             onClick={(e) => e.stopPropagation()}
-            className="cursor-grab active:cursor-grabbing p-0.5 text-gray-300 hover:text-gray-500 rounded transition-colors flex justify-center items-center"
+            className="cursor-grab active:cursor-grabbing p-0.5 text-slate-400 hover:text-slate-700 rounded transition-colors flex justify-center items-center"
           >
             <Icon name="grip-vertical" className="h-3 w-3" />
           </div>
         ) : (
-          <div className="p-0.5 text-gray-200 flex justify-center items-center">
+          <div className="p-0.5 text-slate-300 flex justify-center items-center">
             <Icon name="grip-vertical" className="h-3 w-3" />
           </div>
         )}
@@ -14911,7 +15023,8 @@ const SortableItemServicioRow = ({
         return (
           <>
             <td 
-              className="px-3 py-1.5 text-[12px] font-bold text-gray-900 text-center uppercase whitespace-nowrap cursor-pointer"
+              className="px-3 py-1.5 text-center cursor-pointer"
+              title={item.codigo_item}
               onDoubleClick={(e) => {
                 if (!isReadOnly) {
                   e.stopPropagation();
@@ -14919,10 +15032,21 @@ const SortableItemServicioRow = ({
                 }
               }}
             >
-              {item.codigo_item}
+              {(() => {
+                const parts = (item.codigo_item || '').split('-');
+                if (parts.length > 1) {
+                  return (
+                    <div className="flex flex-col items-center justify-center leading-none select-none">
+                      <span className="text-[10px] font-black text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded-full border border-indigo-100">{parts[0]}</span>
+                      <span className="text-[9px] text-slate-500 font-extrabold mt-1 uppercase max-w-[120px] truncate">{parts.slice(1).join('-')}</span>
+                    </div>
+                  );
+                }
+                return <span className="text-[10px] font-bold text-gray-900 uppercase">{item.codigo_item || '-'}</span>;
+              })()}
             </td>
             <td 
-              className="px-3 py-1.5 text-[12px] text-gray-655 text-center uppercase font-semibold truncate max-w-0 cursor-pointer" 
+              className="px-3 py-1.5 text-[10px] text-gray-600 text-center uppercase font-semibold whitespace-normal break-words leading-tight cursor-pointer" 
               title={item.descripcion_item}
               onDoubleClick={(e) => {
                 if (!isReadOnly) {
@@ -14934,7 +15058,7 @@ const SortableItemServicioRow = ({
               {item.descripcion_item}
             </td>
             <td 
-              className="px-3 py-1.5 text-[12px] text-gray-900 text-center font-bold cursor-pointer"
+              className="px-3 py-1.5 text-[10px] text-gray-900 text-center font-bold cursor-pointer"
               onDoubleClick={(e) => {
                 if (!isReadOnly) {
                   e.stopPropagation();
@@ -14945,29 +15069,38 @@ const SortableItemServicioRow = ({
               {rowHombres}
             </td>
             <td 
-              className="px-3 py-1.5 text-[12px] text-gray-600 text-center font-semibold cursor-pointer"
-              onDoubleClick={(e) => {
-                if (!isReadOnly) {
-                  e.stopPropagation();
-                  handleStartEditingItemInline(item, 'cantidad_dias');
-                }
-              }}
+              className="px-3 py-1.5 text-center cursor-pointer"
+              onDoubleClick={(e) => e.stopPropagation()}
             >
-              {rowDias}
+              <div className="flex flex-col items-center justify-center gap-0.5 whitespace-nowrap select-none">
+                <span 
+                  className="text-[10px] font-semibold text-slate-800 hover:text-indigo-600 transition-colors"
+                  onDoubleClick={(e) => {
+                    if (!isReadOnly) {
+                      e.stopPropagation();
+                      handleStartEditingItemInline(item, 'cantidad_dias');
+                    }
+                  }}
+                  title="Doble clic para editar días"
+                >
+                  {rowDias} {rowDias === 1 ? 'día' : 'días'}
+                </span>
+                <span 
+                  className="text-[10px] font-black text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded-full border border-indigo-100 hover:bg-indigo-100 transition-colors"
+                  onDoubleClick={(e) => {
+                    if (!isReadOnly) {
+                      e.stopPropagation();
+                      handleStartEditingItemInline(item, 'horas');
+                    }
+                  }}
+                  title="Doble clic para editar horas"
+                >
+                  {item.horas} {item.horas === 1 ? 'hora' : 'horas'}
+                </span>
+              </div>
             </td>
             <td 
-              className="px-3 py-1.5 text-[12px] text-gray-600 text-center cursor-pointer"
-              onDoubleClick={(e) => {
-                if (!isReadOnly) {
-                  e.stopPropagation();
-                  handleStartEditingItemInline(item, 'horas');
-                }
-              }}
-            >
-              {item.horas}
-            </td>
-            <td 
-              className="px-3 py-1.5 text-[12.5px] text-slate-700 text-center font-semibold whitespace-nowrap cursor-pointer"
+              className="px-3 py-1.5 text-[10px] text-slate-700 text-center font-semibold whitespace-nowrap cursor-pointer"
               onDoubleClick={(e) => {
                 if (!isReadOnly) {
                   e.stopPropagation();
@@ -14983,7 +15116,7 @@ const SortableItemServicioRow = ({
             >
               <div className="flex flex-col items-center justify-center gap-0.5 whitespace-nowrap select-none">
                 <span 
-                  className="text-[12.5px] font-extrabold text-slate-800 hover:text-indigo-600 transition-colors"
+                  className="text-[11px] font-extrabold text-slate-800 hover:text-indigo-600 transition-colors"
                   onDoubleClick={(e) => {
                     if (!isReadOnly) {
                       e.stopPropagation();
@@ -15002,18 +15135,18 @@ const SortableItemServicioRow = ({
                     }
                   }}
                 >
-                  {rowPorcentaje.toFixed(1)}%
+                  {rowPorcentaje.toFixed(2)}%
                 </span>
               </div>
             </td>
             <td 
-              className="px-3 py-1.5 text-[12.5px] text-slate-755 text-center font-semibold whitespace-nowrap"
+              className="px-3 py-1.5 text-[10px] text-slate-755 text-center font-semibold whitespace-nowrap"
               onDoubleClick={(e) => e.stopPropagation()}
             >
               {formatMoneySymbol(rowCotizadoHD)}
             </td>
             <td 
-              className="px-3 py-1.5 text-[12.5px] text-slate-900 text-center font-black whitespace-nowrap"
+              className="px-3 py-1.5 text-[10px] text-slate-900 text-center font-black whitespace-nowrap"
               onDoubleClick={(e) => e.stopPropagation()}
             >
               {formatMoneySymbol(rowCotizadoTotal)}
@@ -15031,7 +15164,8 @@ const SortableItemServicioRow = ({
         return (
           <>
             <td 
-              className="px-3 py-1.5 text-[12px] font-bold text-gray-900 text-center uppercase whitespace-nowrap cursor-pointer"
+              className="px-3 py-1.5 text-center cursor-pointer"
+              title={item.codigo_item}
               onDoubleClick={(e) => {
                 if (!isReadOnly) {
                   e.stopPropagation();
@@ -15039,10 +15173,21 @@ const SortableItemServicioRow = ({
                 }
               }}
             >
-              {item.codigo_item}
+              {(() => {
+                const parts = (item.codigo_item || '').split('-');
+                if (parts.length > 1) {
+                  return (
+                    <div className="flex flex-col items-center justify-center leading-none select-none">
+                      <span className="text-[10px] font-black text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded-full border border-indigo-100">{parts[0]}</span>
+                      <span className="text-[9px] text-slate-500 font-extrabold mt-1 uppercase max-w-[120px] truncate">{parts.slice(1).join('-')}</span>
+                    </div>
+                  );
+                }
+                return <span className="text-[10px] font-bold text-gray-900 uppercase">{item.codigo_item || '-'}</span>;
+              })()}
             </td>
             <td 
-              className="px-3 py-1.5 text-[12px] text-gray-655 text-center uppercase font-semibold truncate max-w-0 cursor-pointer" 
+              className="px-3 py-1.5 text-[10px] text-gray-600 text-center uppercase font-semibold whitespace-normal break-words leading-tight cursor-pointer" 
               title={item.descripcion_item}
               onDoubleClick={(e) => {
                 if (!isReadOnly) {
@@ -15054,7 +15199,7 @@ const SortableItemServicioRow = ({
               {item.descripcion_item}
             </td>
             <td 
-              className="px-3 py-1.5 text-[12px] text-gray-900 text-center font-bold cursor-pointer"
+              className="px-3 py-1.5 text-[10px] text-gray-900 text-center font-bold cursor-pointer"
               onDoubleClick={(e) => {
                 if (!isReadOnly) {
                   e.stopPropagation();
@@ -15065,7 +15210,7 @@ const SortableItemServicioRow = ({
               {rowHombres}
             </td>
             <td 
-              className="px-3 py-1.5 text-[12px] text-gray-600 text-center font-semibold cursor-pointer"
+              className="px-3 py-1.5 text-[10px] text-gray-600 text-center font-semibold cursor-pointer"
               onDoubleClick={(e) => {
                 if (!isReadOnly) {
                   e.stopPropagation();
@@ -15073,10 +15218,10 @@ const SortableItemServicioRow = ({
                 }
               }}
             >
-              {rowDias}
+              {rowDias} {rowDias === 1 ? 'día' : 'días'}
             </td>
             <td 
-              className="px-3 py-1.5 text-[12.5px] text-slate-700 text-center font-semibold whitespace-nowrap cursor-pointer"
+              className="px-3 py-1.5 text-[10px] text-slate-700 text-center font-semibold whitespace-nowrap cursor-pointer"
               onDoubleClick={(e) => {
                 if (!isReadOnly) {
                   e.stopPropagation();
@@ -15087,7 +15232,7 @@ const SortableItemServicioRow = ({
               {formatMoneySymbol(rowPrecio)}
             </td>
             <td 
-              className="px-3 py-1.5 text-[12.5px] text-slate-900 text-center font-black whitespace-nowrap"
+              className="px-3 py-1.5 text-[10px] text-slate-900 text-center font-black whitespace-nowrap"
               onDoubleClick={(e) => e.stopPropagation()}
             >
               {formatMoneySymbol(rowCotizadoTotal)}
@@ -15108,7 +15253,8 @@ const SortableItemServicioRow = ({
         return (
           <>
             <td 
-              className="px-3 py-1.5 text-[12px] font-bold text-gray-900 text-center uppercase whitespace-nowrap cursor-pointer"
+              className="px-3 py-1.5 text-center cursor-pointer"
+              title={item.codigo_item}
               onDoubleClick={(e) => {
                 if (!isReadOnly) {
                   e.stopPropagation();
@@ -15116,10 +15262,21 @@ const SortableItemServicioRow = ({
                 }
               }}
             >
-              {item.codigo_item}
+              {(() => {
+                const parts = (item.codigo_item || '').split('-');
+                if (parts.length > 1) {
+                  return (
+                    <div className="flex flex-col items-center justify-center leading-none select-none">
+                      <span className="text-[10px] font-black text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded-full border border-indigo-100">{parts[0]}</span>
+                      <span className="text-[9px] text-slate-500 font-extrabold mt-1 uppercase max-w-[120px] truncate">{parts.slice(1).join('-')}</span>
+                    </div>
+                  );
+                }
+                return <span className="text-[10px] font-bold text-gray-900 uppercase">{item.codigo_item || '-'}</span>;
+              })()}
             </td>
             <td 
-              className="px-3 py-1.5 text-[12px] text-gray-655 text-center uppercase font-semibold truncate max-w-0 cursor-pointer" 
+              className="px-3 py-1.5 text-[10px] text-gray-600 text-center uppercase font-semibold whitespace-normal break-words leading-tight cursor-pointer" 
               title={item.descripcion_item}
               onDoubleClick={(e) => {
                 if (!isReadOnly) {
@@ -15131,7 +15288,7 @@ const SortableItemServicioRow = ({
               {item.descripcion_item}
             </td>
             <td 
-              className="px-3 py-1.5 text-[12px] text-gray-900 text-center font-bold cursor-pointer"
+              className="px-3 py-1.5 text-[10px] text-gray-900 text-center font-bold cursor-pointer"
               onDoubleClick={(e) => {
                 if (!isReadOnly) {
                   e.stopPropagation();
@@ -15142,7 +15299,7 @@ const SortableItemServicioRow = ({
               {rowHombres}
             </td>
             <td 
-              className="px-3 py-1.5 text-[12.5px] text-slate-700 text-center font-semibold whitespace-nowrap cursor-pointer"
+              className="px-3 py-1.5 text-[10px] text-slate-700 text-center font-semibold whitespace-nowrap cursor-pointer"
               onDoubleClick={(e) => {
                 if (!isReadOnly) {
                   e.stopPropagation();
@@ -15158,7 +15315,7 @@ const SortableItemServicioRow = ({
             >
               <div className="flex flex-col items-center justify-center gap-0.5 whitespace-nowrap select-none">
                 <span 
-                  className="text-[12.5px] font-extrabold text-slate-800 hover:text-indigo-600 transition-colors"
+                  className="text-[10px] font-extrabold text-slate-800 hover:text-indigo-600 transition-colors"
                   onDoubleClick={(e) => {
                     if (!isReadOnly) {
                       e.stopPropagation();
@@ -15171,24 +15328,24 @@ const SortableItemServicioRow = ({
                 <span 
                   className="text-[10px] font-black text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded-full border border-indigo-100 hover:bg-indigo-100 transition-colors"
                   onDoubleClick={(e) => {
-                    if (!isReadOnly) {
+                    if (!isReadOnly) {  
                       e.stopPropagation();
                       handleStartEditingItemInline(item, 'porcentaje');
                     }
                   }}
                 >
-                  {rowPorcentaje.toFixed(1)}%
+                  {rowPorcentaje.toFixed(2)}%
                 </span>
               </div>
             </td>
             <td 
-              className="px-3 py-1.5 text-[12.5px] text-slate-755 text-center font-semibold whitespace-nowrap"
+              className="px-3 py-1.5 text-[10px] text-slate-755 text-center font-semibold whitespace-nowrap"
               onDoubleClick={(e) => e.stopPropagation()}
             >
               {formatMoneySymbol(rowCotizadoHD)}
             </td>
             <td 
-              className="px-3 py-1.5 text-[12.5px] text-slate-900 text-center font-black whitespace-nowrap"
+              className="px-3 py-1.5 text-[10px] text-slate-900 text-center font-black whitespace-nowrap"
               onDoubleClick={(e) => e.stopPropagation()}
             >
               {formatMoneySymbol(rowCotizadoTotal)}
@@ -15198,35 +15355,137 @@ const SortableItemServicioRow = ({
       })()}
 
       <td 
-        className="px-3 py-1.5 text-right"
+        className={cn("px-3 py-1.5 text-center w-[60px] relative", isHovered && "z-[60]")}
         onDoubleClick={(e) => e.stopPropagation()}
       >
-        {!isReadOnly ? (
-          <div className="flex justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleStartEditingItemInline(item);
-              }}
-              className="p-0.5 text-gray-400 hover:text-indigo-600 transition-colors"
-              title="Editar ítem"
+        <div className="flex justify-center items-center gap-1.5">
+          {(sg.tipoCodigo?.endsWith("04") || sg.tipoCodigo?.endsWith("06")) && (
+            <div 
+              className="relative flex items-center"
+              onMouseEnter={handleMouseEnter}
+              onMouseLeave={handleMouseLeave}
             >
-              <Icon name="edit-2" className="h-3.5 w-3.5" />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleEliminarItemServicio(item.id_servicio);
-              }}
-              className="p-0.5 text-gray-400 hover:text-red-500 transition-colors"
-              title="Eliminar ítem"
-            >
-              <Icon name="trash-2" className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        ) : (
-          <div className="h-4" />
-        )}
+              <button
+                ref={triggerRef}
+                type="button"
+                className="p-1 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-all"
+                title="Resumen Monetario"
+              >
+                <Icon name="trending-up" className="h-3.5 w-3.5" />
+              </button>
+              {isHovered && coords && createPortal(
+                <div 
+                  style={{
+                    position: 'absolute',
+                    left: coords.left,
+                    top: coords.top,
+                    zIndex: 9999,
+                    pointerEvents: 'auto'
+                  }}
+                  onMouseEnter={handleMouseEnter}
+                  onMouseLeave={handleMouseLeave}
+                >
+                  <div className="absolute right-0 mr-2 top-0 w-fit min-w-[280px] max-w-[400px] bg-white rounded-xl shadow-xl border border-gray-200 p-3.5 text-left text-xs space-y-3 animate-in fade-in zoom-in-95 duration-100 select-text">
+                    <div className="flex items-center gap-1.5 text-slate-500 font-bold text-[10px] uppercase tracking-wider border-b border-gray-100 pb-1.5">
+                      <Icon name="info" className="h-3.5 w-3.5 text-slate-400" />
+                      <span>{sg.tipoCodigo?.endsWith("04") ? 'Resumen de Mano de Obra' : 'Resumen de Otros'}</span>
+                    </div>
+
+                    <div className="bg-emerald-50/40 border border-emerald-100 rounded-xl p-3 space-y-2 shadow-inner">
+                      <div className="flex items-center gap-1.5 text-emerald-800 font-extrabold text-[10px] uppercase tracking-wider">
+                        <Icon name="calculator" className="h-3.5 w-3.5" />
+                        <span>Resumen de Costos</span>
+                      </div>
+                      <div className="space-y-1 text-[11px]">
+                        {sg.tipoCodigo?.endsWith("04") ? (
+                          <>
+                            <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-200/30">
+                              <span>Costo Total:</span>
+                              <span className="font-semibold text-slate-700">{formatMoneySymbol(srvCostoTotal)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-200/30">
+                              <span>Cotizado Hombre/día:</span>
+                              <span className="font-semibold text-slate-700">{formatMoneySymbol(srvCotizadoHD)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-200/30">
+                              <span>Cotizado Total:</span>
+                              <span className="font-bold text-emerald-700">{formatMoneySymbol(srvCotizadoTotal)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-gray-500 py-0.5">
+                              <span>Utilidad Total:</span>
+                              <span className="font-semibold text-slate-700">{formatMoneySymbol(srvUtilidad)}</span>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-200/30">
+                              <span>Total (Costo):</span>
+                              <span className="font-semibold text-slate-700">{formatMoneySymbol(srvCostoTotal)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-200/30">
+                              <span>Venta Precio:</span>
+                              <span className="font-semibold text-slate-700">{formatMoneySymbol(srvCotizadoHD)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-200/30">
+                              <span>Venta Total:</span>
+                              <span className="font-bold text-emerald-700">{formatMoneySymbol(srvCotizadoTotal)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-gray-500 py-0.5">
+                              <span>Utilidad Total:</span>
+                              <span className="font-semibold text-slate-700">{formatMoneySymbol(srvUtilidad)}</span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>,
+                document.body
+              )}
+            </div>
+          )}
+
+          {!isReadOnly && (
+            <div className="relative flex items-center" ref={deleteConfirmRef}>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowDeleteConfirm(prev => !prev);
+                }}
+                className="p-0.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-all"
+                title="Eliminar Ítem"
+              >
+                <Icon name="trash-2" className="h-3.5 w-3.5" />
+              </button>
+
+              {showDeleteConfirm && (
+                <div className="absolute right-0 bottom-full mb-1 flex items-center gap-1.5 bg-white border border-gray-100 rounded-lg p-1.5 shadow-lg z-50 whitespace-nowrap animate-in fade-in slide-in-from-bottom-1 duration-100">
+                  <span className="text-[10px] font-black text-gray-700 px-1">¿Borrar?</span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleEliminarItemServicio(item.id_servicio, true);
+                      setShowDeleteConfirm(false);
+                    }}
+                    className="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white font-black text-[9px] rounded uppercase transition-colors"
+                  >
+                    Sí
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowDeleteConfirm(false);
+                    }}
+                    className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-[9px] rounded uppercase transition-colors"
+                  >
+                    No
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </td>
     </tr>
   );

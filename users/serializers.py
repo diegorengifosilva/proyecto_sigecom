@@ -6,6 +6,7 @@ from .models import (
     Usuario,
     Area,
     Cargo,
+    Banco,
 )
 from django.contrib.auth import get_user_model
 from django.utils.timezone import localtime
@@ -27,6 +28,9 @@ class UsuarioSerializer(serializers.ModelSerializer):
     # 2. Obtenemos el ID (esto es lo que causaba el error)
     banco_id = serializers.ReadOnlyField(source='id_banco.id_banco')
 
+    # Relación con módulos autorizados
+    modulos = serializers.SlugRelatedField(many=True, read_only=True, slug_field='nombre')
+
     class Meta:
         model = Usuario
         fields = [
@@ -43,7 +47,8 @@ class UsuarioSerializer(serializers.ModelSerializer):
             'banco_id',      # Campo declarado arriba (DEBE estar aquí)
             'banco_nombre',  # Nombre del banco para el frontend
             'nro_cuenta', 
-            'activo'
+            'activo',
+            'modulos'
         ]
 
     def to_representation(self, instance):
@@ -88,5 +93,11 @@ class AreasSerializer(serializers.ModelSerializer):
 class CargosSerializer(serializers.ModelSerializer):
     class Meta:
         model = Cargo
+        fields = "__all__"
+
+# Banco
+class BancosSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Banco
         fields = "__all__"
 

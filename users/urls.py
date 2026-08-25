@@ -12,4 +12,7 @@ urlpatterns = [
     path('areas/<int:id_area>/', views.lista_areas, name='lista_areas_detail'),
     path('cargos/', views.lista_cargos, name='lista_cargos'),
     path('cambiar-contrasena/', views.cambiar_contrasena, name='cambiar_contrasena'),
+    path('usuarios/<int:id_usuario>/modulos/', views.gestionar_usuario_modulos, name='gestionar_usuario_modulos'),
+    path('usuarios/<int:id_usuario>/', views.detalle_usuario, name='detalle_usuario'),
+    path('bancos/', views.lista_bancos, name='lista_bancos'),
 ]

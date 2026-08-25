@@ -998,13 +998,6 @@ export default function CotizacionNuevaModal({ open, onClose, cotizacion, modo, 
 
         const comercialCodic = hasComercial ? (detalles.comercial_dni || "") : (isAllowedComercial ? (defCom.codic || "") : "");
         const comercialCodco = hasComercial ? (detalles.comercial_dni || "") : (isAllowedComercial ? (defCom.codco || "") : "");
-        const comercialNombc = hasComercial ? (detalles.comercial_nombre || "") : (isAllowedComercial ? (defCom.nombc || "") : "");
-        const comercialTelec = hasComercial ? (detalles.comercial_telefono || "") : (isAllowedComercial ? (defCom.telec || "") : "");
-        const comercialMov1c = hasComercial ? (detalles.comercial_movil_corporativo || "") : (isAllowedComercial ? (defCom.mov1c || "") : "");
-        const comercialMov2c = hasComercial ? (detalles.comercial_movil_personal || "") : (isAllowedComercial ? (defCom.mov2c || "") : "");
-        const comercialMailc = hasComercial ? (detalles.comercial_correo || "") : (isAllowedComercial ? (defCom.mailc || "") : "");
-        const comercialId = hasComercial ? (detalles.id_comercial || null) : (isAllowedComercial ? (defCom.id || null) : null);
-
         setData(prev => ({
           ...prev,
           valid: validVal,
@@ -1022,6 +1015,24 @@ export default function CotizacionNuevaModal({ open, onClose, cotizacion, modo, 
           movir: prev.movir,
           mailr: prev.mailr,
 
+          // Preservar Responsables (Comercial y Técnico)
+          codic: prev.codic,
+          codco: prev.codco,
+          nombc: prev.nombc,
+          telec: prev.telec,
+          mov1c: prev.mov1c,
+          mov2c: prev.mov2c,
+          mailc: prev.mailc,
+          id_comercial: prev.id_comercial,
+
+          codit: prev.codit,
+          nombt: prev.nombt,
+          telet: prev.telet,
+          mov1t: prev.mov1t,
+          mov2t: prev.mov2t,
+          mailt: prev.mailt,
+          id_tecnico: prev.id_tecnico,
+
           // Autocompletar otros campos útiles (fallback a vacío si no vienen)
           forma_pago: detalles.forma_pago || "",
           lugar: detalles.lugar || "",
@@ -1038,31 +1049,9 @@ export default function CotizacionNuevaModal({ open, onClose, cotizacion, modo, 
           des_t: detalles.descuento_afecto || "N",
           des_m: detalles.descuento_monto || 0,
           des_p: detalles.descuento_porcentaje || 0,
-
-          // Responsable Comercial
-          codic: comercialCodic,
-          codco: comercialCodco,
-          nombc: comercialNombc,
-          telec: comercialTelec,
-          mov1c: comercialMov1c,
-          mov2c: comercialMov2c,
-          mailc: comercialMailc,
-          id_comercial: comercialId,
-
-          // Responsable Técnico
-          codit: detalles.tecnico_dni || "",
-          nombt: detalles.tecnico_nombre || "",
-          telet: detalles.tecnico_telefono || "",
-          mov1t: detalles.tecnico_movil_corporativo || "",
-          mov2t: detalles.tecnico_movil_personal || "",
-          mailt: detalles.tecnico_correo || "",
-          id_tecnico: detalles.id_tecnico || null,
         }));
 
-        // Sincronizar las queries para que los inputs muestren los nombres correspondientes
-        setComercialQuery(comercialNombc);
-        setTecnicoQuery(detalles.tecnico_nombre || "");
-
+        // NOTA: Se preservaron los responsables comercial y técnico intactos
         if (detalles.condiciones_generales) {
           setCondicionesHtml(detalles.condiciones_generales);
         } else {
@@ -2761,6 +2750,13 @@ export default function CotizacionNuevaModal({ open, onClose, cotizacion, modo, 
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent 
         onKeyDown={handleKeyDownNavigation}
+        onEscapeKeyDown={(e) => {
+          const hasRepModal = !!document.querySelector(".quick-create-rep-modal");
+          const hasClienteModal = !!document.querySelector(".quick-create-cliente-modal");
+          if (hasRepModal || hasClienteModal) {
+            e.preventDefault();
+          }
+        }}
         className="w-[95vw] md:w-[92vw] lg:w-[90vw] xl:max-w-6xl h-fit max-h-[90vh] overflow-hidden bg-white rounded-[28px] shadow-2xl p-0 flex flex-col border-none"
       >
 
@@ -3411,7 +3407,7 @@ export default function CotizacionNuevaModal({ open, onClose, cotizacion, modo, 
             </Button>
           )}
         </div>
-        
+        <div id="cotizacion-nueva-modal-portals" className="absolute top-0 left-0 w-0 h-0 overflow-visible pointer-events-none z-50" />
       </DialogContent>
     </Dialog>
   );

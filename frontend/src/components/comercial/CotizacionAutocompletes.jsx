@@ -287,7 +287,7 @@ export const ClienteAutocomplete = ({ value, onSelect, isReadOnly, initialId, on
             ref={inputRef}
             type="text"
             tabIndex={tabIndex}
-            className="bg-transparent hover:bg-white focus:bg-white border-b border-transparent focus:border-teal-300 px-1 font-bold text-gray-800 uppercase outline-none text-[11px] py-0 h-4 transition-all"
+            className="bg-transparent hover:bg-white focus:bg-white border-b border-transparent focus:border-teal-300 px-1 font-bold text-gray-800 uppercase outline-none text-[10px] py-0 h-4 transition-all"
             style={{ width: `${width}px` }}
             value={query}
             onFocus={(e) => {
@@ -628,7 +628,7 @@ export const RepresentanteAutocomplete = ({ value, clienteId, onSelect, isReadOn
             ref={inputRef}
             type="text"
             tabIndex={tabIndex}
-            className="bg-transparent hover:bg-white focus:bg-white border-b border-transparent focus:border-teal-300 px-1 font-bold text-gray-800 uppercase outline-none text-[11px] py-0 h-4 transition-all"
+            className="bg-transparent hover:bg-white focus:bg-white border-b border-transparent focus:border-teal-300 px-1 font-bold text-gray-800 uppercase outline-none text-[10px] py-0 h-4 transition-all"
             style={{ width: `${width}px` }}
             value={query}
             onFocus={(e) => {
@@ -1039,7 +1039,7 @@ export const ProductoAutocomplete = ({
             ref={inputRef}
             type="text"
             tabIndex={tabIndex}
-            className="bg-transparent hover:bg-white focus:bg-white border border-gray-200 rounded px-1 py-0.5 font-bold text-gray-800 uppercase outline-none text-[11px] transition-all text-center w-full focus:ring-1 focus:ring-teal-500"
+            className="bg-transparent hover:bg-white focus:bg-white border border-gray-200 rounded px-1 py-0.5 font-bold text-gray-800 uppercase outline-none text-[10px] transition-all text-center w-full focus:ring-1 focus:ring-teal-500"
             value={query}
             onFocus={(e) => {
               e.target.select();
@@ -1453,7 +1453,7 @@ export const TipoPersonalAutocomplete = ({ value, idArea, onSelect, isReadOnly, 
             ref={inputRef}
             type="text"
             tabIndex={tabIndex}
-            className="bg-transparent hover:bg-white focus:bg-white border border-gray-200 rounded px-1.5 py-0.5 font-bold text-gray-800 uppercase outline-none text-[11px] transition-all w-full focus:ring-1 focus:ring-indigo-500"
+            className="bg-transparent hover:bg-white focus:bg-white border border-gray-200 rounded px-1.5 py-0.5 font-bold text-gray-800 uppercase outline-none text-[10px] transition-all w-full focus:ring-1 focus:ring-indigo-500"
             value={query}
             onFocus={(e) => {
               const target = e.target;
@@ -1868,7 +1868,7 @@ export const TipoGastoDetalleAutocomplete = ({ value, codePrefix, onSelect, isRe
             ref={inputRef}
             type="text"
             tabIndex={tabIndex}
-            className="bg-transparent hover:bg-white focus:bg-white border border-gray-200 rounded px-1.5 py-0.5 font-bold text-gray-800 uppercase outline-none text-[11px] transition-all w-full focus:ring-1 focus:ring-indigo-500"
+            className="bg-transparent hover:bg-white focus:bg-white border border-gray-200 rounded px-1.5 py-0.5 font-bold text-gray-800 uppercase outline-none text-[10px] transition-all w-full focus:ring-1 focus:ring-indigo-500"
             value={query}
             onFocus={(e) => {
               const target = e.target;
@@ -2524,7 +2524,7 @@ export const UnidadMedidaAutocomplete = ({
             ref={inputRef}
             type="text"
             tabIndex={tabIndex}
-            className="u-medida-input w-full text-[11px] border border-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-500 uppercase font-semibold text-gray-700 hover:bg-slate-50 focus:bg-white transition-all outline-none"
+            className="u-medida-input w-full text-[10px] border border-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-500 uppercase font-semibold text-gray-700 hover:bg-slate-50 focus:bg-white transition-all outline-none"
             value={query}
             onFocus={(e) => {
               e.target.select();

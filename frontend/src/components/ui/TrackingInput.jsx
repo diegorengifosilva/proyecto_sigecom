@@ -95,7 +95,7 @@ const TrackingInput = memo(({
                     <button 
                         type="button"
                         className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[9px] font-black uppercase transition-all ${
-                            isAlert ? 'bg-indigo-50 text-indigo-600 border-indigo-200' : 'bg-white text-slate-400 border-slate-200 hover:border-indigo-300 hover:text-indigo-500'
+                            isAlert ? 'bg-indigo-50 text-indigo-600 border-indigo-200' : 'bg-slate-100/80 text-slate-600 border-slate-200 hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50/50'
                         }`}
                         onClick={() => {
                             if(!isAlert) onAlertChange(new Date()); 

@@ -15,21 +15,23 @@ const Icon = ({ name, className }) => {
 
 const NAV_ITEMS = [
   { path: "/home", label: "Dashboard", icon: "LayoutDashboard" },
-  { path: "/comercial", label: "Comercial", icon: "FileText" },
+  { path: "/comercial", label: "Comercial", icon: "FileText", modulo: "COMERCIAL" },
   {
     path: "/logistica",
     label: "Logística",
     icon: "ClipboardList",
+    modulo: "LOGISTICA",
     subItems: [
       { path: "/logistica/tablas", label: "Tablas" }
     ]
   },
-  { path: "/proyectos", label: "Proyectos", icon: "Briefcase" },
-  { path: "/compras", label: "Compras", icon: "ShoppingCart" },
+  { path: "/proyectos", label: "Proyectos", icon: "Briefcase", modulo: "PROYECTOS" },
+  { path: "/compras", label: "Compras", icon: "ShoppingCart", modulo: "COMPRAS" },
   {
     path: "/caja-chica",
     label: "Caja Chica",
     icon: "Wallet",
+    modulo: "CAJA CHICA",
     subItems: [
       { path: "/caja-chica", label: "Panel Principal" },
       { path: "/caja-chica/solicitud", label: "Solicitud de Gasto" },
@@ -41,8 +43,8 @@ const NAV_ITEMS = [
       { path: "/caja-chica/reportes", label: "Reportes y Análisis" }
     ]
   },
-  { path: "/almacen", label: "Almacén", icon: "Package" },
-  { path: "/finanzas", label: "Finanzas", icon: "DollarSign" },
+  { path: "/almacen", label: "Almacén", icon: "Package", modulo: "LOGISTICA" },
+  { path: "/finanzas", label: "Finanzas", icon: "DollarSign", modulo: "CAJA CHICA" },
   {
     path: "/maestro/catalogo",
     label: "Maestro",
@@ -55,7 +57,46 @@ const NAV_ITEMS = [
     ]
   },
   { path: "/audit", label: "Auditoría", icon: "ShieldCheck" },
+  { path: "/sugerencias", label: "Sugerencias y Quejas", icon: "MessageSquare" },
+  { path: "/usuarios", label: "Configuración de Usuarios", icon: "Users", modulo: "TI" },
 ];
+
+const PORTALS_NAV_MAP = {
+  comercial: ["Dashboard", "Comercial", "Maestro", "Sugerencias y Quejas"],
+  logistica: ["Dashboard", "Logística", "Almacén", "Maestro", "Sugerencias y Quejas"],
+  compras: ["Dashboard", "Compras", "Almacén", "Maestro", "Sugerencias y Quejas"],
+  proyectos: ["Dashboard", "Proyectos", "Maestro", "Sugerencias y Quejas"],
+  finanzas: ["Dashboard", "Finanzas", "Caja Chica", "Maestro", "Sugerencias y Quejas"],
+  general: null // Muestra todos
+};
+
+const PORTAL_TO_MODULE_MAP = {
+  comercial: "COMERCIAL",
+  logistica: "LOGISTICA",
+  compras: "COMPRAS",
+  proyectos: "PROYECTOS",
+  finanzas: "CAJA CHICA"
+};
+
+const PORTALS_LIST = [
+  { key: "comercial", label: "Portal Comercial", path: "/comercial", modulo: "COMERCIAL", icon: "FileText", color: "from-blue-500 to-indigo-600" },
+  { key: "logistica", label: "Portal Logística", path: "/logistica", modulo: "LOGISTICA", icon: "ClipboardList", color: "from-amber-500 to-orange-600" },
+  { key: "compras", label: "Portal Compras", path: "/compras", modulo: "COMPRAS", icon: "ShoppingCart", color: "from-emerald-500 to-teal-600" },
+  { key: "finanzas", label: "Portal Caja Chica", path: "/caja-chica", modulo: "CAJA CHICA", icon: "Wallet", color: "from-pink-500 to-rose-600" },
+  { key: "proyectos", label: "Portal Proyectos", path: "/proyectos", modulo: "PROYECTOS", icon: "Briefcase", color: "from-purple-500 to-violet-600" }
+];
+
+const PATH_TO_PORTAL_MAP = {
+  "/comercial": "comercial",
+  "/logistica": "logistica",
+  "/almacen": "logistica",
+  "/compras": "compras",
+  "/caja-chica": "finanzas",
+  "/finanzas": "finanzas",
+  "/proyectos": "proyectos"
+};
+
+const USE_MULTI_PORTAL = false; // Define si el sistema usa subdominios independientes. Falso para unificar en un solo dominio.
 
 export default function DashboardLayout() {
   const [isExpanded, setIsExpanded] = useState(true);
@@ -63,6 +104,139 @@ export default function DashboardLayout() {
   const { authUser: user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+
+  const getActivePortal = () => {
+    if (!USE_MULTI_PORTAL) {
+      return "general";
+    }
+    const host = window.location.hostname.toLowerCase();
+    const urlParams = new URLSearchParams(window.location.search);
+    const paramOverride = urlParams.get("portal");
+    
+    if (paramOverride) {
+      localStorage.setItem("vc_portal_override", paramOverride);
+      // Limpiar parámetro de la URL de forma asíncrona
+      setTimeout(() => {
+        urlParams.delete("portal");
+        const searchStr = urlParams.toString();
+        navigate({
+          pathname: location.pathname,
+          search: searchStr ? `?${searchStr}` : ""
+        }, { replace: true });
+      }, 0);
+      return paramOverride;
+    }
+    const saved = localStorage.getItem("vc_portal_override");
+    if (saved) return saved;
+
+    if (host.includes("comercial")) return "comercial";
+    if (host.includes("logistica")) return "logistica";
+    if (host.includes("compras")) return "compras";
+    if (host.includes("proyectos")) return "proyectos";
+    if (host.includes("finanzas")) return "finanzas";
+    return "general";
+  };
+
+  const changePortal = (targetPortal, path) => {
+    if (!USE_MULTI_PORTAL) {
+      navigate(path);
+      return;
+    }
+    const host = window.location.hostname.toLowerCase();
+    if (host === "localhost" || host === "127.0.0.1" || host.startsWith("192.168.")) {
+      localStorage.setItem("vc_portal_override", targetPortal);
+      navigate(path);
+    } else {
+      const domainParts = host.split(".");
+      const port = window.location.port ? `:${window.location.port}` : "";
+      const baseDomain = domainParts.slice(-2).join(".");
+      window.location.href = `${window.location.protocol}//sigecom-5.${targetPortal}.${baseDomain}${port}${path}`;
+    }
+  };
+
+  const activePortal = getActivePortal();
+  const userModules = user?.modulos || [];
+  const requiredModule = PORTAL_TO_MODULE_MAP[activePortal];
+  
+  // Superusuario TI tiene todos los accesos bypass
+  const isSuperAdmin = userModules.some(m => m.toUpperCase() === "TI");
+
+  // Validar si el usuario tiene acceso al portal actual
+  const hasAccess = 
+    isSuperAdmin ||
+    activePortal === "general" || 
+    (requiredModule && userModules.some(m => m.toUpperCase() === requiredModule.toUpperCase()));
+
+  const currentPath = location.pathname;
+  const pathPrefix = Object.keys(PATH_TO_PORTAL_MAP).find(prefix => currentPath.startsWith(prefix));
+  const pathPortal = pathPrefix ? PATH_TO_PORTAL_MAP[pathPrefix] : null;
+
+  const isRouteAllowed = 
+    !pathPortal || 
+    activePortal === "general" || 
+    activePortal === pathPortal;
+
+  // Redirección si la ruta no pertenece al portal activo pero el usuario tiene permisos (solo multi-portal)
+  useEffect(() => {
+    if (USE_MULTI_PORTAL && !isRouteAllowed && pathPortal) {
+      const targetModule = PORTAL_TO_MODULE_MAP[pathPortal];
+      const hasDbPermission = isSuperAdmin || (targetModule && userModules.some(m => m.toUpperCase() === targetModule.toUpperCase()));
+      
+      if (hasDbPermission) {
+        changePortal(pathPortal, currentPath);
+      } else {
+        // Si no tiene permisos para esa ruta, enviarlo a su portal activo (o home)
+        const activeItem = NAV_ITEMS.find(item => item.modulo && item.modulo.toUpperCase() === requiredModule?.toUpperCase());
+        navigate(activeItem ? activeItem.path : "/home");
+      }
+    }
+  }, [currentPath, activePortal, isRouteAllowed, userModules, isSuperAdmin]);
+
+  // Proteger rutas no autorizadas en el dominio unificado
+  useEffect(() => {
+    if (!USE_MULTI_PORTAL && pathPortal) {
+      const targetModule = PORTAL_TO_MODULE_MAP[pathPortal];
+      const hasDbPermission = isSuperAdmin || (targetModule && userModules.some(m => m.toUpperCase() === targetModule.toUpperCase()));
+      
+      if (!hasDbPermission) {
+        // Redirigir al primer módulo que tenga permitido
+        const firstMod = userModules[0]?.toLowerCase();
+        if (firstMod) {
+          const defaultItem = NAV_ITEMS.find(item => item.modulo && item.modulo.toUpperCase() === userModules[0].toUpperCase());
+          navigate(defaultItem ? defaultItem.path : "/home");
+        } else {
+          navigate("/login");
+        }
+      }
+    }
+  }, [currentPath, userModules, isSuperAdmin]);
+
+  // Redirección automática si está en 'general' y no tiene permisos para Comercial al entrar a /home
+  useEffect(() => {
+    const isComercialAllowed = userModules.some(m => m.toUpperCase() === "COMERCIAL") || isSuperAdmin;
+    if (activePortal === "general" && location.pathname === "/home" && !isComercialAllowed && userModules.length > 0) {
+      let firstMod = userModules[0].toLowerCase();
+      if (firstMod === "ti") {
+        firstMod = "comercial";
+      }
+      const defaultPortal = firstMod === "caja chica" ? "finanzas" : firstMod;
+      const defaultItem = NAV_ITEMS.find(item => item.modulo && item.modulo.toUpperCase() === userModules[0].toUpperCase());
+      const path = defaultItem ? defaultItem.path : "/home";
+      changePortal(defaultPortal, path);
+    }
+  }, [location.pathname, activePortal, userModules, isSuperAdmin]);
+
+  // Filtrar ítems de navegación según el portal actual y los permisos asignados
+  const filteredNavItems = NAV_ITEMS.filter((item) => {
+    // 1. Filtrar por portal activo
+    const allowedForPortal = PORTALS_NAV_MAP[activePortal];
+    if (allowedForPortal && !allowedForPortal.includes(item.label)) {
+      return false;
+    }
+    // 2. Filtrar por permisos de base de datos
+    if (!item.modulo || isSuperAdmin) return true;
+    return userModules.some(m => m.toUpperCase() === item.modulo.toUpperCase());
+  });
 
   // Marcar notificación como leída si viene el parámetro marcar_leido_id en la URL
   useEffect(() => {
@@ -239,7 +413,7 @@ export default function DashboardLayout() {
   useEffect(() => {
     // Auto-open menus that contain the current path
     const activeMenus = {};
-    NAV_ITEMS.forEach(item => {
+    filteredNavItems.forEach(item => {
       if (item.subItems && item.subItems.some(sub => location.pathname.startsWith(sub.path))) {
         activeMenus[item.label] = true;
       }
@@ -306,7 +480,7 @@ export default function DashboardLayout() {
         </div>
 
         <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
-          {NAV_ITEMS.map((item) => {
+          {filteredNavItems.map((item) => {
             const hasSubItems = item.subItems && item.subItems.length > 0;
             const isActive = location.pathname.startsWith(item.path);
             const isOpen = !!openMenus[item.label];
@@ -438,11 +612,11 @@ export default function DashboardLayout() {
                 hasSubmenu: true,
                 submenuContent: (
                   <div className="py-0.5">
-                    {NAV_ITEMS.map((item) => (
+                    {PORTALS_LIST.filter(p => isSuperAdmin || userModules.some(m => m.toUpperCase() === p.modulo.toUpperCase())).map((item) => (
                       <button
                         key={item.path}
                         className="flex items-center w-full text-left gap-2 px-3 py-2 text-[10px] font-bold uppercase tracking-tight rounded-xl text-slate-600 hover:bg-slate-50 hover:text-indigo-600 transition-colors"
-                        onClick={() => navigate(item.path)}
+                        onClick={() => changePortal(item.key, item.path)}
                       >
                         <Icon name={item.icon} className="w-4 h-4 opacity-70" />
                         <span>{item.label}</span>
@@ -551,7 +725,49 @@ export default function DashboardLayout() {
 
         <main className="flex-1 overflow-auto p-4 md:p-6 bg-gray-50/50">
           <div className="w-full h-full">
-            <Outlet context={{ setCustomBreadcrumbs, setBreadcrumbOverride }} />
+            {hasAccess ? (
+              <Outlet context={{ setCustomBreadcrumbs, setBreadcrumbOverride }} />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <div className="max-w-md w-full bg-white rounded-3xl p-8 border border-slate-100 shadow-2xl text-center flex flex-col items-center animate-in fade-in zoom-in-95 duration-300">
+                  <div className="h-16 w-16 bg-rose-50 text-rose-500 rounded-2xl flex items-center justify-center mb-6 shadow-inner animate-bounce">
+                    <LucideIcons.ShieldAlert className="h-8 w-8" />
+                  </div>
+                  <h2 className="text-xl font-bold text-slate-800 tracking-tight mb-2">Acceso Restringido</h2>
+                  <p className="text-xs text-slate-400 max-w-sm leading-relaxed mb-8">
+                    Tu cuenta no tiene asignado el módulo necesario para ingresar al portal <span className="font-bold text-slate-600 uppercase">"{activePortal}"</span>. Solicita los permisos necesarios al administrador o ingresa a un portal autorizado.
+                  </p>
+
+                  <div className="w-full">
+                    <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-4">Portales Disponibles para Ti</h3>
+                    {PORTALS_LIST.filter(p => userModules.some(m => m.toUpperCase() === p.modulo.toUpperCase())).length > 0 ? (
+                      <div className="grid gap-3">
+                        {PORTALS_LIST.filter(p => userModules.some(m => m.toUpperCase() === p.modulo.toUpperCase())).map((portal) => (
+                          <button
+                            key={portal.key}
+                            onClick={() => changePortal(portal.key, portal.path)}
+                            className={`flex items-center gap-4 w-full text-left bg-gradient-to-r ${portal.color} transition-all duration-300 p-4 rounded-2xl text-white shadow-md hover:shadow-lg font-semibold hover:-translate-y-0.5`}
+                          >
+                            <div className="h-10 w-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm shrink-0">
+                              <Icon name={portal.icon} className="h-5 w-5 text-white" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-bold truncate leading-tight">{portal.label}</p>
+                              <p className="text-[10px] text-white/80 truncate leading-none mt-0.5">Módulo de {portal.modulo.toLowerCase()}</p>
+                            </div>
+                            <LucideIcons.ArrowRight className="h-4 w-4 text-white/80 shrink-0" />
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-6 bg-slate-50 border border-slate-100 rounded-2xl text-slate-400 font-medium text-xs">
+                        No tienes ningún módulo asignado en la base de datos.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </main>
       </div>

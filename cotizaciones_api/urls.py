@@ -33,6 +33,7 @@ urlpatterns = [
     path('adjuntos/<int:id_registro>/', views.gestionar_adjuntos, name='gestionar_adjuntos'),
     path('mensajes/<int:id_registro>/', views.gestionar_mensajes, name='gestionar_mensajes'),
     path("seguimientos/<int:id_registro>/", views.listar_seguimientos, name="listar_seguimiento"),
+    path("suministros/descargar-plantilla/", views.descargar_plantilla_suministros, name="descargar_plantilla_suministros"),
 
 
     path("<int:num_reg>/totales-descuento/", views.totales_descuento_view, name="totales_descuento"),

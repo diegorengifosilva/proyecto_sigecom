@@ -14,7 +14,7 @@ export const CompactTiempoUnidad = ({ label, value, onValueChange, unitValue, on
           onBlur={onValueChange}
           onKeyDown={(e) => e.key === 'Enter' && e.target.blur()}
           readOnly={isReadOnly}
-          className="bg-transparent border-none p-0 h-auto w-8 font-black text-[10px] text-gray-900 focus:ring-0 outline-none"
+          className="bg-transparent border-none p-0 h-auto w-8 font-black text-[11px] text-gray-900 focus:ring-0 outline-none"
         />
 
         <span className="text-gray-300 font-light mx-1">|</span>
@@ -25,7 +25,7 @@ export const CompactTiempoUnidad = ({ label, value, onValueChange, unitValue, on
             value={unitValue}
             onChange={onUnitChange}
             disabled={isReadOnly || !value || value === "0"}
-            className="bg-transparent border-none p-0 h-auto font-black text-[10px] text-gray-600 focus:ring-0 cursor-pointer w-auto appearance-none pr-3"
+            className="bg-transparent border-none p-0 h-auto font-black text-[11px] text-gray-600 focus:ring-0 cursor-pointer w-auto appearance-none pr-3"
           >
             {options.map(o => (
               <option key={o.id} value={o.id}>{o.nombre.toUpperCase()}</option>

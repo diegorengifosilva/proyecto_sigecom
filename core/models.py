@@ -377,3 +377,23 @@ class ObjetivoAnualArea(models.Model):
     def __str__(self):
         return f"{self.id_area.nombre} - Objetivo Anual {self.id_objetivo.anno}"
 
+class Gerencia(models.Model):
+    id_gerencia = models.AutoField(primary_key=True)
+    nombre = models.CharField(max_length=255)
+    id_encargado = models.ForeignKey(
+        'users.Usuario', 
+        on_delete=models.SET_NULL, 
+        db_column='id_encargado',
+        blank=True, 
+        null=True
+    )
+    activo = models.IntegerField(default=1)
+
+    class Meta:
+        managed = False
+        db_table = 'gerencia'
+
+    def __str__(self):
+        return self.nombre
+
+

@@ -21,43 +21,86 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
     if (!Array.isArray(rows)) return estructura;
 
     rows.forEach((srv) => {
+      let groupCode = "01";
+      const firstSg = srv.subgrupos?.[0];
+      if (firstSg && firstSg.codigo_servicio && firstSg.codigo_servicio.length >= 2) {
+        groupCode = firstSg.codigo_servicio.slice(0, 2);
+      } else if (srv.codigo_servicio && srv.codigo_servicio.length >= 2) {
+        groupCode = srv.codigo_servicio.slice(0, 2);
+      }
+
+      const existingSubs = srv.subgrupos || [];
+      const subMap = {};
+      existingSubs.forEach(sg => {
+        let type = sg.tipoCodigo;
+        if (type && type.length > 2) {
+          type = type.substring(type.length - 2);
+        }
+        if (type) {
+          subMap[type] = sg;
+        }
+      });
+
+      const typesList = [
+        { type: "04", name: "MANO DE OBRA", gasto: 3 },
+        { type: "05", name: "GASTOS SERVICIO", gasto: 4 },
+        { type: "06", name: "OTROS", gasto: 5 }
+      ];
+
+      const finalizedSubgroups = typesList.map((tInfo) => {
+        const existing = subMap[tInfo.type];
+        if (existing) {
+          return {
+            id_servicio: existing.id || existing.id_servicio,
+            titulo: existing.titulo || tInfo.name,
+            tipoCodigo: existing.tipoCodigo || tInfo.type,
+            tipoNombre: existing.tipoNombre || tInfo.name,
+            codigo_servicio: existing.codigo_servicio || `${groupCode}${tInfo.type}1`,
+            items: (existing.items || []).map(it => ({
+              id_servicio: it.id_servicio,
+              id_registro: it.id_registro,
+              id_tipo_gasto: it.id_tipo_gasto || tInfo.gasto,
+              id_area: it.id_area || 1,
+              area_nombre: it.area_nombre || "",
+              gasto_nombre: it.gasto_nombre || "",
+              codigo_servicio: it.codigo_servicio || "",
+              nombre_servicio: it.nombre_servicio || "",
+              nivel: it.nivel || 2,
+              codigo_item: it.codigo_item || "",
+              descripcion_item: it.descripcion_item || "",
+              horas: Number(it.horas || 0),
+              cantidad_hombres: Number(it.cantidad_hombres || 0),
+              costo_hombre_dia: Number(it.costo_hombre_dia || 0),
+              cantidad_dias: Number(it.cantidad_dias || 0),
+              costo_total: Number(it.costo_total || 0),
+              porcentaje: Number(it.porcentaje || 0),
+              utilidad: Number(it.utilidad || 0),
+              cotizado_hombre_dia: Number(it.cotizado_hombre_dia || 0),
+              cotizado_total: Number(it.cotizado_total || 0),
+              descripcion_servicio: it.descripcion_servicio || "",
+              orden: it.orden || 0
+            }))
+          };
+        } else {
+          const tempSubId = `temp_missing_sub_${tInfo.type}_${srv.id_servicio}_${Math.random().toString(36).substr(2, 9)}`;
+          return {
+            id_servicio: tempSubId,
+            titulo: tInfo.name,
+            tipoCodigo: tInfo.type,
+            tipoNombre: tInfo.name,
+            codigo_servicio: `${groupCode}${tInfo.type}1`,
+            items: []
+          };
+        }
+      });
+
       estructura[srv.id_servicio] = {
         id_servicio: srv.id_servicio,
         tituloGeneral: srv.tituloGeneral || "",
         cantidad: Number(srv.cantidad || 1),
         detalle: srv.detalle || "",
         orden: srv.orden || 0,
-        subgrupos: (srv.subgrupos || []).map(sg => ({
-          id_servicio: sg.id,
-          titulo: sg.titulo || "",
-          tipoCodigo: sg.tipoCodigo || "",
-          tipoNombre: sg.tipoNombre || "",
-          codigo_servicio: sg.codigo_servicio || "",
-          items: (sg.items || []).map(it => ({
-            id_servicio: it.id_servicio,
-            id_registro: it.id_registro,
-            id_tipo_gasto: it.id_tipo_gasto,
-            id_area: it.id_area,
-            area_nombre: it.area_nombre || "",
-            gasto_nombre: it.gasto_nombre || "",
-            codigo_servicio: it.codigo_servicio || "",
-            nombre_servicio: it.nombre_servicio || "",
-            nivel: it.nivel,
-            codigo_item: it.codigo_item || "",
-            descripcion_item: it.descripcion_item || "",
-            horas: Number(it.horas || 0),
-            cantidad_hombres: Number(it.cantidad_hombres || 0),
-            costo_hombre_dia: Number(it.costo_hombre_dia || 0),
-            cantidad_dias: Number(it.cantidad_dias || 0),
-            costo_total: Number(it.costo_total || 0),
-            porcentaje: Number(it.porcentaje || 0),
-            utilidad: Number(it.utilidad || 0),
-            cotizado_hombre_dia: Number(it.cotizado_hombre_dia || 0),
-            cotizado_total: Number(it.cotizado_total || 0),
-            descripcion_servicio: it.descripcion_servicio || "",
-            orden: it.orden || 0
-          }))
-        }))
+        subgrupos: finalizedSubgroups
       };
     });
 
@@ -341,7 +384,7 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
   };
 
   // Eliminar Ítem de Servicio (Nivel 2)
-  const handleEliminarItemServicio = async (idItem) => {
+  const handleEliminarItemServicio = async (idItem, bypassConfirm = false) => {
     let itemDesc = "";
     let foundItem = null;
     let foundParentService = null;
@@ -361,10 +404,11 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
     });
     const descText = itemDesc ? ` "${itemDesc}"` : "";
 
-    if (!confirm(`¿Está seguro de eliminar el ítem de servicio${descText}?`)) {
-      return false;
+    if (!bypassConfirm) {
+      if (!confirm(`¿Está seguro de eliminar el ítem de servicio${descText}?`)) {
+        return false;
+      }
     }
-
     if (typeof idItem !== 'string' || !idItem.startsWith('temp_')) {
       setDeletedServicioIds(prev => [...prev, idItem]);
     }
@@ -676,7 +720,20 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
           const subCode = `${groupCode}${sg.tipoCodigo || "04"}1`;
           const origSg = origGp?.subgrupos?.find(s => s.id_servicio === sg.id_servicio);
 
-          if (typeof sg.id_servicio !== 'string' || !sg.id_servicio.startsWith('temp_')) {
+          const isSubgroupTemp = typeof sg.id_servicio === 'string' && sg.id_servicio.startsWith('temp_');
+
+          if (isSubgroupTemp) {
+            if ((sg.items || []).length > 0) {
+              const payloadSub = {
+                nivel: 1,
+                codigo_servicio: subCode,
+                nombre_servicio: sg.titulo,
+                id_tipo_gasto: sg.tipoCodigo?.endsWith("04") ? 3 : sg.tipoCodigo?.endsWith("05") ? 4 : 5,
+                id_registro: numReg
+              };
+              savePromises.push(api.post(`cotizaciones/lista_servicios/${numReg}/`, payloadSub));
+            }
+          } else {
             if (hasSubgroupChanged(sg, origSg)) {
               const payloadSub = {
                 id_servicio: sg.id_servicio,

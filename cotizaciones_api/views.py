@@ -5031,11 +5031,9 @@ def build_cotizacion_pdf_context(num_reg):
         7: "Jul", 8: "Ago", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dic"
     }
 
-    fecha_formateada = ""
-    if cotizacion.fecha:
-        f = cotizacion.fecha
-        # Formato: Día de Mes de Año -> 26 Dic. 2025
-        fecha_formateada = f"{f.day:02d} {MESES_ES[f.month]} {f.year}"
+    # Se utiliza la fecha de generación del reporte en lugar de la fecha de la cotización
+    f = timezone.localtime()
+    fecha_formateada = f"{f.day:02d} {MESES_ES[f.month]} {f.year}"
         
     # =========================
     # CABECERA CONTEXT
@@ -5123,6 +5121,7 @@ def build_cotizacion_pdf_context(num_reg):
                 "total_grupo": tot * can,
                 "subtotal_pu_items": Decimal("0.00"),
                 "subtotal_tot_items": Decimal("0.00"),
+                "total_por_grupo": s.total_por_grupo == 1,
                 "items": [],
             }
 
@@ -5508,7 +5507,7 @@ def descargar_cotizacion_word(request, num_reg):
                         
                         # 2. Wrap discount row in conditional check
                         doc_xml = re.sub(
-                            r'<w:tr\b[^>]*>(?:(?!</?w:tr\b).)*DESCUENTO:(?:(?!</?w:tr\b).)*</w:tr>',
+                            r'<w:tr\b[^>]*>(?:(?!</?w:tr\b).)*DESCUENTO(?:(?!</?w:tr\b).)*</w:tr>',
                             r'{% if totales.descuento and totales.descuento > 0 %}\g<0>{% endif %}',
                             doc_xml,
                             flags=re.DOTALL | re.IGNORECASE
@@ -5544,19 +5543,20 @@ def descargar_cotizacion_word(request, num_reg):
             g['total_g_f'] = formatear_moneda(g.get('total_grupo', 0))
             g['subtotal_f'] = formatear_moneda(g.get('subtotal_tot_items', 0))
             g['unitario_f'] = formatear_moneda(g.get('total', 0))
-            g['cant_f'] = f"{g.get('cantidad', 0):,.2f}"
+            g['cant_f'] = f"{g.get('cantidad', 0):,.0f}"
             
             g['filas'] = g.get('items', [])
             for item in g['filas']:
-                ent_val = item.get('entrega', 0)
-                uni_val = item.get('unidad_entrega', '')
-                item['entrega_f'] = f"{ent_val} {uni_val}" if ent_val > 0 else ""
+                ent_val = item.get('entrega') or 0
+                uni_val = item.get('unidad_entrega') or 'Días'
+                item['entrega'] = ent_val
+                item['unidad_entrega'] = uni_val
                 desc = item.get('descripcion', '') or ''
                 # Limpieza de HTML básico para descripciones de items
                 item['desc_f'] = RichText(desc.replace('<br>', '\n').replace('<br/>', '\n'))
                 item['precio_f'] = formatear_moneda(item.get('precio_unitario', 0))
                 item['total_f'] = formatear_moneda(item.get('total', 0))
-                item['cant_f'] = f"{item.get('cantidad', 0):,.2f}"
+                item['cant_f'] = f"{item.get('cantidad', 0):,.0f}"
 
         # 2. Procesamiento de servicios
         for s in context.get('servicios', []):
@@ -5566,7 +5566,7 @@ def descargar_cotizacion_word(request, num_reg):
             
             s['total_g_f'] = formatear_moneda(s.get('total_servicio', 0))
             s['unitario_f'] = formatear_moneda(s.get('total', 0))
-            s['cant_f'] = f"{s.get('cantidad', 0):,.2f}"
+            s['cant_f'] = f"{s.get('cantidad', 0):,.0f}"
             
             detalle_raw = s.get('detalle', '') or ''
             rt = RichText()
@@ -5762,6 +5762,14 @@ def crear_nueva_version_cotizacion(request, id_registro):
             nueva_coti.id_estado_id = 2  # Estado inicial: Cotización (Pendiente)
             nueva_coti.estado_oportunidad = 4  # Cotizado
             nueva_coti.envio = 0
+            nueva_coti.estado_envio = 1  # Forzar estado a Pendiente de Envío (editable)
+            
+            # El responsable comercial de la nueva versión cambia al comercial que la está generando
+            usuario_generador = Usuario.objects.using("default").filter(usuario=usuario_codigo).first()
+            if usuario_generador:
+                nueva_coti.id_comercial = usuario_generador
+                nueva_coti.id_comercial_id = usuario_generador.id_usuario
+            
             nueva_coti.regus = usuario_codigo
             nueva_coti.fecha = now()
             
@@ -5967,6 +5975,13 @@ def generar_copiar_cotizacion(request, id_registro):
             nueva_coti.id_estado_id = 2  # Estado inicial: Cotización (Pendiente)
             nueva_coti.estado_oportunidad = 4  # Cotizado
             nueva_coti.estado_envio = 1
+            
+            # El responsable comercial de la copia cambia al comercial que la está generando
+            usuario_generador = Usuario.objects.using("default").filter(usuario=usuario_codigo).first()
+            if usuario_generador:
+                nueva_coti.id_comercial = usuario_generador
+                nueva_coti.id_comercial_id = usuario_generador.id_usuario
+                
             nueva_coti.regus = usuario_codigo
             nueva_coti.fecha = now()
 
@@ -7615,3 +7630,105 @@ def vista_analisis_delete_api(request, id_vista):
         return Response({"message": "Vista eliminada correctamente"})
     except VistaAnalisis.DoesNotExist:
         return Response({"error": "La vista no existe o no tienes permiso para eliminarla"}, status=status.HTTP_404_NOT_FOUND)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def descargar_plantilla_suministros(request):
+    from openpyxl import Workbook
+    from openpyxl.utils import get_column_letter
+    from core.models import Producto, UnidadMedida
+    import random
+    
+    wb = Workbook()
+    
+    # Load all active units of measure from the database
+    unidades_validas = list(UnidadMedida.objects.filter(activo=1))
+    
+    # Sheet 1: Main Template
+    ws = wb.active
+    ws.title = "Plantilla Importación"
+    
+    headers = [
+        "MARCA",
+        "CODIGO",
+        "DESCRIPCION",
+        "CANTIDAD",
+        "COSTO UNITARIO",
+        "UTILIDAD",
+        "UNIDAD MEDIDA",
+        "TIEMPOS ENTREGA"
+    ]
+    ws.append(headers)
+    
+    # Style headers: RGB(35, 117, 115) -> Hex 237573
+    fill = PatternFill(start_color="237573", end_color="237573", fill_type="solid")
+    font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    align = Alignment(horizontal="center", vertical="center")
+    
+    for col_idx in range(1, len(headers) + 1):
+        cell = ws.cell(row=1, column=col_idx)
+        cell.fill = fill
+        cell.font = font
+        cell.alignment = align
+        
+    # Column widths
+    widths = [20, 20, 45, 10, 16, 10, 16, 18]
+    for idx, width in enumerate(widths, 1):
+        col_letter = get_column_letter(idx)
+        ws.column_dimensions[col_letter].width = width
+
+    # Balanced query: Fetch 7 random products per active brand to guarantee representation
+    from core.models import TipoMarca
+    marcas = TipoMarca.objects.filter(activo="1").order_by("nombre")
+    selected_products = []
+    
+    for m in marcas:
+        brand_prods = Producto.objects.filter(activo=1, id_marca=m).order_by('?')[:7]
+        selected_products.extend(list(brand_prods))
+        
+    random.shuffle(selected_products)
+    final_products = selected_products[:35]
+    
+    # Fallback to fill up to 35 items if needed
+    if len(final_products) < 30:
+        needed = 35 - len(final_products)
+        fallback_prods = Producto.objects.filter(activo=1).exclude(
+            id_producto__in=[p.id_producto for p in final_products]
+        ).order_by('?')[:needed]
+        final_products.extend(list(fallback_prods))
+        
+    for p in final_products:
+        marca_name = p.id_marca.nombre if p.id_marca else "Otros"
+        codigo = p.codigo if p.codigo else ""
+        nombre = p.nombre.strip() if p.nombre else ""
+        cantidad = random.choice([1, 2, 5, 10])
+        
+        # Prevent 0.0 costs by assigning a realistic random value
+        costo_unit = float(p.precio_dolares) if p.precio_dolares and float(p.precio_dolares) > 0.0 else round(random.uniform(15.0, 185.0), 2)
+        
+        utilidad = 15.0
+        
+        # Load unit of measure from database
+        um_obj = p.id_medida if p.id_medida else (random.choice(unidades_validas) if unidades_validas else None)
+        um = um_obj.codigo.strip() if um_obj and um_obj.codigo else "UNI"
+        
+        entrega = random.choice([0, 1, 5, 10])
+        
+        ws.append([
+            marca_name,
+            codigo,
+            nombre,
+            cantidad,
+            costo_unit,
+            utilidad,
+            um,
+            entrega
+        ])
+        
+    # Prepare HTTP response
+    response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    response["Content-Disposition"] = 'attachment; filename="Plantilla_Importacion_Suministros.xlsx"'
+    
+    wb.save(response)
+    return response

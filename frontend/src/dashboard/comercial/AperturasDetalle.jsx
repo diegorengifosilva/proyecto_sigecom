@@ -20,11 +20,106 @@ const Icon = ({ name, className }) => {
   return <LucideIcon className={className} />;
 };
 
-const CompactField = ({ label, children, className }) => {
+const REQUIRED_LABELS = [
+  "referencia del proyecto",
+  "referencia",
+  "probabilidad",
+  "igv",
+  "moneda",
+  "tipo moneda",
+  "t. cambio",
+  "tipo cambio",
+  "forma pago",
+  "lugar entrega",
+  "cliente",
+  "cliente (para)",
+  "representante",
+  "recepción solicitud",
+  "recepcion solicitud",
+  "fecha límite",
+  "fecha limite",
+  "emisión cotización",
+  "emision cotización",
+  "área",
+  "comercial",
+  "técnico",
+  "tecnico"
+];
+
+const EMPTY_PLACEHOLDERS = [
+  "---",
+  "sin referencia asignada",
+  "sin nombre",
+  "sin cargo",
+  "sin representante",
+  "seleccionar...",
+  "buscar técnico...",
+  "buscar comercial...",
+  "sin técnico",
+  "sin comercial",
+  "",
+  "0",
+  "0 días",
+  "0 semanas",
+  "0 meses",
+  "0 días (suministros)",
+  "0 días (servicios)",
+  "0 días (validez)"
+];
+
+const CompactField = ({ label, children, className, required, isEmpty }) => {
+  const labelClean = String(label || "").toLowerCase().trim();
+  const isRequired = required || REQUIRED_LABELS.includes(labelClean);
+
+  const detectIsEmpty = () => {
+    if (isEmpty !== undefined) return isEmpty;
+    if (children) {
+      const extractText = (node) => {
+        if (!node) return "";
+        if (typeof node === "string" || typeof node === "number") return String(node);
+        if (Array.isArray(node)) return node.map(extractText).join("");
+        if (node.props) {
+          if (node.props.value !== undefined && node.props.value !== null) {
+            return String(node.props.value);
+          }
+          if (node.props.children) {
+            return extractText(node.props.children);
+          }
+        }
+        return "";
+      };
+      const text = extractText(children).trim().toLowerCase();
+      return !text || EMPTY_PLACEHOLDERS.includes(text);
+    }
+    return true;
+  };
+
+  const isFieldEmpty = detectIsEmpty();
+  const showWarning = isRequired && isFieldEmpty;
+
   return (
-    <div className={cn("bg-gray-50/70 p-2.5 rounded-xl border border-gray-100 flex flex-col justify-center min-h-[50px]", className)}>
-      <span className="text-[8px] font-bold text-gray-400 uppercase tracking-tighter mb-0.5 block">{label}</span>
-      <div className="text-[10px] font-black text-gray-900 uppercase truncate">{children}</div>
+    <div className={cn(
+      "p-2.5 rounded-xl flex flex-col justify-center min-h-[50px] transition-all duration-200 border",
+      showWarning 
+        ? "bg-amber-50/40 border-amber-200/80 shadow-sm" 
+        : "bg-gray-50/70 border-gray-100/80",
+      className
+    )}>
+      <span className={cn(
+        "text-[8px] font-black uppercase tracking-wider mb-0.5 block",
+        showWarning ? "text-amber-700" : "text-slate-500"
+      )}>
+        {label}
+        {isRequired && <span className="text-rose-500 ml-0.5 font-bold">*</span>}
+        {showWarning && (
+          <span className="text-[7.5px] font-extrabold ml-1.5 text-amber-600 normal-case bg-amber-100/85 px-1 py-0.5 rounded">
+            (Falta)
+          </span>
+        )}
+      </span>
+      <div className={cn("text-[10px] font-black uppercase truncate", showWarning ? "text-amber-800/80" : "text-gray-900")}>
+        {children}
+      </div>
     </div>
   );
 };
@@ -1322,7 +1417,7 @@ export default function AperturasDetalle({ idRegistro }) {
             </span>
           </div>
 
-          <div className="overflow-x-auto border border-slate-100 rounded-xl bg-white">
+          <div className="overflow-x-auto overflow-y-hidden border border-slate-100 rounded-xl bg-white">
             <table className="min-w-[850px] md:min-w-full table-fixed divide-y divide-slate-100 text-center text-xs">
               <thead className="bg-slate-50/70 text-[9px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100">
                 <tr>
@@ -1838,7 +1933,7 @@ export default function AperturasDetalle({ idRegistro }) {
                                     </div>
 
                                     {isExpanded && (
-                                      <div className="overflow-x-auto border-t border-slate-100">
+                                      <div className="overflow-x-auto overflow-y-hidden border-t border-slate-100">
                                         <table className="min-w-[800px] md:min-w-full divide-y divide-slate-100 text-[10px]">
                                           <thead className="bg-slate-50/30 text-slate-500 font-bold uppercase tracking-wider text-[8px] text-center">
                                             <tr>
@@ -1854,7 +1949,7 @@ export default function AperturasDetalle({ idRegistro }) {
                                           <tbody className="divide-y divide-slate-50 text-slate-700 uppercase font-semibold text-center">
                                             {(grupo.items || []).map((item, idx) => (
                                               <tr key={item.id_suministro || idx} className="hover:bg-slate-50/30 h-9">
-                                                <td className="font-bold text-slate-900">{item.codigo_item || '-'}</td>
+                                                <td className="font-bold text-slate-900 text-[11px] truncate max-w-[120px]">{item.codigo_item || '-'}</td>
                                                 <td className="text-left px-3 text-slate-800 font-medium normal-case">{item.descripcion || '-'}</td>
                                                 <td className="text-slate-500 font-medium">{item.marca_nombre || item.proveedor || '-'}</td>
                                                 <td className="text-slate-800 font-bold">{item.cantidad || 0}</td>
@@ -2061,30 +2156,55 @@ export default function AperturasDetalle({ idRegistro }) {
 
                                                   if (isMO) {
                                                     return (
-                                                      <div className="overflow-x-auto border-t border-slate-100">
+                                                      <div className="overflow-x-auto overflow-y-hidden border-t border-slate-100">
                                                         <table className="min-w-[800px] md:min-w-full divide-y divide-slate-100 text-[10px]">
                                                           <thead className="bg-slate-50/30 text-slate-500 font-bold uppercase tracking-wider text-[8px] text-center">
                                                             <tr>
                                                               <th className="py-2 w-[12%]">Cód. Personal</th>
-                                                              <th className="py-2 text-left px-3 w-[26%]">Descripción / Tarea</th>
+                                                              <th className="py-2 text-left px-3 w-[28%]">Descripción / Tarea</th>
                                                               <th className="py-2 w-[7%]">Cant. (H)</th>
-                                                              <th className="py-2 w-[6%]">Días</th>
-                                                              <th className="py-2 w-[6%]">Horas</th>
+                                                              <th className="py-2 w-[10%]">Días / Horas</th>
                                                               <th className="py-2 w-[10%] text-right">Costo H/D</th>
                                                               <th className="py-2 w-[11%] text-right">Costo Total</th>
                                                               <th className="py-2 w-[8%]">Util. %</th>
-                                                              <th className="py-2 w-[11%] text-right">Cotizado Total</th>
+                                                              <th className="py-2 w-[11%] text-right">
+                                                                <div className="flex flex-col items-end leading-none pr-1">
+                                                                  <span>Cotizado</span>
+                                                                  <span>Total</span>
+                                                                </div>
+                                                              </th>
                                                               <th className="py-2 w-[3%]"></th>
                                                             </tr>
                                                           </thead>
                                                           <tbody className="divide-y divide-slate-50 text-slate-700 uppercase font-semibold text-center">
                                                             {subgrupo.items.map((item, idx) => (
                                                               <tr key={item.id_servicio || idx} className="hover:bg-slate-55/30 h-9">
-                                                                <td className="font-bold text-slate-900">{item.codigo_item || '-'}</td>
-                                                                <td className="text-left px-3 text-slate-800 font-medium normal-case">{item.descripcion_item || '-'}</td>
+                                                                <td className="py-1.5 px-3 text-center">
+                                                                  {(() => {
+                                                                    const parts = (item.codigo_item || '').split('-');
+                                                                    if (parts.length > 1) {
+                                                                      return (
+                                                                        <div className="flex flex-col items-center justify-center leading-none select-none">
+                                                                          <span className="text-[10px] font-black text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded-full border border-indigo-100">{parts[0]}</span>
+                                                                          <span className="text-[9px] text-slate-500 font-extrabold mt-1 uppercase max-w-[120px] truncate">{parts.slice(1).join('-')}</span>
+                                                                        </div>
+                                                                      );
+                                                                    }
+                                                                    return <span className="text-[11px] font-bold text-slate-900 uppercase">{item.codigo_item || '-'}</span>;
+                                                                  })()}
+                                                                </td>
+                                                                <td className="text-left px-3 py-1.5 text-slate-800 font-medium normal-case whitespace-normal break-words leading-tight text-[10px]">{item.descripcion_item || '-'}</td>
                                                                 <td className="text-slate-800 font-bold">{item.cantidad_hombres || 0}</td>
-                                                                <td className="text-slate-600 font-semibold">{item.cantidad_dias || 0}</td>
-                                                                <td className="text-slate-600">{item.horas || 0}</td>
+                                                                <td className="py-1">
+                                                                  <div className="flex flex-col items-center justify-center gap-0.5 whitespace-nowrap select-none">
+                                                                    <span className="text-[10px] font-semibold text-slate-700">
+                                                                      {item.cantidad_dias || 0} {Number(item.cantidad_dias || 0) === 1 ? 'día' : 'días'}
+                                                                    </span>
+                                                                    <span className="text-[8.5px] font-black text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded-full border border-indigo-100">
+                                                                      {item.horas || 0} {Number(item.horas || 0) === 1 ? 'hora' : 'horas'}
+                                                                    </span>
+                                                                  </div>
+                                                                </td>
                                                                 <td className="text-right text-slate-600">{formatMoney(item.costo_hombre_dia)}</td>
                                                                 <td className="text-right text-slate-600 font-medium">{formatMoney(item.costo_total)}</td>
                                                                 <td className="text-teal-600 font-bold">{item.porcentaje || 0}%</td>
@@ -2108,7 +2228,7 @@ export default function AperturasDetalle({ idRegistro }) {
                                                   }
                                                 if (isGastos) {
                                                   return (
-                                                    <div className="overflow-x-auto border-t border-slate-100">
+                                                    <div className="overflow-x-auto overflow-y-hidden border-t border-slate-100">
                                                       <table className="min-w-[800px] md:min-w-full divide-y divide-slate-100 text-[10px]">
                                                         <thead className="bg-slate-50/30 text-slate-500 font-bold uppercase tracking-wider text-[8px] text-center">
                                                           <tr>
@@ -2124,10 +2244,23 @@ export default function AperturasDetalle({ idRegistro }) {
                                                         <tbody className="divide-y divide-slate-50 text-slate-700 uppercase font-semibold text-center">
                                                           {subgrupo.items.map((item, idx) => (
                                                             <tr key={item.id_servicio || idx} className="hover:bg-slate-55/30 h-9">
-                                                              <td className="font-bold text-slate-900">{item.codigo_item || '-'}</td>
-                                                              <td className="text-left px-3 text-slate-800 font-medium normal-case">{item.descripcion_item || '-'}</td>
+                                                              <td className="py-1.5 px-3 text-center">
+                                                                {(() => {
+                                                                  const parts = (item.codigo_item || '').split('-');
+                                                                  if (parts.length > 1) {
+                                                                    return (
+                                                                      <div className="flex flex-col items-center justify-center leading-none select-none">
+                                                                        <span className="text-[10px] font-black text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded-full border border-indigo-100">{parts[0]}</span>
+                                                                        <span className="text-[9px] text-slate-500 font-extrabold mt-1 uppercase max-w-[120px] truncate">{parts.slice(1).join('-')}</span>
+                                                                      </div>
+                                                                    );
+                                                                  }
+                                                                  return <span className="text-[11px] font-bold text-slate-900 uppercase">{item.codigo_item || '-'}</span>;
+                                                                })()}
+                                                              </td>
+                                                              <td className="text-left px-3 py-1.5 text-slate-800 font-medium normal-case whitespace-normal break-words leading-tight text-[10px]">{item.descripcion_item || '-'}</td>
                                                               <td className="text-slate-800 font-bold">{item.cantidad_hombres || 0}</td>
-                                                              <td className="text-slate-600 font-semibold">{item.cantidad_dias || 0}</td>
+                                                              <td className="text-slate-600 font-semibold">{item.cantidad_dias || 0} {Number(item.cantidad_dias || 0) === 1 ? 'día' : 'días'}</td>
                                                               <td className="text-right text-slate-600">{formatMoney(item.costo_hombre_dia)}</td>
                                                               <td className="text-right pr-4 text-slate-900 font-bold">{formatMoney(item.cotizado_total)}</td>
                                                               <td className="py-1">
@@ -2150,7 +2283,7 @@ export default function AperturasDetalle({ idRegistro }) {
 
                                                 // fallback to Otros
                                                 return (
-                                                  <div className="overflow-x-auto border-t border-slate-100">
+                                                  <div className="overflow-x-auto overflow-y-hidden border-t border-slate-100">
                                                     <table className="min-w-[800px] md:min-w-full divide-y divide-slate-100 text-[10px]">
                                                       <thead className="bg-slate-50/30 text-slate-500 font-bold uppercase tracking-wider text-[8px] text-center">
                                                         <tr>
@@ -2167,8 +2300,21 @@ export default function AperturasDetalle({ idRegistro }) {
                                                       <tbody className="divide-y divide-slate-50 text-slate-700 uppercase font-semibold text-center">
                                                         {subgrupo.items.map((item, idx) => (
                                                           <tr key={item.id_servicio || idx} className="hover:bg-slate-55/30 h-9">
-                                                            <td className="font-bold text-slate-900">{item.codigo_item || '-'}</td>
-                                                            <td className="text-left px-3 text-slate-800 font-medium normal-case">{item.descripcion_item || '-'}</td>
+                                                            <td className="py-1.5 px-3 text-center">
+                                                              {(() => {
+                                                                const parts = (item.codigo_item || '').split('-');
+                                                                if (parts.length > 1) {
+                                                                  return (
+                                                                    <div className="flex flex-col items-center justify-center leading-none select-none">
+                                                                      <span className="text-[10px] font-black text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded-full border border-indigo-100">{parts[0]}</span>
+                                                                      <span className="text-[9px] text-slate-500 font-extrabold mt-1 uppercase max-w-[120px] truncate">{parts.slice(1).join('-')}</span>
+                                                                    </div>
+                                                                  );
+                                                                }
+                                                                return <span className="text-[11px] font-bold text-slate-900 uppercase">{item.codigo_item || '-'}</span>;
+                                                              })()}
+                                                            </td>
+                                                            <td className="text-left px-3 py-1.5 text-slate-800 font-medium normal-case whitespace-normal break-words leading-tight text-[10px]">{item.descripcion_item || '-'}</td>
                                                             <td className="text-slate-800 font-bold">{item.cantidad_hombres || 0}</td>
                                                             <td className="text-right text-slate-600">{formatMoney(item.costo_hombre_dia)}</td>
                                                             <td className="text-right text-slate-600 font-medium">{formatMoney(item.costo_total)}</td>

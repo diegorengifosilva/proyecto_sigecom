@@ -68,8 +68,8 @@
 
         .cover-content {
             margin-top: 120px; /* Bajamos un poco más el bloque */
-            padding-left: 1.5cm; /* Margen exacto de Word para que no choque al borde */
-            text-align: left;
+            padding-left: 0;
+            text-align: center;
         }
 
         .tagline-portada {
@@ -93,8 +93,9 @@
             font-weight: 900; /* Máximo grosor */
             line-height: 1.2;
             color: #000000;
-            margin: 0;
+            margin: 0 auto;
             max-width: 85%;
+            text-align: center;
         }
 
         .preparado-seccion {
@@ -1011,7 +1012,7 @@
                 <tr>
                     <td class="text-center">{{ forloop.counter|stringformat:"02d" }}</td>
                     <td class="font-bold">{{ grupo.titulo }}</td>
-                    <td class="text-center">{{ grupo.cantidad|floatformat:2 }}</td>
+                    <td class="text-center">{{ grupo.cantidad|floatformat:0 }}</td>
                     <td class="text-right">{{ grupo.total|moneda:totales.moneda }}</td>
                     <td class="text-right font-bold">{{ grupo.total_grupo|moneda:totales.moneda }}</td>
                 </tr>
@@ -1022,7 +1023,7 @@
                     <tr>
                         <td class="text-center">{{ forloop.counter|add:offset|stringformat:"02d" }}</td>
                         <td class="font-bold">{{ grupo.titulo }}</td>
-                        <td class="text-center">{{ grupo.cantidad|floatformat:2 }}</td>
+                        <td class="text-center">{{ grupo.cantidad|floatformat:0 }}</td>
                         <td class="text-right">{{ grupo.total|moneda:totales.moneda }}</td>
                         <td class="text-right font-bold">{{ grupo.total_servicio|moneda:totales.moneda }}</td>
                     </tr>
@@ -1051,9 +1052,12 @@
                     <thead>
                         <tr>
                             <th style="width: 6%;" class="text-center">Ítem</th>
-                            <th style="width: 52%;" class="text-center">Descripción del Grupo</th>
-                            <th style="width: 3%;" class="text-center">Cant.</th>
+                            <th style="width: {% if grupo.total_por_grupo %}61%{% else %}50%{% endif %};" class="text-center">Descripción del Grupo</th>
+                            <th style="width: 5%;" class="text-center">Cant.</th>
+                            <th style="width: 7%;" class="text-center">U.M</th>
+                            {% if not grupo.total_por_grupo %}
                             <th style="width: 11%;" class="text-center">Unitario ({{ totales.moneda_simbolo }})</th>
+                            {% endif %}
                             <th style="width: 9%;" class="text-center">Total ({{ totales.moneda_simbolo }})</th>
                             <th style="width: 12%;" class="text-center">Entrega</th>
                         </tr>
@@ -1063,14 +1067,19 @@
                         <tr>
                             <td class="text-center">{{ forloop.counter }}</td>
                             <td class="text-length">{{ item.descripcion|linebreaksbr }}</td>                            
-                            <td class="text-center">{{ item.cantidad|floatformat:2 }}</td>
+                            <td class="text-center">{{ item.cantidad|floatformat:0 }}</td>
+                            <td class="text-center">{{ item.unidad|default:"" }}</td>
+                            {% if not grupo.total_por_grupo %}
                             <td class="text-right">{{ item.precio_unitario|moneda:totales.moneda }}</td>
                             <td class="text-right font-bold">{{ item.total|moneda:totales.moneda }}</td>
+                            {% else %}
+                            <td class="text-right font-bold"></td>
+                            {% endif %}
                             <td class="text-center">
                                 {% if item.entrega > 0 %}
                                     {{ item.entrega }} {{ item.unidad_entrega }}
                                 {% else %}
-                                    
+                                    0 Días
                                 {% endif %}
                             </td>
                         </tr>
@@ -1078,13 +1087,26 @@
                     </tbody>
                     
                     {# Usamos un tbody adicional para que el subtotal NO se repita al partirse la tabla #}
-                    {% if grupo.items|length > 1 %}
+                    {% if grupo.items|length > 1 or grupo.cantidad > 1.01 %}
                     <tbody style="page-break-inside: avoid;">
+                        {% if grupo.cantidad <= 1.01 %}
                         <tr class="total-fila">
-                            <td colspan="4" class="text-right" style="font-weight: bold; border-top: 1px solid #eee;">Subtotal Grupo:</td>
+                            <td colspan="{% if grupo.total_por_grupo %}4{% else %}5{% endif %}" class="text-right" style="font-weight: bold; border-top: 1px solid #eee;">TOTAL GRUPO:</td>
                             <td class="text-right font-bold" style="border-top: 1px solid #eee;">{{ grupo.subtotal_tot_items|moneda:totales.moneda }}</td>
                             <td style="border-top: 1px solid #eee;"></td>
                         </tr>
+                        {% else %}
+                        <tr class="total-fila">
+                            <td colspan="{% if grupo.total_por_grupo %}4{% else %}5{% endif %}" class="text-right" style="font-weight: bold; border-top: 1px solid #eee;">SUBTOTAL GRUPO:</td>
+                            <td class="text-right font-bold" style="border-top: 1px solid #eee;">{{ grupo.subtotal_tot_items|moneda:totales.moneda }}</td>
+                            <td style="border-top: 1px solid #eee;"></td>
+                        </tr>
+                        <tr class="total-fila">
+                            <td colspan="{% if grupo.total_por_grupo %}4{% else %}5{% endif %}" class="text-right" style="font-weight: bold; border-top: 1px solid #eee;">TOTAL GRUPO (x{{ grupo.cantidad|floatformat:0 }}):</td>
+                            <td class="text-right font-bold" style="border-top: 1px solid #eee;">{{ grupo.total_grupo|moneda:totales.moneda }}</td>
+                            <td style="border-top: 1px solid #eee;"></td>
+                        </tr>
+                        {% endif %}
                     </tbody>
                     {% endif %}
                 </table>
@@ -1111,7 +1133,7 @@
                                 <tr>
                                     <td class="text-center">01</td>
                                     <td class="rich-text">{{ grupo.detalle|safe }}</td>
-                                    <td class="text-center">{{ grupo.cantidad|floatformat:2 }}</td>
+                                    <td class="text-center">{{ grupo.cantidad|floatformat:0 }}</td>
                                     <td class="text-right">{{ grupo.total|moneda:totales.moneda }}</td>
                                     <td class="text-right font-bold">{{ grupo.total_servicio|moneda:totales.moneda }}</td>
                                 </tr>

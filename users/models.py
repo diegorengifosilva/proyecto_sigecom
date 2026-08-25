@@ -80,7 +80,8 @@ class Usuario(models.Model):
     # NUEVA RELACIÓN MUCHOS A MUCHOS (N:M)
     modulos = models.ManyToManyField(
         'core.Modulo',
-        db_table='usuario_modulo',
+        through='UsuarioModulo',
+        through_fields=('id_usuario', 'id_modulo'),
         related_name='usuarios',
         blank=True
     )

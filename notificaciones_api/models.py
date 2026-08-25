@@ -19,7 +19,9 @@ class Notificacion(models.Model):
         'core.Modulo',
         on_delete=models.CASCADE,
         db_column='id_modulo',
-        related_name="notificaciones"
+        related_name="notificaciones",
+        null=True,
+        blank=True
     )
     titulo = models.CharField(max_length=255)
     descripcion = models.TextField()

@@ -48,6 +48,11 @@ import CajaChicaArqueo from "./dashboard/caja_chica/caja_chica/CajaChica";
 import RegistroActividades from "./dashboard/caja_chica/registro_actividades/RegistroActividades";
 import Reportes from "./dashboard/caja_chica/reportes/Reportes";
 
+// NUEVOS PORTALES / MODULOS
+import Sugerencias from "./dashboard/sugerencias/Sugerencias";
+import SugerenciaDetalle from "./dashboard/sugerencias/SugerenciaDetalle";
+import ConfiguracionUsuariosPage from "./dashboard/usuarios/ConfiguracionUsuariosPage";
+
 import { KeyboardProvider } from "@/context/KeyboardContext.jsx";
 import MockModulePage from "@/dashboard/layout/MockModulePage";
 import * as Icons from "lucide-react";
@@ -166,6 +171,13 @@ export default function App() {
               <Route path="almacen" element={<MockModulePage title="Almacén" />} />
               <Route path="finanzas" element={<MockModulePage title="Finanzas" />} />
               <Route path="audit" element={<MockModulePage title="Auditoría" />} />
+
+              {/* Sugerencias y Quejas */}
+              <Route path="sugerencias" element={<Sugerencias />} />
+              <Route path="sugerencias/:id" element={<SugerenciaDetalle />} />
+
+              {/* Configuración de Usuarios */}
+              <Route path="usuarios" element={<ConfiguracionUsuariosPage />} />
             </Route>
 
             {/* Redirects actualizados */}

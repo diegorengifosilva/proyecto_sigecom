@@ -127,6 +127,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
         estructura[grupoId].costo_envio = Number(row.costo_envio || row.cost_env || 0);
         estructura[grupoId].costo_envio_total = Number(row.costo_envio_total || row.env_tot || 0);
         estructura[grupoId].costo_envio_unidad = Number(row.costo_envio_unidad || row.env_par || 0);
+        estructura[grupoId].total_por_grupo = row.total_por_grupo;
       } else {
         estructura[grupoId].items.push({
           ...row,
@@ -482,7 +483,14 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
     }
   }, [gruposSuministros, onAddLog]);
 
-  const saveSuministros = async () => {
+  const saveSuministros = async (ocultarMap = {}) => {
+    // Sincronizar total_por_grupo desde ocultarMap antes de guardar
+    for (const gp of Object.values(gruposSuministros)) {
+      if (ocultarMap[gp.codigo_grupo] !== undefined) {
+        gp.total_por_grupo = ocultarMap[gp.codigo_grupo] ? 1 : 0;
+      }
+    }
+
     if (deletedSuministroIds.length > 0) {
       for (const id of deletedSuministroIds) {
         try {
@@ -510,7 +518,8 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
         gp.nombre_grupo !== origGp.nombre_grupo ||
         gp.cantidad !== origGp.cantidad ||
         gp.costo_envio !== origGp.costo_envio ||
-        gp.orden !== origGp.orden
+        gp.orden !== origGp.orden ||
+        gp.total_por_grupo !== origGp.total_por_grupo
       );
     };
 
@@ -580,7 +589,8 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
           orden: Number(gp.orden || 0),
           costo_envio: toDec(gp.costo_envio),
           costo_envio_total: toDec(gp.costo_envio_total),
-          costo_envio_unidad: toDec(gp.costo_envio_unidad)
+          costo_envio_unidad: toDec(gp.costo_envio_unidad),
+          total_por_grupo: gp.total_por_grupo || 0
         };
         const resGroup = await api.post(`cotizaciones/lista_suministros/${numReg}/`, payloadGroup);
         realGroupId = resGroup.data.id_suministro;
@@ -634,7 +644,8 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
             orden: Number(gp.orden || 0),
             costo_envio: toDec(gp.costo_envio),
             costo_envio_total: toDec(gp.costo_envio_total),
-            costo_envio_unidad: toDec(gp.costo_envio_unidad)
+            costo_envio_unidad: toDec(gp.costo_envio_unidad),
+            total_por_grupo: gp.total_por_grupo || 0
           };
           savePromises.push(api.put(`cotizaciones/lista_suministros/${numReg}/`, payloadGroup));
         }
@@ -1201,6 +1212,29 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
     toast.success("Excel corporativo general descargado con éxito");
   };
 
+  const handleDescargarPlantillaXLS = async () => {
+    try {
+      const res = await api.get("/cotizaciones/suministros/descargar-plantilla/", {
+        responseType: "blob"
+      });
+      
+      const blob = new Blob([res.data], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", "Plantilla_Importacion_Suministros.xlsx");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast.success("Plantilla de importación descargada con éxito");
+    } catch (err) {
+      console.error("Error al descargar la plantilla de importación", err);
+      toast.error("Error al descargar la plantilla del servidor");
+    }
+  };
+
   const handleImportarDesdeXLS = async (excelRowsOrFile, activeGrupoKey, tcamb = 1) => {
     if (!activeGrupoKey) {
       toast.error("No hay grupo activo seleccionado");
@@ -1241,7 +1275,18 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
         return;
       }
 
-      if (!excelRows.some(r => r.Codigo || r.codigo)) {
+      // A helper to get row value case-insensitively
+      const getRowValue = (row, possibleKeys) => {
+        for (const k of possibleKeys) {
+          const foundKey = Object.keys(row).find(rk => rk.trim().toUpperCase() === k.toUpperCase());
+          if (foundKey !== undefined && row[foundKey] !== undefined && row[foundKey] !== "") {
+            return row[foundKey];
+          }
+        }
+        return undefined;
+      };
+
+      if (!excelRows.some(r => getRowValue(r, ["CODIGO", "COD", "CODE"]))) {
         toast.warning("El Excel no tiene columna Código.");
         return;
       }
@@ -1252,22 +1297,79 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
         return;
       }
 
-      const mapProveedorExcelToTPR = (proveedor = "") => {
-        const p = proveedor.toLowerCase();
-        if (p.includes("rockwell")) return "01";
-        if (p.includes("rittal")) return "03";
-        if (p.includes("phoenix")) return "05";
-        if (p.includes("schneider")) return "06";
-        if (p.includes("ls")) return "07";
-        return "";
+      const getOfficialBrandFromDB = (enteredBrand = "") => {
+        const entered = String(enteredBrand || "").trim().toUpperCase();
+        if (!entered) return null;
+        
+        // 1. Primero buscar coincidencia exacta
+        let match = (proveedores || []).find(p => String(p.nombre || "").toUpperCase().trim() === entered);
+        
+        // 2. Buscar coincidencia parcial de similitud
+        if (!match) {
+          match = (proveedores || []).find(p => {
+            const official = String(p.nombre || "").toUpperCase().trim();
+            return official.includes(entered) || entered.includes(official);
+          });
+        }
+        
+        // 3. Casos especiales y abreviaturas
+        if (!match) {
+          if (entered === "LS" || entered === "LSIS") {
+            match = (proveedores || []).find(p => String(p.nombre || "").toUpperCase().includes("LS"));
+          }
+        }
+        
+        return match || null;
       };
 
-      const itemsBase = excelRows.map(row => ({
-        cod: String(row.Codigo || row.codigo || "").trim(),
-        des: String(row.Descripcion || row.descripcion || "").trim(),
-        can: Number(row.Cant || row.cant || 1),
-        proveedorExcel: String(row.Proveedor || row.proveedor || "").trim(),
-      }));
+      const getOfficialBrandName = (enteredBrand = "") => {
+        const brandObj = getOfficialBrandFromDB(enteredBrand);
+        return brandObj ? brandObj.nombre : enteredBrand;
+      };
+
+      const mapProveedorExcelToTPR = (proveedor = "") => {
+        const brandObj = getOfficialBrandFromDB(proveedor);
+        if (brandObj) {
+          return String(brandObj.id_marca).padStart(2, '0');
+        }
+        return "99"; // default a Otros
+      };
+
+      const itemsBase = excelRows.map((row, index) => {
+        const cod = String(getRowValue(row, ["CODIGO", "COD", "CODE"]) || "").trim();
+        const des = String(getRowValue(row, ["DESCRIPCION", "DESC", "DESCRIPTION"]) || "").trim();
+        const can = Number(getRowValue(row, ["CANTIDAD", "CANT", "QTY", "CANT. BUDGET", "CANT."]) || 1);
+        const proveedorExcel = String(getRowValue(row, ["MARCA", "PROVEEDOR", "BRAND", "SUPPLIER"]) || "").trim();
+        
+        const excelCostoUnit = getRowValue(row, ["COSTO UNITARIO", "COSTO UNIT.", "UNIT COST", "PUC", "COSTO_UNITARIO"]);
+        const excelUtilidad = getRowValue(row, ["UTILIDAD", "UTIL", "PROFIT", "MARGEN", "UTILIDAD (%)", "UTILIDAD %"]);
+        const excelUnidadMedida = getRowValue(row, ["UNIDAD MEDIDA", "UNIDAD", "U.M", "UM", "UNIT", "UNIDAD_MEDIDA"]);
+        const excelTiemposEntrega = getRowValue(row, ["TIEMPOS ENTREGA", "TIEMPOS DE ENTREGA", "ENTREGA", "DELIVERY"]);
+
+        return {
+          cod,
+          des,
+          can,
+          proveedorExcel,
+          excelCostoUnit: excelCostoUnit !== undefined && excelCostoUnit !== "" ? Number(excelCostoUnit) : null,
+          excelUtilidad: excelUtilidad !== undefined && excelUtilidad !== "" ? Number(excelUtilidad) : null,
+          excelUnidadMedida: excelUnidadMedida !== undefined && excelUnidadMedida !== "" ? String(excelUnidadMedida).trim() : null,
+          excelTiemposEntrega: excelTiemposEntrega !== undefined && excelTiemposEntrega !== "" ? Number(excelTiemposEntrega) : null,
+          rowIndex: index + 2
+        };
+      });
+
+      // Validar estrictamente que todos los ítems tengan Marca y Código
+      for (const item of itemsBase) {
+        if (!item.cod) {
+          toast.error(`Error en la fila ${item.rowIndex}: El campo CÓDIGO está vacío. Todos los ítems de la plantilla deben tener código.`);
+          return;
+        }
+        if (!item.proveedorExcel) {
+          toast.error(`Error en la fila ${item.rowIndex}: El campo MARCA está vacío. Todos los ítems de la plantilla deben tener marca.`);
+          return;
+        }
+      }
 
       let nuevos = 0;
       let actualizados = 0;
@@ -1277,9 +1379,27 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
         itemsBase.map(async item => {
           const key = item.cod?.toUpperCase();
           if (!key || ["S/C", "."].includes(key)) {
+            const costoUnit = item.excelCostoUnit !== null ? item.excelCostoUnit : 0;
+            const pctUtilidad = item.excelUtilidad !== null ? item.excelUtilidad : 0;
+            const costoTotal = costoUnit * item.can;
+            const utilidadMonetaria = costoTotal * (pctUtilidad / 100);
+            const ventaPrecio = costoUnit * (1 + pctUtilidad / 100);
+            const ventaTotal = ventaPrecio * item.can;
             return {
               ...item,
-              puc: 0, val: 0, tot: 0, tpr: "99", tde: "UNI"
+              tpr: "99",
+              cod: item.cod || "S/C",
+              des: item.des || "S/D",
+              pro: getOfficialBrandName(item.proveedorExcel) || "Otros",
+              tde: item.excelUnidadMedida || "UNI",
+              can: item.can,
+              puc: costoUnit,
+              tou: utilidadMonetaria,
+              cau: pctUtilidad,
+              toc: costoTotal,
+              val: ventaPrecio,
+              tot: ventaTotal,
+              entrega: item.excelTiemposEntrega !== null ? item.excelTiemposEntrega : null,
             };
           }
 
@@ -1290,11 +1410,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
               : mapProveedorExcelToTPR(item.proveedorExcel);
 
             if (!tprFinal) {
-              noEncontrados++;
-              return {
-                ...item,
-                puc: 0, val: 0, tot: item.can * 0, tpr: "99", tde: "UNI"
-              };
+              tprFinal = "99";
             }
 
             const endpointMap = {
@@ -1307,35 +1423,37 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
             };
 
             const endpoint = endpointMap[tprFinal];
-            if (!endpoint) return item;
+            let calc = null;
+            if (endpoint) {
+              const res = await api.get(endpoint, { params: { search: item.cod } });
+              const rows = Array.isArray(res.data) ? res.data : [];
 
-            const res = await api.get(endpoint, { params: { search: item.cod } });
-            const rows = Array.isArray(res.data) ? res.data : [];
+              const encontrado = rows.find(r =>
+                String(r.codigo || "").toUpperCase() === key ||
+                String(r.ocodigo || "").toUpperCase() === key
+              );
 
-            const encontrado = rows.find(r =>
-              String(r.codigo).toUpperCase() === key ||
-              String(r.ocodigo).toUpperCase() === key
-            );
+              if (encontrado) {
+                calc = calcularItemSegunProveedor(
+                  encontrado,
+                  tprFinal,
+                  tcamb,
+                  item.can,
+                  item.proveedorExcel
+                );
+              }
+            }
 
-            let calc;
-            if (!encontrado) {
+            if (!calc) {
               noEncontrados++;
               calc = calcularItemSegunProveedor(
                 {
                   codigo: item.cod,
                   descripcion: item.des,
                   proveedor: item.proveedorExcel,
-                  pgc: "UNI",
-                  precio: 0,
+                  pgc: item.excelUnidadMedida || "UNI",
+                  precio: item.excelCostoUnit || 0,
                 },
-                tprFinal,
-                tcamb,
-                item.can,
-                item.proveedorExcel
-              );
-            } else {
-              calc = calcularItemSegunProveedor(
-                encontrado,
                 tprFinal,
                 tcamb,
                 item.can,
@@ -1343,28 +1461,55 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
               );
             }
 
-            nuevos++;
+            // Override with values from Excel if present
+            const costoUnit = item.excelCostoUnit !== null ? item.excelCostoUnit : (calc.costoPrecio ?? 0);
+            const pctUtilidad = item.excelUtilidad !== null ? item.excelUtilidad : (calc.porcentaje ?? 0);
+            
+            const costoTotal = costoUnit * item.can;
+            const utilidadMonetaria = costoTotal * (pctUtilidad / 100);
+            const ventaPrecio = costoUnit * (1 + pctUtilidad / 100);
+            const ventaTotal = ventaPrecio * item.can;
+
             return {
               ...item,
               tpr: calc.tpr ?? tprFinal,
               cod: calc.codigo ?? item.cod,
-              des: calc.descripcion ?? item.des,
-              pro: item.proveedorExcel,
-              tde: calc.unidad ?? "UNI",
-              can: calc.cantidad ?? 1,
-              puc: calc.costoPrecio ?? 0,
-              tou: calc.utilidad ?? 0,
-              cau: calc.porcentaje ?? 0,
-              toc: calc.costoTotal ?? 0,
-              val: calc.ventaPrecio ?? 0,
-              tot: calc.ventaTotal ?? 0,
+              des: item.des || calc.descripcion || "S/D",
+              pro: getOfficialBrandName(item.proveedorExcel) || calc.marca || "",
+              tde: item.excelUnidadMedida || calc.unidad || "UNI",
+              can: item.can,
+              puc: costoUnit,
+              tou: utilidadMonetaria,
+              cau: pctUtilidad,
+              toc: costoTotal,
+              val: ventaPrecio,
+              tot: ventaTotal,
+              entrega: item.excelTiemposEntrega !== null ? item.excelTiemposEntrega : null,
             };
 
           } catch (err) {
             console.error("Error resolviendo XLS item", item.cod, err);
+            const costoUnit = item.excelCostoUnit !== null ? item.excelCostoUnit : 0;
+            const pctUtilidad = item.excelUtilidad !== null ? item.excelUtilidad : 0;
+            const costoTotal = costoUnit * item.can;
+            const utilidadMonetaria = costoTotal * (pctUtilidad / 100);
+            const ventaPrecio = costoUnit * (1 + pctUtilidad / 100);
+            const ventaTotal = ventaPrecio * item.can;
             return {
               ...item,
-              puc: 0, val: 0, tot: 0, tpr: "99", tde: "UNI"
+              tpr: "99",
+              cod: item.cod || "S/C",
+              des: item.des || "S/D",
+              pro: getOfficialBrandName(item.proveedorExcel) || "Otros",
+              tde: item.excelUnidadMedida || "UNI",
+              can: item.can,
+              puc: costoUnit,
+              tou: utilidadMonetaria,
+              cau: pctUtilidad,
+              toc: costoTotal,
+              val: ventaPrecio,
+              tot: ventaTotal,
+              entrega: item.excelTiemposEntrega !== null ? item.excelTiemposEntrega : null,
             };
           }
         })
@@ -1416,9 +1561,13 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
               costo_total: Number(item.toc || 0),
               utilidad: Number(item.tou || 0),
               porcentaje_utilidad: Number(item.cau || 0),
-              proveedor: item.pro || item.proveedorExcel || "",
+              proveedor: getOfficialBrandName(item.pro) || getOfficialBrandName(item.proveedorExcel) || "",
+              id_marca: parseInt(item.tpr, 10),
+              marca_nombre: getOfficialBrandName(item.pro) || getOfficialBrandName(item.proveedorExcel) || "",
               tipo_unidad: item.tde || "UNI",
-              id_tipo_gasto: 1
+              id_tipo_gasto: 1,
+              tiempo_entrega: item.entrega !== null ? Number(item.entrega) : null,
+              id_unidad_tiempo_entrega: item.entrega !== null ? 1 : null,
             };
             nextItems.push(payloadCreate);
           }
@@ -1582,6 +1731,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
     handleExportarGrupoXLS,
     handleExportarGeneralXLS,
     handleImportarDesdeXLS,
+    handleDescargarPlantillaXLS,
     handleGuardarOrden,
     sensors,
     handleDragEnd,

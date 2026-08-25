@@ -185,19 +185,30 @@ export default function QuickCreateClienteModal({ open, onClose, onSave, initial
     }
   };
 
-  const leftPos = coords?.left ? Math.min(window.innerWidth - 480, Math.max(10, coords.left)) : Math.max(10, window.innerWidth / 2 - 230);
-  const topPos = coords?.top ? coords.top + 6 : 100;
+  const portalContainer = document.getElementById("cotizacion-nueva-modal-portals");
+  const portalTarget = portalContainer || document.body;
+  const dialogRect = portalContainer ? portalContainer.getBoundingClientRect() : null;
+  const positionType = portalContainer ? "absolute" : "fixed";
+
+  let leftPos = coords?.left ? Math.min(window.innerWidth - 480, Math.max(10, coords.left)) : Math.max(10, window.innerWidth / 2 - 230);
+  let topPos = coords?.top ? coords.top + 6 : 100;
+
+  if (dialogRect) {
+    leftPos = leftPos - dialogRect.left;
+    topPos = topPos - dialogRect.top;
+  }
 
   return createPortal(
     <div
       style={{
-        position: "fixed",
+        position: positionType,
         top: `${topPos}px`,
         left: `${leftPos}px`,
         width: "460px",
         zIndex: 99999,
+        pointerEvents: "auto",
       }}
-      className="bg-white/98 backdrop-blur-xl rounded-2xl shadow-[0_20px_50px_rgba(8,_112,_184,_0.25)] border border-slate-200 p-4 animate-in fade-in zoom-in-95 duration-150 text-left font-sans text-slate-800"
+      className="bg-white/98 backdrop-blur-xl rounded-2xl shadow-[0_20px_50px_rgba(8,_112,_184,_0.25)] border border-slate-200 p-4 animate-in fade-in zoom-in-95 duration-150 text-left font-sans text-slate-800 pointer-events-auto quick-create-cliente-modal"
       onMouseDown={(e) => e.stopPropagation()}
     >
       {/* HEADER COMPACTO Y ELEGANTE */}
@@ -327,6 +338,6 @@ export default function QuickCreateClienteModal({ open, onClose, onSave, initial
         </div>
       </div>
     </div>,
-    document.body
+    portalTarget
   );
 }
