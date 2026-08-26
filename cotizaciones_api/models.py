@@ -498,54 +498,6 @@ class alm_articulos(models.Model):
         return f"{self.codigo} ({self.nombre})"
 
 
-
-
-class ObjetivoAnual(models.Model):
-    anno = models.IntegerField(unique=True)
-    encargado = models.CharField(max_length=150, blank=True, null=True)
-    activo = models.BooleanField(default=True)
-    fecha_creacion = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        db_table = "objetivo_anual"
-
-    def __str__(self):
-        return f"Objetivo {self.anno}"
-
-class ObjetivoAnualArea(models.Model):
-    objetivo = models.ForeignKey(
-        ObjetivoAnual,
-        related_name="areas",
-        on_delete=models.CASCADE
-    )
-
-    area = models.CharField(max_length=50)
-    minimo = models.DecimalField(max_digits=15, decimal_places=2)
-    maximo = models.DecimalField(max_digits=15, decimal_places=2)
-
-    class Meta:
-        db_table = "objetivo_anual_area"
-        unique_together = ("objetivo", "area")
-
-    def __str__(self):
-        return f"{self.area} - {self.objetivo.anno}"
-    objetivo = models.ForeignKey(
-        ObjetivoAnual,
-        related_name="areas",
-        on_delete=models.CASCADE
-    )
-
-    area = models.CharField(max_length=50)
-    minimo = models.DecimalField(max_digits=15, decimal_places=2)
-    maximo = models.DecimalField(max_digits=15, decimal_places=2)
-
-    class Meta:
-        db_table = "objetivo_anual_area"
-        unique_together = ("objetivo", "area")
-
-    def __str__(self):
-        return f"{self.area} - {self.objetivo.anno}"
-
 # vc_tab_notas
 class vc_tab_notas(models.Model):
     codigo = models.CharField(max_length=2, primary_key=True)

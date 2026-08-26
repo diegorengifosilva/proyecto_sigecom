@@ -4813,3 +4813,43 @@ def exportar_anual(request):
     response['Content-Disposition'] = 'attachment; filename=reporte_anual.xlsx'
     wb.save(response)
     return response
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def resumen_comercial_dashboard(request):
+    try:
+        raw_request = request._request if hasattr(request, '_request') else request
+        
+        res_objetivos = objetivos_anuales(raw_request)
+        res_logrado = logrado_dashboard(raw_request)
+        res_kpis = kpis_dashboard(raw_request)
+        res_tendencias = tendencias_dashboard(raw_request)
+        
+        import json
+        def get_data(res):
+            if hasattr(res, 'data'):
+                return res.data
+            elif hasattr(res, 'content'):
+                try:
+                    return json.loads(res.content.decode('utf-8'))
+                except Exception:
+                    return None
+            return None
+
+        if res_objetivos.status_code >= 400:
+            return res_objetivos
+        if res_logrado.status_code >= 400:
+            return res_logrado
+        if res_kpis.status_code >= 400:
+            return res_kpis
+        if res_tendencias.status_code >= 400:
+            return res_tendencias
+            
+        return Response({
+            "objetivos": get_data(res_objetivos),
+            "logrado": get_data(res_logrado),
+            "kpis": get_data(res_kpis),
+            "tendencias": get_data(res_tendencias),
+        })
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

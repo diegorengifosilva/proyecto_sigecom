@@ -84,8 +84,6 @@ from .models import (
     CotizacionSeguimiento,
     CotizacionApertura,
     alm_articulos,
-    ObjetivoAnualArea,
-    ObjetivoAnual,
     vc_tab_notas,
     vc_mov_orden,
     )
@@ -111,8 +109,6 @@ from .serializers import (
     CotizacionAperturaSerializer,
     CotizacionAperturaTablaSerializer,
     AlmArticulosSerializer,
-    ObjetivoAnualAreaSerializer,
-    ObjetivoAnualSerializer,
     NotasSerializer,
 )
 
@@ -831,11 +827,26 @@ def formatear_mensaje_cambio(label, old_val, new_val):
 @permission_classes([IsAuthenticated])
 def cotizacion_detalle(request, id_registro):
     try:
+        from django.db.models import Prefetch
+
+        suministros_qs = CotizacionSuministro.objects.select_related(
+            'id_marca', 'id_tipo_gasto', 'id_unidad_tiempo_entrega'
+        )
+        servicios_qs = CotizacionServicio.objects.select_related(
+            'id_area', 'id_tipo_gasto'
+        )
+
         cot = Cotizacion.objects.select_related(
             'id_cliente', 'id_estado', 'id_tipo',
             'id_unidad_tiempo_entrega_suministros',
             'id_unidad_tiempo_entrega_servicios',
             'id_unidad_tiempo_validez'
+        ).prefetch_related(
+            Prefetch('suministros', queryset=suministros_qs),
+            Prefetch('servicios', queryset=servicios_qs),
+            'mensajes_rel',
+            'seguimientos',
+            'adjuntos'
         ).filter(id_registro=id_registro).first()
 
         if not cot:
@@ -2866,7 +2877,13 @@ def aperturas_por_registro(request, id_registro):
             'orden_plazo_unidad',
             'id_registro',
             'id_registro__id_cliente',
-            'id_registro__id_estado'
+            'id_registro__id_estado',
+            'id_registro__id_tipo',
+            'id_registro__id_comercial',
+            'id_registro__id_tecnico',
+            'id_registro__id_unidad_tiempo_entrega_suministros',
+            'id_registro__id_unidad_tiempo_entrega_servicios',
+            'id_registro__id_unidad_tiempo_validez'
         ).filter(id_registro=id_registro)
         
         if not aperturas.exists():
@@ -2877,7 +2894,13 @@ def aperturas_por_registro(request, id_registro):
                         'orden_plazo_unidad',
                         'id_registro',
                         'id_registro__id_cliente',
-                        'id_registro__id_estado'
+                        'id_registro__id_estado',
+                        'id_registro__id_tipo',
+                        'id_registro__id_comercial',
+                        'id_registro__id_tecnico',
+                        'id_registro__id_unidad_tiempo_entrega_suministros',
+                        'id_registro__id_unidad_tiempo_entrega_servicios',
+                        'id_registro__id_unidad_tiempo_validez'
                     ).filter(id_registro=aperturadef.id_registro_id)
             except CotizacionApertura.DoesNotExist:
                 pass
@@ -2893,7 +2916,13 @@ def aperturas_por_registro(request, id_registro):
                 'orden_plazo_unidad',
                 'id_registro',
                 'id_registro__id_cliente',
-                'id_registro__id_estado'
+                'id_registro__id_estado',
+                'id_registro__id_tipo',
+                'id_registro__id_comercial',
+                'id_registro__id_tecnico',
+                'id_registro__id_unidad_tiempo_entrega_suministros',
+                'id_registro__id_unidad_tiempo_entrega_servicios',
+                'id_registro__id_unidad_tiempo_validez'
             ).filter(id_registro=target_id_registro)
 
         serializer = CotizacionAperturaSerializer(aperturas, many=True)

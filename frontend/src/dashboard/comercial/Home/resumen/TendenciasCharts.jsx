@@ -4,12 +4,14 @@ import VentasMensualesChart from "./charts/VentasMensualesChart";
 import ComercialChart from "./charts/ComercialChart";
 import ClientesChart from "./charts/ClientesChart";
 import AreasChart from "./charts/AreasChart";
-import useTendencias from "@/services/useTendencias";
-
-export default function TendenciasCharts({ filtros, viewScope = "global", cotizaciones = [] }) {
-  const data = useTendencias(filtros.anio, viewScope);
-
-  if (!data) {
+export default function TendenciasCharts({ 
+  filtros, 
+  viewScope = "global", 
+  cotizaciones = [],
+  data,
+  loading
+}) {
+  if (loading || !data) {
     return (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {[1, 2, 3, 4].map((i) => (

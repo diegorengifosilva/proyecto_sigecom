@@ -3,6 +3,60 @@ import { ERPTable, StatusBadge } from "@/components/ui/ERPComponents";
 import { formatDate } from "@/utils/formatters";
 import { Pin } from "lucide-react";
 
+const renderAreaBadge = (areaName) => {
+    if (!areaName) return null;
+    const name = areaName.trim().toUpperCase();
+    
+    let displayName = areaName;
+    if (name === "SEGURIDAD DE MAQUINARIA" || name === "SEGURIDAD") {
+        displayName = "SAFETY";
+    }
+
+    let badgeStyle = {
+        bg: "bg-slate-50",
+        text: "text-slate-600",
+        border: "border-slate-200/60"
+    };
+    
+    if (name === "MINERÍA" || name === "MINERIA") {
+        badgeStyle = {
+            bg: "bg-amber-50",
+            text: "text-amber-700",
+            border: "border-amber-200/60"
+        };
+    } else if (name === "INDUSTRIA") {
+        badgeStyle = {
+            bg: "bg-sky-50",
+            text: "text-sky-700",
+            border: "border-sky-200/60"
+        };
+    } else if (name === "PETROQUÍMICA" || name === "PETROQUIMICA") {
+        badgeStyle = {
+            bg: "bg-purple-50",
+            text: "text-purple-700",
+            border: "border-purple-200/60"
+        };
+    } else if (name === "SEGURIDAD DE MAQUINARIA" || name === "SEGURIDAD") {
+        badgeStyle = {
+            bg: "bg-rose-50",
+            text: "text-rose-700",
+            border: "border-rose-200/60"
+        };
+    } else if (name === "MANTENIMIENTO") {
+        badgeStyle = {
+            bg: "bg-emerald-50",
+            text: "text-emerald-700",
+            border: "border-emerald-200/60"
+        };
+    }
+
+    return (
+        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider border shadow-sm ${badgeStyle.bg} ${badgeStyle.text} ${badgeStyle.border}`}>
+            {displayName}
+        </span>
+    );
+};
+
 const TablaCotizaciones = ({
     data = [],
     isLoading,
@@ -59,9 +113,7 @@ const TablaCotizaciones = ({
 
                         <div className="border-t border-gray-50 pt-2 flex items-center justify-between text-[9px] font-bold text-gray-400">
                             <div className="flex items-center gap-1.5">
-                                <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-black uppercase tracking-tight text-[8px]">
-                                    {item.area_nombre}
-                                </span>
+                                {renderAreaBadge(item.area_nombre)}
                                 <span>{formatDate(item.fecha)}</span>
                             </div>
                             <span className="text-xs font-black text-gray-950">
@@ -133,8 +185,8 @@ const TablaCotizaciones = ({
                             </td>
 
                             {/* Área */}
-                            <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-500 font-bold uppercase tracking-tight">
-                                {item.area_nombre}
+                            <td className="px-4 py-2 whitespace-nowrap align-middle">
+                                {renderAreaBadge(item.area_nombre)}
                             </td>
 
                             {/* Estado */}

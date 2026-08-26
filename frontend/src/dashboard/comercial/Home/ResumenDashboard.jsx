@@ -4,14 +4,31 @@ import AlertasPanel from "./resumen/AlertasPanel";
 import CalendarioComercial from "./resumen/CalendarioComercial";
 import TendenciasCharts from "./resumen/TendenciasCharts";
 
-export default function ResumenDashboard({ anno, mes, cotizaciones = [], todasCotizaciones = [], aperturas = [], alertas = [], viewScope = "global" }) {
+export default function ResumenDashboard({ 
+  anno, 
+  mes, 
+  cotizaciones = [], 
+  todasCotizaciones = [], 
+  aperturas = [], 
+  alertas = [], 
+  viewScope = "global",
+  resumenData,
+  loading
+}) {
   const filtros = { anio: anno, mes };
 
   return (
     <div className="flex flex-col gap-8 p-1"> 
       
       <section className="w-full">
-        <SemaforoCumplimiento anno={anno} mes={mes} viewScope={viewScope} />
+        <SemaforoCumplimiento 
+          anno={anno} 
+          mes={mes} 
+          viewScope={viewScope} 
+          objetivos={resumenData?.objetivos}
+          logrado={resumenData?.logrado}
+          loading={loading}
+        />
       </section>
 
       {/* Tareas Pendientes y Alertas Comerciales Críticas */}
@@ -29,7 +46,13 @@ export default function ResumenDashboard({ anno, mes, cotizaciones = [], todasCo
       </section>
 
       <section className="w-full">
-        <TendenciasCharts filtros={filtros} viewScope={viewScope} cotizaciones={cotizaciones} />
+        <TendenciasCharts 
+          filtros={filtros} 
+          viewScope={viewScope} 
+          cotizaciones={cotizaciones} 
+          data={resumenData?.tendencias}
+          loading={loading}
+        />
       </section>
 
     </div>

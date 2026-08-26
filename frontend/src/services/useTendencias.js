@@ -5,6 +5,7 @@ export default function useTendencias(anno, viewScope = "global") {
   const [data, setData] = useState(null);
 
   useEffect(() => {
+    if (!anno) return;
     const isPersonal = viewScope === "personal";
     api.get(`dashboard/tendencias/?anno=${anno}${isPersonal ? "&personal=true" : ""}`)
       .then(res => setData(res.data))

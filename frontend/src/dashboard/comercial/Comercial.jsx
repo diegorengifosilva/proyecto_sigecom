@@ -451,6 +451,8 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
   const { data: dataPeriodos } = useQuery({
     queryKey: ["periodos"],
     queryFn: fetchPeriodos,
+    staleTime: 24 * 60 * 60 * 1000, // Cache de 24 horas (no cambian con frecuencia)
+    cacheTime: 24 * 60 * 60 * 1000
   });
 
   // Sorting state - Default by date descending
@@ -637,7 +639,10 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
       fCoti.annoDesde, fCoti.annoHasta, fCoti.mesDesde, fCoti.mesHasta, fCoti.areaFilter, fCoti.statusFilter
     ],
     queryFn: fetchCotizaciones,
-    refetchInterval: 4000, // Background poll every 4 seconds
+    keepPreviousData: true,
+    staleTime: 10 * 1000, // Cache de 10 segundos para transiciones rápidas
+    cacheTime: 5 * 60 * 1000,
+    refetchInterval: 10 * 1000, // Background poll cada 10 segundos
   });
 
   // 2. NUEVA QUERY DE OPORTUNIDADES
@@ -648,7 +653,10 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
   } = useQuery({
     queryKey: ["oportunidades", fOpor.selectedAnno, fOpor.selectedMes, fOpor.comercialSearch, fOpor.estadoOportunidad, fOpor.annoDesde, fOpor.annoHasta, fOpor.mesDesde, fOpor.mesHasta, fOpor.areaFilter],
     queryFn: fetchOportunidades,
-    refetchInterval: 4000, // Background poll every 4 seconds
+    keepPreviousData: true,
+    staleTime: 10 * 1000, // Cache de 10 segundos
+    cacheTime: 5 * 60 * 1000,
+    refetchInterval: 10 * 1000, // Background poll cada 10 segundos
   });
 
   // 3. APERTURAS
@@ -787,7 +795,9 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
     ],
     queryFn: fetchAperturas,
     keepPreviousData: true,
-    refetchInterval: 4000, // Background poll every 4 seconds
+    staleTime: 10 * 1000, // Cache de 10 segundos
+    cacheTime: 5 * 60 * 1000,
+    refetchInterval: 10 * 1000, // Background poll cada 10 segundos
   });
 
   const cotizaciones = dataCotizaciones?.tabla || [];

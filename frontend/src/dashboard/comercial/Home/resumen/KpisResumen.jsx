@@ -102,26 +102,10 @@ const KPICard = ({ label, current, accumulated, icon: Icon, color, category, uni
 /* =========================
    COMPONENTE PRINCIPAL
 ========================= */
-export default function KpisResumen({ anno = new Date().getFullYear(), mes = "%", viewScope = "global" }) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const cargar = async () => {
-      try {
-        setLoading(true);
-        const isPersonal = viewScope === "personal";
-        const res = await api.get(`dashboard/kpis/?anno=${anno}&mes=${mes}${isPersonal ? "&personal=true" : ""}`);
-        setData(res.data);
-      } catch (err) {
-        console.error("Error cargando KPIs", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    cargar();
-  }, [anno, mes, viewScope]);
-
+export default function KpisResumen({ 
+  data,
+  loading
+}) {
   if (loading) return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
       {[1, 2, 3, 4].map(i => (

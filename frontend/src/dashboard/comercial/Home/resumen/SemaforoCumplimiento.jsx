@@ -1,13 +1,18 @@
 import React, { useMemo, useEffect, useState } from "react";
 import { TrendingUp, Target, Calendar, AlertCircle, CheckCircle2, Clock } from 'lucide-react';
 import api from "@/services/api";
+import { useQueryClient } from "@tanstack/react-query";
 
-export default function SemaforoCumplimiento({ module = "comercial", anno = 2026, mes = "%", viewScope = "global" }) {
-  const [objetivo, setObjetivo] = useState(null);
-  const [logrado, setLogrado] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [reloadTrigger, setReloadTrigger] = useState(0);
-
+export default function SemaforoCumplimiento({ 
+  module = "comercial", 
+  anno = 2026, 
+  mes = "%", 
+  viewScope = "global",
+  objetivos: objetivo,
+  logrado,
+  loading
+}) {
+  const queryClient = useQueryClient();
   const [openModal, setOpenModal] = useState(false);
   const [minima, setMinima] = useState({ 2: "", 1: "", 4: "", 8: "" });
   const [maxima, setMaxima] = useState({ 2: "", 1: "", 4: "", 8: "" });
@@ -28,8 +33,8 @@ export default function SemaforoCumplimiento({ module = "comercial", anno = 2026
           8: { minimo: Number(minima[8] || 0), maximo: Number(maxima[8] || 0) }
         };
         localStorage.setItem(`vc_personal_goals_${anno}`, JSON.stringify(personalGoals));
+        queryClient.invalidateQueries(["resumenComercial"]);
         setOpenModal(false);
-        setReloadTrigger(prev => prev + 1);
       } else {
         const payload = {
           anno: Number(anno),
@@ -41,8 +46,8 @@ export default function SemaforoCumplimiento({ module = "comercial", anno = 2026
           ]
         };
         await api.post("dashboard/objetivos/", payload);
+        queryClient.invalidateQueries(["resumenComercial"]);
         setOpenModal(false);
-        setReloadTrigger(prev => prev + 1);
       }
     } catch (err) {
       console.error(err);
@@ -252,29 +257,7 @@ export default function SemaforoCumplimiento({ module = "comercial", anno = 2026
     );
   };
 
-  useEffect(() => {
-    if (module === "logistica") {
-      setLoading(false);
-      return;
-    }
-    const cargar = async () => {
-      try {
-        setLoading(true);
-        const isPersonal = viewScope === "personal";
-        const [resObjetivo, resLogrado] = await Promise.all([
-          api.get(`dashboard/objetivos/?anno=${anno}`),
-          api.get(`dashboard/logrado/?anno=${anno}&mes=${mes}${isPersonal ? "&personal=true" : ""}`)
-        ]);
-        setObjetivo(resObjetivo.data);
-        setLogrado(resLogrado.data);
-      } catch (error) {
-        console.error("Error cargando cumplimiento", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    cargar();
-  }, [module, anno, mes, viewScope, reloadTrigger]);
+
 
   const resumen = useMemo(() => {
     if (module === "logistica") {

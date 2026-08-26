@@ -6705,48 +6705,42 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
   const loadAllData = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      // Fetch unidades de medida
-      try {
-        const { data: units } = await api.get("core/unidades_medida/");
-        setUnidadesMedida(Array.isArray(units) ? units : []);
-      } catch (err) {
-        console.error("Error loading units of measure:", err);
-      }
-
-      // 1. Cabecera
       const endpoint = `cotizaciones/cotizacion_detalle/${numReg}/`;
-      const res = await api.get(endpoint);
-      setData(res.data);
-      setOriginalData(res.data);
+
+      // Parallel execution of all independent API calls
+      const [unitsRes, detailRes, condRes] = await Promise.all([
+        api.get("core/unidades_medida/").catch(err => {
+          console.error("Error loading units of measure:", err);
+          return { data: [] };
+        }),
+        api.get(endpoint),
+        api.get(`cotizaciones/condiciones-generales/${numReg}/`).catch(err => {
+          console.error("Error loading conditions:", err);
+          return { data: { condiciones: null } };
+        }),
+        fetchDescuento(),
+        fetchHistory()
+      ]);
+
+      const units = unitsRes.data;
+      setUnidadesMedida(Array.isArray(units) ? units : []);
+
+      const detailData = detailRes.data;
+      setData(detailData);
+      setOriginalData(detailData);
+
       if (esOportunidad) {
         const OPP_STATES_MAP = { 1: 'Pendiente', 2: 'No Cotizado', 3: 'Rechazado', 4: 'Cotizado' };
-        setCurrentStatus(OPP_STATES_MAP[res.data.estado_oportunidad] || 'Pendiente');
+        setCurrentStatus(OPP_STATES_MAP[detailData.estado_oportunidad] || 'Pendiente');
       } else {
-        setCurrentStatus(res.data.estado_nombre || 'Pendiente');
+        setCurrentStatus(detailData.estado_nombre || 'Pendiente');
       }
 
-      // Cargar condiciones desde el nuevo endpoint
-      try {
-        const condRes = await api.get(`cotizaciones/condiciones-generales/${numReg}/`);
-        setGeneralConditions(condRes.data.condiciones || '');
-        loadedConditionsRef.current = condRes.data.condiciones || '';
-      } catch (err) {
-        console.error("Error cargando condiciones", err);
-        setGeneralConditions(res.data.acu_e || ''); // Fallback al campo antiguo
-        loadedConditionsRef.current = res.data.acu_e || '';
-      }
-
-      // 2. Suministros (Ya se cargan y mapean en el hook useCotizacionSuministros)
-
-      // 3. Servicios (simulado o endpoint real si existe)
-      // const srvRes = await api.get(`cotizaciones/cotizacion/${numReg}/servicios/`);
-      // setGruposServicios(mapServiciosBackendToState(srvRes.data));
-
-      // 4. Descuento
-      await fetchDescuento();
-
-      // 5. Trazabilidad
-      fetchHistory();
+      const conditions = condRes.data?.condiciones !== null && condRes.data?.condiciones !== undefined
+        ? condRes.data.condiciones 
+        : (detailData.acu_e || '');
+      setGeneralConditions(conditions);
+      loadedConditionsRef.current = conditions;
 
     } catch (err) {
       console.error("Error loading data:", err);

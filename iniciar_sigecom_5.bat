@@ -14,7 +14,7 @@ if %errorlevel% neq 0 (
 )
 
 echo [1/2] Iniciando Backend Django...
-start "Backend SIGECOM 5.0" cmd /k "env\Scripts\activate && python manage.py runserver 0.0.0.0:8000"
+start "Backend SIGECOM 5.0" cmd /k "env\Scripts\activate && python run_waitress.py"
 
 echo [2/2] Iniciando Frontend React/Vite...
 start "Frontend SIGECOM 5.0" cmd /k "cd frontend && npm run dev"

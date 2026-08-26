@@ -34,7 +34,6 @@ export default function CotizacionesHome() {
   const [cotizaciones, setCotizaciones] = useState([]);
   const [viewScope, setViewScope] = useState("global");
   const [stats, setStats] = useState({});
-  const [loading, setLoading] = useState(true);
   const [filtro, setFiltro] = useState("Todos");
   const [fechaInicio, setFechaInicio] = useState("");
   const [fechaFin, setFechaFin] = useState("");
@@ -71,6 +70,9 @@ export default function CotizacionesHome() {
   } = useQuery({
     queryKey: ["cotizaciones", currentFilters, viewScope],
     queryFn: () => fetchCotizaciones({ ...currentFilters, personal: viewScope === "personal" }),
+    keepPreviousData: true,
+    staleTime: 60 * 1000, // Cache de 1 minuto para cotizaciones filtradas
+    cacheTime: 5 * 60 * 1000
   });
 
   useEffect(() => {
@@ -120,7 +122,9 @@ export default function CotizacionesHome() {
         return { cotizaciones: [], alertas: [] };
       }
     },
-    keepPreviousData: true
+    keepPreviousData: true,
+    staleTime: 5 * 60 * 1000, // Cache de 5 minutos para cotizaciones anuales
+    cacheTime: 10 * 60 * 1000
   });
 
   const {
@@ -144,7 +148,37 @@ export default function CotizacionesHome() {
         return [];
       }
     },
-    keepPreviousData: true
+    keepPreviousData: true,
+    staleTime: 5 * 60 * 1000, // Cache de 5 minutos para aperturas anuales
+    cacheTime: 10 * 60 * 1000
+  });
+
+  const {
+    data: resumenComercialData,
+    isLoading: isLoadingResumen,
+    isFetching: isFetchingResumen,
+  } = useQuery({
+    queryKey: ["resumenComercial", currentFilters.anno, currentFilters.mes, viewScope],
+    queryFn: async () => {
+      try {
+        const token = localStorage.getItem("access_token");
+        const { data } = await api.get("dashboard/resumen_comercial/", {
+          headers: { Authorization: `Bearer ${token}` },
+          params: {
+            anno: currentFilters.anno,
+            mes: currentFilters.mes,
+            personal: viewScope === "personal" ? "true" : "false"
+          }
+        });
+        return data;
+      } catch (err) {
+        console.error("Error cargando datos consolidados del dashboard:", err);
+        return null;
+      }
+    },
+    keepPreviousData: true,
+    staleTime: 60 * 1000, // Cache de 1 minuto para KPIs y tendencias dinámicas
+    cacheTime: 5 * 60 * 1000
   });
 
   const { scrollY } = useScroll();
@@ -156,7 +190,6 @@ export default function CotizacionesHome() {
 
   // Fetch cotizaciones con filtro por año actual
   const fetchCotizaciones = useCallback(async (params = { anno: annoActual }) => {
-    setLoading(true);
     try {
       const token = localStorage.getItem("access_token");
       const { data } = await api.get("cotizaciones/lista_cotizaciones/", {
@@ -189,8 +222,6 @@ export default function CotizacionesHome() {
       if (e?.response?.status === 401) logout();
       toast.error("Error cargando las cotizaciones.");
       return { cotizaciones: [], stats: {} };
-    } finally {
-      setLoading(false);
     }
   }, [annoActual, logout]);
 
@@ -210,23 +241,20 @@ export default function CotizacionesHome() {
   // ===========
   useEffect(() => {
     const fetchClientes = async () => {
-      const res = await api.get("/core/clientes/");
-      setClientes(res.data);
+      try {
+        const res = await api.get("/core/clientes/");
+        const data = Array.isArray(res.data) ? res.data : [];
+        setClientes(data);
+        
+        const map = {};
+        data.forEach(c => {
+          map[c.codigo] = c.nombre;
+        });
+        setClientesMap(map);
+      } catch (err) {
+        console.error("Error cargando clientes", err);
+      }
     };
-    fetchClientes();
-  }, []);
-
-  // Mapeo  de Clientes
-  useEffect(() => {
-    const fetchClientes = async () => {
-      const res = await api.get("/core/clientes/");
-      const map = {};
-      res.data.forEach(c => {
-        map[c.codigo] = c.nombre;
-      });
-      setClientesMap(map);
-    };
-
     fetchClientes();
   }, []);
 
@@ -363,8 +391,6 @@ export default function CotizacionesHome() {
     };
   });
 
-  if (loading) return <div className="p-6 space-y-6">Cargando cotizaciones...</div>;
-
   // =========
   // REPORTE
   // =========
@@ -486,9 +512,17 @@ export default function CotizacionesHome() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           {/* Título y Selector de Alcance */}
           <div className="flex flex-col md:flex-row md:items-center gap-3">
-            <h1 className="text-lg md:text-2xl font-black text-gray-900 tracking-tight">
-              Inteligencia Comercial
-            </h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-lg md:text-2xl font-black text-gray-900 tracking-tight">
+                Inteligencia Comercial
+              </h1>
+              {(isFetching || isFetchingResumen) && (
+                <span className="flex items-center gap-1 text-[10px] font-bold text-indigo-500 uppercase tracking-widest animate-pulse bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
+                  <Loader size={12} className="animate-spin text-indigo-600" />
+                  Cargando...
+                </span>
+              )}
+            </div>
             
             {/* Toggle de Alcance de Datos (Personal vs Global) */}
             <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200/60 select-none">
@@ -600,7 +634,13 @@ export default function CotizacionesHome() {
 
         {/* KPIs MULTIMODULARES DE NEGOCIO REALES */}
         {activeModule === "comercial" ? (
-          <KpisResumen anno={currentFilters.anno} mes={currentFilters.mes} viewScope={viewScope} />
+          <KpisResumen 
+            anno={currentFilters.anno} 
+            mes={currentFilters.mes} 
+            viewScope={viewScope} 
+            data={resumenComercialData?.kpis}
+            loading={isLoadingResumen}
+          />
         ) : (
           <KpisLogistica anno={currentFilters.anno} mes={currentFilters.mes} />
         )}
@@ -625,6 +665,8 @@ export default function CotizacionesHome() {
                 aperturas={todasAperturasFiltradasPorAlcance}
                 alertas={todasAlertasFiltradasPorAlcance}
                 viewScope={viewScope}
+                resumenData={resumenComercialData}
+                loading={isLoadingResumen}
               />
             </div>
 

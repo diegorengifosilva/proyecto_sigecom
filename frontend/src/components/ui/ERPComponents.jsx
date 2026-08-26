@@ -22,7 +22,7 @@ export const StatusBadge = ({ status }) => {
   // 2. ADJUDICADO / ADJUDICADA (Green/Emerald)
   if (statusString === 'adjudicado' || statusString === 'adjudicada' || statusString.includes('adjudicad')) {
     return (
-      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200/60 shadow-sm">
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-700 border border-emerald-200/60 shadow-sm">
         Adjudicado
       </span>
     );

@@ -9,4 +9,5 @@ urlpatterns = [
     path('analisis/', views.cotizaciones_analisis_view, name='cotizaciones-analisis'),
     path('exportar/mensual/', views.exportar_mensual, name='exportar_mensual'),
     path('exportar/anual/', views.exportar_anual, name='exportar_anual'),
+    path('resumen_comercial/', views.resumen_comercial_dashboard, name='resumen_comercial_dashboard'),
 ]
