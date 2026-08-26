@@ -17,7 +17,7 @@ import RegisterPage from "@/auth/register/RegisterPage.jsx";
 import DashboardLayout from "@/dashboard/layout/DashboardLayout.jsx";
 
 // COMERCIAL
-import CotizacionesHome from "./dashboard/comercial/Home/CotizacionesHome";
+import DashboardComercial from "./dashboard/comercial/Home/DashboardComercial";
 import Comercial from "./dashboard/comercial/Comercial";
 import CotizacionDetallePage from "./dashboard/comercial/CotizacionDetallePage";
 import CotizacionNuevaModal from "./modal/CotizacionNuevaModal";
@@ -86,7 +86,7 @@ export default function App() {
               }
             >
               {/* Inicio */}
-              <Route path="home" element={<CotizacionesHome />} />
+              <Route path="home" element={<DashboardComercial />} />
 
               {/* Módulo Comercial */}
               <Route path="comercial">

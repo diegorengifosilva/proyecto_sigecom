@@ -28,7 +28,7 @@ import KpisLogistica from "./resumen/KpisLogistica";
 import VcAiInsights from "./resumen/VcAiInsights";
 import { FilterDropdown, ERPButton } from "@/components/ui/ERPComponents";
 
-export default function CotizacionesHome() {
+export default function DashboardComercial() {
   const { authUser: user, logout } = useAuth();
   const activeModule = "comercial";
   const [cotizaciones, setCotizaciones] = useState([]);
@@ -47,19 +47,12 @@ export default function CotizacionesHome() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   const [currentFilters, setCurrentFilters] = useState({
-    anno: new Date().getFullYear(), // año actual
-    mes: "%",                        // todos los meses por defecto
-    cliente: "%",                    // todos los clientes
-    estado: "%",                     // todos los estados
-    area: "%",                        // todas las áreas
-    envio: "%",                       // todos los envíos
-    num_reg: "",                      // opcional: número de registro específico
-    campo: "",                        // campo específico para búsqueda flexible
-    valor: "",                        // valor para el campo específico
-    generalCampo: "",                 // búsqueda general tipo CAJA CHICA
-    generalValor: "",                 // valor de búsqueda general
-    index: 1,                         // página actual si implementas paginación
-    num_regs: 10000,                     // cantidad de registros por página
+    anno: new Date().getFullYear(),
+    mes: String(new Date().getMonth() + 1),
+    cliente: "%",
+    generalValor: "",
+    index: 1,
+    num_regs: 10000,
   });
   const [clientesMap, setClientesMap] = useState({});
   const {
@@ -85,18 +78,19 @@ export default function CotizacionesHome() {
   const {
     data: cotizacionesAnualData,
   } = useQuery({
-    queryKey: ["cotizacionesAnual", currentFilters.anno, viewScope],
+    queryKey: ["cotizacionesAnual", currentFilters.anno, currentFilters.mes, viewScope],
     queryFn: async () => {
       try {
         const token = localStorage.getItem("access_token");
+        const queryMes = currentFilters.mes === "%" ? (new Date().getMonth() + 1) : currentFilters.mes;
         const { data: resData } = await api.get("cotizaciones/lista_cotizaciones/", {
           headers: { Authorization: `Bearer ${token}` },
           params: {
             anno: currentFilters.anno,
-            mes: "%",
+            mes: queryMes,
             personal: viewScope === "personal",
             incluir_oportunidades: true,
-            num_regs: 10000
+            num_regs: 1000
           }
         });
         const list = resData.tabla || resData.results || [];
@@ -130,16 +124,17 @@ export default function CotizacionesHome() {
   const {
     data: aperturasAnualData,
   } = useQuery({
-    queryKey: ["aperturasAnual", currentFilters.anno],
+    queryKey: ["aperturasAnual", currentFilters.anno, currentFilters.mes],
     queryFn: async () => {
       try {
         const token = localStorage.getItem("access_token");
+        const queryMes = currentFilters.mes === "%" ? (new Date().getMonth() + 1) : currentFilters.mes;
         const { data: resData } = await api.get("cotizaciones/lista_aperturas/", {
           headers: { Authorization: `Bearer ${token}` },
           params: {
             anno: currentFilters.anno,
-            mes: "%",
-            num_regs: 10000
+            mes: queryMes,
+            num_regs: 1000
           }
         });
         return resData.tabla || resData.results || [];
