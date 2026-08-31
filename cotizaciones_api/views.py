@@ -1053,6 +1053,45 @@ def cotizacion_detalle(request, id_registro):
     except Exception as e:
         return Response({"error": str(e)}, status=500)
 
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def cotizacion_version(request, id_registro):
+    """
+    Endpoint ultraligero para polling de concurrencia en tiempo real.
+    Retorna un hash de versión y timestamp para verificar cambios sin transferir datos pesados.
+    """
+    try:
+        from django.db.models import Max
+        import hashlib
+
+        cot = Cotizacion.objects.filter(id_registro=id_registro).values(
+            'id_registro', 'total_cotizacion', 'id_estado_id', 'estado_oportunidad', 'estado_envio',
+            'descuento_monto', 'descuento_aplica'
+        ).first()
+
+        if not cot:
+            return Response({"error": "Cotización no encontrada"}, status=404)
+
+        seg = CotizacionSeguimiento.objects.filter(id_registro=id_registro).aggregate(
+            max_id=Max('id_seguimiento'),
+            max_fecha=Max('fecha')
+        )
+
+        sum_count = CotizacionSuministro.objects.filter(id_registro=id_registro).count()
+        serv_count = CotizacionServicio.objects.filter(id_registro=id_registro).count()
+
+        version_raw = f"{cot['id_registro']}_{cot['total_cotizacion']}_{cot['id_estado_id']}_{cot['estado_oportunidad']}_{cot['estado_envio']}_{cot['descuento_monto']}_{cot['descuento_aplica']}_{seg['max_id']}_{seg['max_fecha']}_{sum_count}_{serv_count}"
+        version_hash = hashlib.md5(version_raw.encode('utf-8')).hexdigest()
+
+        return Response({
+            "id_registro": id_registro,
+            "version": version_hash,
+            "timestamp": seg['max_fecha']
+        })
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
+
 def actualizar_total_general_cotizacion(cotizacion):
     """
     Recalcula el total_cotizacion de la cotización base, sumando:
@@ -1471,9 +1510,7 @@ def listar_servicios(request, id_registro):
                     grupo_index += 1
                     prefix_familia = f"{grupo_index:02d}"
                     code_level0 = f"{prefix_familia}000"
-                    if s.codigo_servicio != code_level0:
-                        s.codigo_servicio = code_level0
-                        s.save(update_fields=["codigo_servicio"])
+                    s_code = s.codigo_servicio or code_level0
 
                     current_group = {
                         "id_servicio": s.id_servicio,
@@ -1505,16 +1542,14 @@ def listar_servicios(request, id_registro):
                             tipo_digito = s.codigo_servicio[2]
 
                     prefix_sub = f"{current_group['_prefix']}0{tipo_digito}1"
-                    if s.codigo_servicio != prefix_sub:
-                        s.codigo_servicio = prefix_sub
-                        s.save(update_fields=["codigo_servicio"])
+                    s_code = s.codigo_servicio or prefix_sub
 
                     sg_data = {
                         "id": s.id_servicio,
                         "titulo": s.nombre_servicio or "",
                         "tipoCodigo": f"0{tipo_digito}",
                         "tipoNombre": tipo_map.get(tipo_digito, "OTROS"),
-                        "codigo_servicio": prefix_sub,
+                        "codigo_servicio": s_code,
                         "items": [],
                         "_tipo_digito": tipo_digito
                     }
@@ -1539,21 +1574,11 @@ def listar_servicios(request, id_registro):
                     if tipo_digito not in current_subgroup_by_type:
                         sg_existente = next((sg for sg in current_group["subgrupos"] if sg["_tipo_digito"] == tipo_digito), None)
                         if not sg_existente:
-                            tg_id = 3 if tipo_digito == "4" else (4 if tipo_digito == "5" else 5)
-                            tg = TipoGasto.objects.filter(id_tipo_gasto=tg_id).first()
                             sub_name = tipo_map.get(tipo_digito, "OTROS")
                             prefix_sub = f"{current_group['_prefix']}0{tipo_digito}1"
                             
-                            sg_obj = CotizacionServicio.objects.create(
-                                id_registro=s.id_registro,
-                                codigo_servicio=prefix_sub,
-                                nombre_servicio=sub_name,
-                                nivel=1,
-                                orden=s.orden - 1 if s.orden else 1,
-                                id_tipo_gasto=tg,
-                            )
                             sg_existente = {
-                                "id": sg_obj.id_servicio,
+                                "id": f"virtual_{s.id_servicio}",
                                 "titulo": sub_name,
                                 "tipoCodigo": f"0{tipo_digito}",
                                 "tipoNombre": sub_name,
@@ -1565,12 +1590,10 @@ def listar_servicios(request, id_registro):
                         current_subgroup_by_type[tipo_digito] = sg_existente
 
                     prefix_item = f"{current_group['_prefix']}0{tipo_digito}2"
-                    if s.codigo_servicio != prefix_item:
-                        s.codigo_servicio = prefix_item
-                        s.save(update_fields=["codigo_servicio"])
+                    s_code = s.codigo_servicio or prefix_item
 
                     serialized_item = CotizacionServicioSerializer(s).data
-                    serialized_item["codigo_servicio"] = prefix_item
+                    serialized_item["codigo_servicio"] = s_code
                     current_subgroup_by_type[tipo_digito]["items"].append(serialized_item)
 
             for g in resultado:

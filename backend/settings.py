@@ -155,7 +155,7 @@ DATABASES = {
         },
     }
 }
-
+        
 # Router para asegurar que los modelos usen solo db_vc
 DATABASE_ROUTERS = ["backend.db_router.VCRouter"]
 

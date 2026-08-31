@@ -520,14 +520,34 @@ def _ejecutar_sincronizacion_legada(cotizacion_id: int):
         lock.release()
 
 
-def disparar_sincronizacion_legada(cotizacion_id: int):
+_debounce_cotizacion_timers = {}
+_debounce_cotizacion_lock = threading.Lock()
+
+def _debounced_sync_cotizacion(cotizacion_id: int):
+    with _debounce_cotizacion_lock:
+        _debounce_cotizacion_timers.pop(cotizacion_id, None)
+    SYNC_EXECUTOR.submit(_ejecutar_sincronizacion_legada, cotizacion_id)
+
+def disparar_sincronizacion_legada(cotizacion_id: int, delay: float = 0.6):
     """
-    Registra la tarea de sincronización para que se ejecute en segundo plano
-    inmediatamente después de confirmarse el COMMIT en la base local.
+    Registra la tarea de sincronización para que se ejecute en segundo plano con debounce
+    (anti-rebote) tras confirmarse el COMMIT en la base local.
+    Si ocurren múltiples guardados consecutivos para la misma cotización dentro de la ventana
+    de `delay` segundos, se cancela la réplica previa y se ejecuta una sola sincronización consolidada.
     """
     try:
-        transaction.on_commit(lambda: SYNC_EXECUTOR.submit(_ejecutar_sincronizacion_legada, cotizacion_id))
-        logger.debug(f"[SyncLegado] Tarea de sincronización registrada en on_commit para cotización ID: {cotizacion_id}")
+        def enqueue():
+            with _debounce_cotizacion_lock:
+                prev_timer = _debounce_cotizacion_timers.get(cotizacion_id)
+                if prev_timer:
+                    prev_timer.cancel()
+                timer = threading.Timer(delay, _debounced_sync_cotizacion, args=[cotizacion_id])
+                _debounce_cotizacion_timers[cotizacion_id] = timer
+                timer.daemon = True
+                timer.start()
+
+        transaction.on_commit(enqueue)
+        logger.debug(f"[SyncLegado] Tarea de sincronización registrada con debounce ({delay}s) en on_commit para cotización ID: {cotizacion_id}")
     except Exception as e:
         logger.error(f"[SyncLegado] No se pudo encolar la sincronización para cotización ID {cotizacion_id}: {str(e)}", exc_info=True)
 

@@ -25,6 +25,7 @@ urlpatterns = [
     path('aperturas_por_registro/<int:id_registro>/', views.aperturas_por_registro, name='aperturas_por_registro'),
     path('aperturas_por_registro/<int:id_registro>/nueva_oc/', views.crear_nueva_oc, name='crear_nueva_oc'),
     path('cotizacion_detalle/<int:id_registro>/', views.cotizacion_detalle, name='cotizacion_detalle'),
+    path('version/<int:id_registro>/', views.cotizacion_version, name='cotizacion_version'),
     path('ultima_cotizacion_cliente/<int:id_cliente>/', views.ultima_cotizacion_cliente, name='ultima_cotizacion_cliente'),
     path('tiempos-frecuentes/', views.tiempos_frecuentes, name='tiempos_frecuentes'),
     path('periodos/', views.periodos_registrados, name='periodos_registrados'),

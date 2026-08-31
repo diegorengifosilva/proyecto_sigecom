@@ -6698,6 +6698,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     }
   };
 
+  const lastVersionRef = useRef(null);
+
   useEffect(() => {
     loadAllData(false);
   }, [numReg]);
@@ -6708,7 +6710,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       const endpoint = `cotizaciones/cotizacion_detalle/${numReg}/`;
 
       // Parallel execution of all independent API calls
-      const [unitsRes, detailRes, condRes] = await Promise.all([
+      const [unitsRes, detailRes, condRes, verRes] = await Promise.all([
         api.get("core/unidades_medida/").catch(err => {
           console.error("Error loading units of measure:", err);
           return { data: [] };
@@ -6718,9 +6720,14 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           console.error("Error loading conditions:", err);
           return { data: { condiciones: null } };
         }),
+        api.get(`cotizaciones/version/${numReg}/`).catch(() => ({ data: null })),
         fetchDescuento(),
         fetchHistory()
       ]);
+
+      if (verRes?.data?.version) {
+        lastVersionRef.current = verRes.data.version;
+      }
 
       const units = unitsRes.data;
       setUnidadesMedida(Array.isArray(units) ? units : []);
@@ -6744,7 +6751,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
 
     } catch (err) {
       console.error("Error loading data:", err);
-      toast.error("Error al cargar la información");
+      if (!silent) toast.error("Error al cargar la información");
     } finally {
       if (!silent) setLoading(false);
     }
@@ -6753,18 +6760,27 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
   // Poll data in the background for real-time multi-user concurrency
   useEffect(() => {
     const interval = setInterval(async () => {
-      // Only poll if the document is visible and there are no unsaved local changes (not dirty)
-      if (document.visibilityState === "visible" && !isDirty) {
+      // Only check version if document is visible and there are no unsaved local changes (not dirty)
+      if (document.visibilityState === "visible" && !isDirty && numReg) {
         try {
-          await loadAllData(true);
+          const res = await api.get(`cotizaciones/version/${numReg}/`);
+          const newVersion = res.data?.version;
+          if (newVersion) {
+            if (lastVersionRef.current && lastVersionRef.current !== newVersion) {
+              lastVersionRef.current = newVersion;
+              await loadAllData(true);
+            } else if (!lastVersionRef.current) {
+              lastVersionRef.current = newVersion;
+            }
+          }
         } catch (err) {
-          console.error("Error polling data:", err);
+          console.debug("Error checking version:", err);
         }
       }
-    }, 4000); // Poll every 4 seconds
+    }, 3500); // Check version every 3.5 seconds
 
     return () => clearInterval(interval);
-  }, [isDirty, loadAllData]);
+  }, [isDirty, numReg, loadAllData]);
 
 
 
