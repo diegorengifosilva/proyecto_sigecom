@@ -100,7 +100,7 @@ export default function ClientesChart({ data = [], viewScope = "global", cotizac
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-white border border-slate-100 rounded-[1.5rem] p-5 shadow-sm h-full flex flex-col"
+      className="bg-white border border-slate-100 rounded-[1.5rem] p-5 shadow-sm h-full flex flex-col min-w-0 overflow-hidden"
     >
       {/* HEADER */}
       <div className="flex justify-between items-start mb-4">

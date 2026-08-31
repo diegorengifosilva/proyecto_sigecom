@@ -64,6 +64,12 @@ export default function Compras({ defaultTab = "programacion" }) {
   const [selectedAnno, setSelectedAnno] = useState(new Date().getFullYear());
   const [selectedMes, setSelectedMes] = useState("%");
   const [categoriaFilter, setCategoriaFilter] = useState("Todas");
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Reset pagination when tab or filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [currentTab, globalSearch, selectedAnno, selectedMes, categoriaFilter]);
 
   // Mantener pestaña sincronizada con la prop defaultTab del ruteador
   useEffect(() => {
@@ -122,7 +128,7 @@ export default function Compras({ defaultTab = "programacion" }) {
   const filteredData = useMemo(() => {
     let result = activeData;
 
-    if (currentTab === "atencion") {
+    if (currentTab === "atencion" || currentTab === "liquidaciones") {
       if (categoriaFilter !== "Todas") {
         if (categoriaFilter === "Compras") {
           result = result.filter(item => item.tipo_gasto === "03");
@@ -447,7 +453,7 @@ export default function Compras({ defaultTab = "programacion" }) {
           </div>
 
           {/* FILTROS RÁPIDOS DE CATEGORÍA ESTILO COMERCIAL */}
-          {currentTab === "atencion" && (
+          {(currentTab === "atencion" || currentTab === "liquidaciones") && (
             <div className="flex flex-row items-center gap-1.5 self-end lg:self-auto flex-wrap justify-end pr-2">
               {[
                 { label: "Orden Compra/Servicios", value: "Compras" },
@@ -478,12 +484,12 @@ export default function Compras({ defaultTab = "programacion" }) {
             <TablaProgramacion
               data={filteredData}
               isLoading={isLoading}
-              currentPage={1}
+              currentPage={currentPage}
               pageSize={10}
-              totalPages={1}
-              onPageChange={(page) => console.log("Cambiar página", page)}
+              totalPages={Math.max(1, Math.ceil(filteredData.length / 10))}
+              onPageChange={setCurrentPage}
               onRowClick={(row) => {
-                toast.success(`Seleccionado programación: ${row.codigo}`);
+                navigate(`/compras/programacion/${row.id_registro}`);
               }}
             />
           )}
@@ -492,10 +498,10 @@ export default function Compras({ defaultTab = "programacion" }) {
             <TablaAtencion
               data={filteredData}
               isLoading={isLoading}
-              currentPage={1}
+              currentPage={currentPage}
               pageSize={10}
-              totalPages={1}
-              onPageChange={(page) => console.log("Cambiar página", page)}
+              totalPages={Math.max(1, Math.ceil(filteredData.length / 10))}
+              onPageChange={setCurrentPage}
               onRowClick={(row) => {
                 if (row.tipo_gasto === "03") {
                   navigate(`/compras/atencion/${row.id_solicitud}`);
@@ -510,12 +516,16 @@ export default function Compras({ defaultTab = "programacion" }) {
             <TablaLiquidaciones
               data={filteredData}
               isLoading={isLoading}
-              currentPage={1}
+              currentPage={currentPage}
               pageSize={10}
-              totalPages={1}
-              onPageChange={(page) => console.log("Cambiar página", page)}
+              totalPages={Math.max(1, Math.ceil(filteredData.length / 10))}
+              onPageChange={setCurrentPage}
               onRowClick={(row) => {
-                toast.success(`Seleccionado liquidación: ${row.codigo}`);
+                if (row.tipo_gasto === "03") {
+                  navigate(`/compras/atencion/${row.id_solicitud}`);
+                } else {
+                  toast.success(`Seleccionado liquidación: ${row.codigo}`);
+                }
               }}
             />
           )}

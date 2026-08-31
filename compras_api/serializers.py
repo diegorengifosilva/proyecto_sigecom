@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import SolicitudOrdenCompra, SolicitudPasajes
+from .models import SolicitudOrdenCompra, SolicitudPasajes, SolicitudOrdenCompraDetalle, SolicitudPasajesDetalle
 from caja_chica_api.models import Solicitud as CajaChicaSolicitud
 
 # 1. SERIALIZADOR DE ÓRDENES DE COMPRA
@@ -8,10 +8,11 @@ class SolicitudOrdenCompraSerializer(serializers.ModelSerializer):
     area = serializers.SerializerMethodField()
     regus = serializers.SerializerMethodField()
     fecha = serializers.SerializerMethodField()
+    hora = serializers.SerializerMethodField()
     
     # Aliases para compatibilidad con el frontend
     nro_solicitud = serializers.CharField(source="codigo", read_only=True, default="")
-    nombre = serializers.CharField(source="empresa", read_only=True, default="")
+    nombre = serializers.SerializerMethodField()
     monto_usd = serializers.SerializerMethodField()
     monto_pen = serializers.SerializerMethodField()
     estado_nombre = serializers.CharField(source="id_estado.nombre", read_only=True, default="")
@@ -22,11 +23,13 @@ class SolicitudOrdenCompraSerializer(serializers.ModelSerializer):
         fields = [
             'id_solicitud',
             'id_registro',
+            'id_apertura',
             'nivel_grupo',
             'codigo',
             'nro_solicitud',
             'num',
             'fecha',
+            'hora',
             'id_area',
             'area',
             'id_solicitante',
@@ -64,11 +67,24 @@ class SolicitudOrdenCompraSerializer(serializers.ModelSerializer):
     def get_regus(self, obj):
         return obj.id_solicitante.usuario if obj.id_solicitante else ""
 
+    def get_nombre(self, obj):
+        return obj.id_solicitante.nombre_completo if obj.id_solicitante else ""
+
     def get_fecha(self, obj):
-        val = obj.fecha or obj.fecha_orden
+        val = obj.fecha
         if not val:
             return None
         return val.strftime("%Y-%m-%d")
+
+    def get_hora(self, obj):
+        val = obj.fecha
+        if not val:
+            return ""
+        # Formato de 12 horas con am/pm en minúsculas (ej: 11:54 am)
+        time_str = val.strftime("%I:%M %p").lower()
+        if time_str.startswith('0'):
+            time_str = time_str[1:]
+        return time_str
 
     def get_tipo(self, obj):
         val = (obj.tipo or "Suministro").strip()
@@ -77,14 +93,10 @@ class SolicitudOrdenCompraSerializer(serializers.ModelSerializer):
         return "Suministro"
 
     def get_monto_usd(self, obj):
-        if obj.tipo_moneda in ('D', 'd', 'USD', 'usd'):
-            return float(obj.monto_dolares or 0.00)
-        return 0.00
+        return float(obj.monto_dolares or 0.00)
 
     def get_monto_pen(self, obj):
-        if obj.tipo_moneda in ('S', 's', 'PEN', 'pen'):
-            return float(obj.monto_soles or 0.00)
-        return 0.00
+        return float(obj.monto_soles or 0.00)
 
 
 # 2. SERIALIZADOR DE PASAJES (TRAVEL REQUESTS)
@@ -93,11 +105,12 @@ class SolicitudPasajesSerializer(serializers.ModelSerializer):
     area = serializers.SerializerMethodField()
     regus = serializers.SerializerMethodField()
     fecha = serializers.SerializerMethodField()
+    hora = serializers.SerializerMethodField()
     
     # Aliases para compatibilidad con el frontend
     nro_solicitud = serializers.CharField(source="cog", read_only=True, default="")
     codigo = serializers.CharField(read_only=True, default="")
-    nombre = serializers.CharField(source="empresa", read_only=True, default="")
+    nombre = serializers.SerializerMethodField()
     monto_usd = serializers.SerializerMethodField()
     monto_pen = serializers.SerializerMethodField()
     estado_nombre = serializers.CharField(source="id_estado.nombre", read_only=True, default="")
@@ -109,12 +122,14 @@ class SolicitudPasajesSerializer(serializers.ModelSerializer):
         fields = [
             'id_pasaje',
             'id_registro',
+            'id_apertura',
             'nivel_grupo',
             'cog',
             'codigo',
             'nro_solicitud',
             'num',
             'fecha',
+            'hora',
             'id_area',
             'area',
             'id_solicitante',
@@ -150,11 +165,24 @@ class SolicitudPasajesSerializer(serializers.ModelSerializer):
     def get_regus(self, obj):
         return obj.id_solicitante.usuario if obj.id_solicitante else ""
 
+    def get_nombre(self, obj):
+        return obj.id_solicitante.nombre_completo if obj.id_solicitante else ""
+
     def get_fecha(self, obj):
-        val = obj.fecha or obj.fecha_salida
+        val = obj.fecha
         if not val:
             return None
         return val.strftime("%Y-%m-%d")
+
+    def get_hora(self, obj):
+        val = obj.fecha
+        if not val:
+            return ""
+        # Formato de 12 horas con am/pm en minúsculas (ej: 11:54 am)
+        time_str = val.strftime("%I:%M %p").lower()
+        if time_str.startswith('0'):
+            time_str = time_str[1:]
+        return time_str
 
     def get_referencia(self, obj):
         origen = (obj.lugar_origen or "").strip()
@@ -167,14 +195,10 @@ class SolicitudPasajesSerializer(serializers.ModelSerializer):
         return f"Pasajes ({transp_name})"
 
     def get_monto_usd(self, obj):
-        if obj.tipo_moneda in ('D', 'd', 'USD', 'usd'):
-            return float(obj.monto_dolares or 0.00)
-        return 0.00
+        return float(obj.monto_dolares or 0.00)
 
     def get_monto_pen(self, obj):
-        if obj.tipo_moneda in ('S', 's', 'PEN', 'pen'):
-            return float(obj.monto_soles or 0.00)
-        return 0.00
+        return float(obj.monto_soles or 0.00)
 
 
 # 3. SERIALIZADOR DE CAJA CHICA (DUMMY/PRE-EXISTING CAJA CHICA SOLICITUD)
@@ -218,3 +242,39 @@ class CajaChicaSolicitudSerializer(serializers.ModelSerializer):
 
     def get_tipo(self, obj):
         return f"Caja Chica ({obj.tipo_solicitud})"
+
+
+class SolicitudOrdenCompraDetalleSerializer(serializers.ModelSerializer):
+    codigo_item = serializers.CharField(source='codigo', read_only=True, default='')
+    precio_venta = serializers.DecimalField(source='valor', max_digits=12, decimal_places=2, read_only=True)
+    venta_total = serializers.DecimalField(source='total', max_digits=12, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = SolicitudOrdenCompraDetalle
+        fields = [
+            'id_detalle',
+            'id_registro',
+            'codigo',
+            'codigo_item',
+            'descripcion',
+            'cantidad',
+            'valor',
+            'precio_venta',
+            'total',
+            'venta_total',
+        ]
+
+
+class SolicitudPasajesDetalleSerializer(serializers.ModelSerializer):
+    nombre_usuario = serializers.CharField(source='id_usuario.nombre_completo', read_only=True, default='')
+
+    class Meta:
+        model = SolicitudPasajesDetalle
+        fields = [
+            'id_detalle',
+            'id_registro',
+            'id_usuario',
+            'nombre_usuario',
+            'nombre_especial',
+            'observacion',
+        ]

@@ -32,6 +32,7 @@ import LogisticaDetallePage from "./dashboard/logistica/LogisticaDetallePage";
 import LogisticaTablas from "./dashboard/logistica/LogisticaTablas";
 import Compras from "./dashboard/compras/Compras";
 import CompraDetallePage from "./dashboard/compras/CompraDetallePage";
+import ProgramacionDetallePage from "./dashboard/compras/ProgramacionDetallePage";
 
 // CAJA CHICA
 import CajaChicaHome from "./dashboard/caja_chica/principal/DashboardHome";
@@ -147,6 +148,7 @@ export default function App() {
               <Route path="compras">
                 <Route index element={<Navigate to="programacion" replace />} />
                 <Route path="programacion" element={<Compras defaultTab="programacion" />} />
+                <Route path="programacion/:id_apertura" element={<ProgramacionDetallePage />} />
                 <Route path="atencion" element={<Compras defaultTab="atencion" />} />
                 <Route path="atencion/:id_solicitud" element={<CompraDetallePage />} />
                 <Route path="liquidaciones" element={<Compras defaultTab="liquidaciones" />} />

@@ -342,8 +342,8 @@ class CotizacionSeguimiento(models.Model):
         ordering = ['-fecha']
 
     def save(self, *args, **kwargs):
-        if self.detalle and len(self.detalle) > 1000:
-            self.detalle = self.detalle[:997] + "..."
+        if self.detalle and len(self.detalle) > 500:
+            self.detalle = self.detalle[:497] + "..."
         super().save(*args, **kwargs)
 
     def __str__(self):

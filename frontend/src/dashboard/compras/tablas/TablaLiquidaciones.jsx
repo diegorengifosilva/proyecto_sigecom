@@ -1,7 +1,7 @@
 import React from "react";
 import { ERPTable } from "@/components/ui/ERPComponents";
 import { formatDate } from "@/utils/formatters";
-import { Pin } from "lucide-react";
+import { Pin, Briefcase, Package, Plane, Bus } from "lucide-react";
 
 const TablaLiquidaciones = ({
   data = [],
@@ -16,13 +16,15 @@ const TablaLiquidaciones = ({
   pinnedIds = new Set()
 }) => {
   const headers = [
+    "",
     "Nro Solicitud", 
     "Fecha", 
     "Código", 
     "Tipo", 
     "Area", 
-    "Nombre", 
+    "Solicitante", 
     "Concepto", 
+    "Estado", 
     "Monto $", 
     "Monto S/."
   ];
@@ -35,6 +37,66 @@ const TablaLiquidaciones = ({
 
   const formatPEN = (val) => {
     return `S/. ${Number(val || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+  };
+
+  const getRequestIcon = (item) => {
+    const tipoGasto = String(item.tipo_gasto || "");
+    const transporte = String(item.transporte || "");
+    const tipo = String(item.tipo || "").toLowerCase();
+
+    if (tipoGasto === "02" || tipo.includes("pasajes") || tipo.includes("viaje")) {
+      if (transporte === "A" || tipo.includes("aéreo") || tipo.includes("aero")) {
+        return (
+          <div className="p-1.5 rounded-lg bg-sky-50 text-sky-600 border border-sky-100/50 flex items-center justify-center w-8 h-8" title="Pasajes Aéreos">
+            <Plane className="w-4 h-4 shrink-0" />
+          </div>
+        );
+      }
+      return (
+        <div className="p-1.5 rounded-lg bg-amber-50 text-amber-600 border border-amber-100/50 flex items-center justify-center w-8 h-8" title="Pasajes Terrestres">
+          <Bus className="w-4 h-4 shrink-0" />
+        </div>
+      );
+    }
+
+    if (tipo.includes("servicio")) {
+      return (
+        <div className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-100/50 flex items-center justify-center w-8 h-8" title="Orden de Servicio">
+          <Briefcase className="w-4 h-4 shrink-0" />
+        </div>
+      );
+    }
+
+    return (
+      <div className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100/50 flex items-center justify-center w-8 h-8" title="Orden de Compra / Suministro">
+        <Package className="w-4 h-4 shrink-0" />
+      </div>
+    );
+  };
+
+  const getStatusBadge = (estado) => {
+    const statusStr = String(estado || "Pendiente").toLowerCase();
+    
+    let colorClasses = "bg-slate-50 text-slate-700 border-slate-200";
+    if (statusStr.includes("envio") || statusStr.includes("envío")) {
+      colorClasses = "bg-red-50 text-red-700 border-red-200/50";
+    } else if (statusStr.includes("atencion") || statusStr.includes("atención")) {
+      colorClasses = "bg-amber-50 text-amber-700 border-amber-200/50";
+    } else if (statusStr.includes("pendiente de liquidacion") || statusStr.includes("pendiente de liquidación")) {
+      colorClasses = "bg-sky-50 text-sky-700 border-sky-200/50";
+    } else if (statusStr.includes("enviada")) {
+      colorClasses = "bg-emerald-50 text-emerald-700 border-emerald-200/50";
+    } else if (statusStr.includes("aprobada")) {
+      colorClasses = "bg-zinc-900 text-zinc-50 border-zinc-950";
+    } else if (statusStr.includes("anulado")) {
+      colorClasses = "bg-gray-100 text-gray-600 border-gray-300/50";
+    }
+
+    return (
+      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${colorClasses}`}>
+        {estado || "Pendiente"}
+      </span>
+    );
   };
 
   const mobileCards = (
@@ -52,13 +114,19 @@ const TablaLiquidaciones = ({
             }`}
           >
             <div className="flex justify-between items-center">
-              <span className="text-xs font-black text-violet-600 tracking-tight flex items-center gap-1">
-                {isPinned && <Pin className="h-3 w-3 text-amber-500 fill-amber-500 shrink-0 rotate-45" />}
-                {item.nro_solicitud}
-              </span>
-              <span className="text-[9px] font-black uppercase bg-violet-50 text-violet-700 px-1.5 py-0.5 rounded border border-violet-100">
-                {item.tipo}
-              </span>
+              <div className="flex items-center gap-2">
+                {getRequestIcon(item)}
+                <span className="text-xs font-black text-violet-600 tracking-tight flex items-center gap-1">
+                  {isPinned && <Pin className="h-3 w-3 text-amber-500 fill-amber-500 shrink-0 rotate-45" />}
+                  {item.id_registro && item.id_registro.includes('_') ? item.id_registro.split('_')[1] : item.id_registro}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {getStatusBadge(item.estado_nombre)}
+                <span className="text-[9px] font-black uppercase bg-violet-50 text-violet-700 px-1.5 py-0.5 rounded border border-violet-100">
+                  {item.tipo}
+                </span>
+              </div>
             </div>
 
             <div>
@@ -117,11 +185,18 @@ const TablaLiquidaciones = ({
                 isPinned ? 'bg-amber-50/10 hover:bg-amber-50/20' : ''
               }`}
             >
+              {/* Icon */}
+              <td className="px-4 py-2 text-center w-10">
+                <div className="flex items-center justify-center">
+                  {getRequestIcon(item)}
+                </div>
+              </td>
+
               {/* Nro Solicitud */}
               <td className="px-4 py-2 whitespace-nowrap text-sm font-bold text-violet-600">
                 <div className="flex items-center gap-1.5">
                   {isPinned && <Pin className="h-3 w-3 text-amber-500 fill-amber-500 shrink-0 rotate-45" />}
-                  <span>{item.nro_solicitud}</span>
+                  <span>{item.id_registro && item.id_registro.includes('_') ? item.id_registro.split('_')[1] : item.id_registro}</span>
                 </div>
               </td>
 
@@ -155,6 +230,11 @@ const TablaLiquidaciones = ({
                 <div className="text-sm text-gray-600 font-medium line-clamp-1 max-w-xs xl:max-w-md" title={item.concepto}>
                   {item.concepto}
                 </div>
+              </td>
+
+              {/* Estado */}
+              <td className="px-4 py-2 whitespace-nowrap">
+                {getStatusBadge(item.estado_nombre)}
               </td>
 
               {/* Monto $ */}

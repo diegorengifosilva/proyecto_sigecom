@@ -973,7 +973,8 @@ class CotizacionAperturaTablaSerializer(serializers.ModelSerializer):
             "cliente_id",
             "cliente_nombre",
             "area_nombre",       # Traducido e inyectado en la raíz para facilitar tu Front-end
-            "prio"
+            "prio",
+            "presupuesto"
         ]
 
     # ── LÓGICA DE MÉTODOS SIMPLIFICADOS PARA TABLA ──────────────

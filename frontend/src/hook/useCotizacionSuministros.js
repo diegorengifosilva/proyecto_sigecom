@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import api from '@/services/api';
 import { toast } from '../utils/toast';
 import XLSX from 'xlsx-js-style';
@@ -78,6 +78,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
   const [originalGruposSuministros, setOriginalGruposSuministros] = useState({});
   const [deletedSuministroIds, setDeletedSuministroIds] = useState([]);
   const [proveedores, setProveedores] = useState([]);
+  const isSavingRef = useRef(false);
 
   const isSuministrosDirty = useMemo(() => {
     return JSON.stringify(gruposSuministros) !== JSON.stringify(originalGruposSuministros) || deletedSuministroIds.length > 0;
@@ -225,12 +226,24 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
           };
         });
 
+        const existentesOrden = [];
+        Object.values(prev).forEach(g => {
+          if (g.orden) existentesOrden.push(g.orden);
+          if (g.items && Array.isArray(g.items)) {
+            g.items.forEach(it => {
+              if (it.orden) existentesOrden.push(it.orden);
+            });
+          }
+        });
+        const maxOrden = existentesOrden.length > 0 ? Math.max(...existentesOrden) : 0;
+        const nuevoOrden = maxOrden + 1;
+
         const newGroupRaw = {
           id: tempId,
           codigo_grupo: nuevoCodigo,
           nombre_grupo: form.nombre.toUpperCase(),
           cantidad: Number(form.cantidad),
-          orden: nuevoCodigo,
+          orden: nuevoOrden,
           items: newItems,
           costo_envio: Number(form.costoEnvio || 0),
           costo_envio_total: tipoVenta === "T" ? Number(form.costoEnvio || 0) : 0,
@@ -259,7 +272,20 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
     setGruposSuministros(prev => {
       const next = { ...prev };
       const grupo = next[activeGrupoKey];
-      if (!grupo) return prev;
+      let nuevoOrden = 0;
+      if (!isEdit) {
+        const existentesOrden = [];
+        Object.values(prev).forEach(g => {
+          if (g.orden) existentesOrden.push(g.orden);
+          if (g.items && Array.isArray(g.items)) {
+            g.items.forEach(it => {
+              if (it.orden) existentesOrden.push(it.orden);
+            });
+          }
+        });
+        const maxOrden = existentesOrden.length > 0 ? Math.max(...existentesOrden) : 0;
+        nuevoOrden = maxOrden + 1;
+      }
 
       const payload = {
         id_suministro: isEdit ? form.id_suministro : `temp_item_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -283,7 +309,8 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
         porcentaje_envio: Number(form.porcentaje_envio || 0),
         costo_con_envio: Number(form.costo_con_envio || 0),
         tiempo_entrega: form.tiempo_entrega ? Number(form.tiempo_entrega) : null,
-        id_unidad_tiempo_entrega: form.id_unidad_tiempo_entrega || null
+        id_unidad_tiempo_entrega: form.id_unidad_tiempo_entrega || null,
+        orden: isEdit ? form.orden : nuevoOrden
       };
 
       let nextItems = [];
@@ -390,12 +417,26 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
       const nuevoCog = maxContador + 1;
       const tempGroupId = `temp_group_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
+      const existentesOrden = [];
+      Object.values(prev).forEach(g => {
+        if (g.orden) existentesOrden.push(g.orden);
+        if (g.items && Array.isArray(g.items)) {
+          g.items.forEach(it => {
+            if (it.orden) existentesOrden.push(it.orden);
+          });
+        }
+      });
+      const maxOrden = existentesOrden.length > 0 ? Math.max(...existentesOrden) : 0;
+      const nuevoOrden = maxOrden + 1;
+
+      let itemCounter = nuevoOrden + 1;
       const newItems = (grupo.items || []).map((item, idx) => {
         const tempItemId = `temp_item_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 9)}`;
         return {
           ...item,
           id_suministro: tempItemId,
           codigo_grupo: nuevoCog,
+          orden: itemCounter++
         };
       });
 
@@ -405,7 +446,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
         nombre_grupo: `${grupo.nombre_grupo} - COPIA`,
         venta_total: grupo.venta_total,
         cantidad: grupo.cantidad,
-        orden: nuevoCog,
+        orden: nuevoOrden,
         items: newItems
       };
       return next;
@@ -484,188 +525,141 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
   }, [gruposSuministros, onAddLog]);
 
   const saveSuministros = async (ocultarMap = {}) => {
-    // Sincronizar total_por_grupo desde ocultarMap antes de guardar
-    for (const gp of Object.values(gruposSuministros)) {
-      if (ocultarMap[gp.codigo_grupo] !== undefined) {
-        gp.total_por_grupo = ocultarMap[gp.codigo_grupo] ? 1 : 0;
-      }
-    }
-
-    if (deletedSuministroIds.length > 0) {
-      for (const id of deletedSuministroIds) {
-        try {
-          await api.delete(`cotizaciones/lista_suministros/${numReg}/`, { params: { id_suministro: id } });
-        } catch (err) {
-          if (err.response && err.response.status === 404) {
-            console.log(`Suministro ${id} ya estaba eliminado (404).`);
-            continue;
-          }
-          throw err;
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
+    try {
+      // Sincronizar total_por_grupo desde ocultarMap antes de guardar
+      for (const gp of Object.values(gruposSuministros)) {
+        if (ocultarMap[gp.codigo_grupo] !== undefined) {
+          gp.total_por_grupo = ocultarMap[gp.codigo_grupo] ? 1 : 0;
         }
       }
-    }
 
-    const toDec = (val) => {
-      if (val === undefined || val === null || val === "" || isNaN(val) || val === "null" || val === "undefined") {
-        return null;
-      }
-      return Number(val).toFixed(2);
-    };
-
-    const hasGroupChanged = (gp, origGp) => {
-      if (!origGp) return true;
-      return (
-        gp.nombre_grupo !== origGp.nombre_grupo ||
-        gp.cantidad !== origGp.cantidad ||
-        gp.costo_envio !== origGp.costo_envio ||
-        gp.orden !== origGp.orden ||
-        gp.total_por_grupo !== origGp.total_por_grupo
-      );
-    };
-
-    const hasItemChanged = (item, origItem) => {
-      if (!origItem) return true;
-      const fields = [
-        'codigo_item', 'descripcion', 'cantidad', 'costo_precio', 
-        'porcentaje_utilidad', 'id_marca', 'proveedor', 'observacion', 
-        'tipo_unidad', 'costo_envio', 'tiempo_entrega', 'id_unidad_tiempo_entrega', 'orden'
-      ];
-      return fields.some(f => {
-        const v1 = item[f];
-        const v2 = origItem[f];
-        const cleanV1 = (v1 === undefined || v1 === null) ? "" : String(v1).trim();
-        const cleanV2 = (v2 === undefined || v2 === null) ? "" : String(v2).trim();
-        return cleanV1 !== cleanV2;
-      });
-    };
-
-    let hasAdd = false;
-    let hasDelete = deletedSuministroIds.length > 0;
-    let hasUpdate = false;
-
-    for (const gp of Object.values(gruposSuministros)) {
-      const isGroupTemp = typeof gp.id === 'string' && gp.id.startsWith('temp_');
-      if (isGroupTemp) {
-        hasAdd = true;
-      }
-      const origGp = originalGruposSuministros[gp.codigo_grupo];
-      if (!isGroupTemp && hasGroupChanged(gp, origGp)) {
-        hasUpdate = true;
-      }
-      for (const item of (gp.items || [])) {
-        const isItemTemp = typeof item.id_suministro === 'string' && item.id_suministro.startsWith('temp_');
-        if (isItemTemp) {
-          hasAdd = true;
-        } else {
-          const origItem = origGp?.items?.find(it => it.id_suministro === item.id_suministro);
-          if (hasItemChanged(item, origItem)) {
-            hasUpdate = true;
+      if (deletedSuministroIds.length > 0) {
+        for (const id of deletedSuministroIds) {
+          try {
+            await api.delete(`cotizaciones/lista_suministros/${numReg}/`, { params: { id_suministro: id } });
+          } catch (err) {
+            if (err.response && err.response.status === 404) {
+              console.log(`Suministro ${id} ya estaba eliminado (404).`);
+              continue;
+            }
+            throw err;
           }
         }
       }
-    }
 
-    const tempIdToRealIdMap = new Map();
-    const tempGroupCodeToRealGroupCodeMap = new Map();
-    const savePromises = [];
+      const toDec = (val) => {
+        if (val === undefined || val === null || val === "" || isNaN(val) || val === "null" || val === "undefined") {
+          return null;
+        }
+        return Number(val).toFixed(2);
+      };
 
-    for (const gp of Object.values(gruposSuministros)) {
-      const isGroupTemp = typeof gp.id === 'string' && gp.id.startsWith('temp_');
-      const origGp = originalGruposSuministros[gp.codigo_grupo];
-      let realGroupId = gp.id;
-      let realGroupCode = gp.codigo_grupo;
+      const hasGroupChanged = (gp, origGp) => {
+        if (!origGp) return true;
+        return (
+          gp.nombre_grupo !== origGp.nombre_grupo ||
+          gp.cantidad !== origGp.cantidad ||
+          gp.costo_envio !== origGp.costo_envio ||
+          gp.costo_envio_total !== origGp.costo_envio_total ||
+          gp.costo_envio_unidad !== origGp.costo_envio_unidad ||
+          gp.total_por_grupo !== origGp.total_por_grupo ||
+          gp.orden !== origGp.orden ||
+          gp.items?.length !== origGp.items?.length
+        );
+      };
 
-      if (isGroupTemp) {
-        const payloadGroup = {
-          id_registro: numReg,
-          codigo_grupo: Number(gp.codigo_grupo),
-          nombre_grupo: gp.nombre_grupo || "",
-          nivel: 0,
-          cantidad: Number(gp.cantidad || 0),
-          venta_total: toDec(gp.venta_total),
-          id_tipo_gasto: 1,
-          codigo_item: "GRUPO",
-          descripcion: "GRUPO",
-          orden: Number(gp.orden || 0),
-          costo_envio: toDec(gp.costo_envio),
-          costo_envio_total: toDec(gp.costo_envio_total),
-          costo_envio_unidad: toDec(gp.costo_envio_unidad),
-          total_por_grupo: gp.total_por_grupo || 0
-        };
-        const resGroup = await api.post(`cotizaciones/lista_suministros/${numReg}/`, payloadGroup);
-        realGroupId = resGroup.data.id_suministro;
-        realGroupCode = resGroup.data.codigo_grupo;
-
-        tempIdToRealIdMap.set(gp.id, realGroupId);
-        tempGroupCodeToRealGroupCodeMap.set(gp.codigo_grupo, realGroupCode);
-
-        const itemPromises = (gp.items || []).map(async (item) => {
-          const payloadItem = {
-            id_registro: numReg,
-            codigo_grupo: Number(realGroupCode),
-            nivel: 1,
-            codigo_item: item.codigo_item || "S/C",
-            descripcion: item.descripcion || "S/D",
-            cantidad: Number(item.cantidad || 0),
-            costo_precio: toDec(item.costo_precio),
-            costo_total: toDec(Number(item.costo_precio || 0) * Number(item.cantidad || 0)),
-            porcentaje_utilidad: toDec(item.porcentaje_utilidad),
-            utilidad: toDec(item.utilidad),
-            precio_venta: toDec(item.precio_venta),
-            venta_total: toDec(item.venta_total),
-            id_marca: (item.id_marca && item.id_marca !== "null" && item.id_marca !== "undefined") ? Number(item.id_marca) : null,
-            proveedor: item.proveedor || "",
-            id_tipo_gasto: 1,
-            observacion: item.observacion || "",
-            tipo_unidad: item.tipo_unidad || "UNI",
-            costo_envio: toDec(item.costo_envio),
-            porcentaje_envio: toDec(item.porcentaje_envio),
-            costo_envio_total: toDec(Number(item.costo_envio || 0) * Number(item.cantidad || 0)),
-            costo_envio_unidad: toDec(item.costo_envio),
-            costo_con_envio: toDec(item.costo_con_envio),
-            tiempo_entrega: (item.tiempo_entrega !== "" && item.tiempo_entrega !== undefined && item.tiempo_entrega !== null && !isNaN(item.tiempo_entrega)) ? Number(item.tiempo_entrega) : null,
-            id_unidad_tiempo_entrega: (item.id_unidad_tiempo_entrega && item.id_unidad_tiempo_entrega !== "null" && item.id_unidad_tiempo_entrega !== "undefined") ? Number(item.id_unidad_tiempo_entrega) : null,
-            orden: Number(item.orden || 0)
-          };
-          const resItem = await api.post(`cotizaciones/lista_suministros/${numReg}/`, payloadItem);
-          tempIdToRealIdMap.set(item.id_suministro, resItem.data.id_suministro);
+      const hasItemChanged = (item, origItem) => {
+        if (!origItem) return true;
+        const fields = [
+          'codigo_item', 'descripcion', 'cantidad', 'costo_precio', 
+          'porcentaje_utilidad', 'id_marca', 'proveedor', 'observacion', 
+          'tipo_unidad', 'costo_envio', 'tiempo_entrega', 'id_unidad_tiempo_entrega', 'orden'
+        ];
+        return fields.some(f => {
+          const v1 = item[f];
+          const v2 = origItem[f];
+          const cleanV1 = (v1 === undefined || v1 === null) ? "" : String(v1).trim();
+          const cleanV2 = (v2 === undefined || v2 === null) ? "" : String(v2).trim();
+          return cleanV1 !== cleanV2;
         });
-        await Promise.all(itemPromises);
-      } else {
-        if (hasGroupChanged(gp, origGp)) {
+      };
+
+      let hasAdd = false;
+      let hasDelete = deletedSuministroIds.length > 0;
+      let hasUpdate = false;
+
+      for (const gp of Object.values(gruposSuministros)) {
+        const isGroupTemp = typeof gp.id === 'string' && gp.id.startsWith('temp_');
+        if (isGroupTemp) {
+          hasAdd = true;
+        }
+        const origGp = originalGruposSuministros[gp.codigo_grupo];
+        if (!isGroupTemp && hasGroupChanged(gp, origGp)) {
+          hasUpdate = true;
+        }
+        for (const item of (gp.items || [])) {
+          const isItemTemp = typeof item.id_suministro === 'string' && item.id_suministro.startsWith('temp_');
+          if (isItemTemp) {
+            hasAdd = true;
+          } else {
+            const origItem = origGp?.items?.find(it => it.id_suministro === item.id_suministro);
+            if (hasItemChanged(item, origItem)) {
+              hasUpdate = true;
+            }
+          }
+        }
+      }
+
+      const tempIdToRealIdMap = new Map();
+      const tempGroupCodeToRealGroupCodeMap = new Map();
+      const savePromises = [];
+
+      for (const gp of Object.values(gruposSuministros)) {
+        const isGroupTemp = typeof gp.id === 'string' && gp.id.startsWith('temp_');
+        const origGp = originalGruposSuministros[gp.codigo_grupo];
+        let realGroupId = gp.id;
+        let realGroupCode = gp.codigo_grupo;
+
+        if (isGroupTemp) {
           const payloadGroup = {
-            id_suministro: gp.id,
             id_registro: numReg,
             codigo_grupo: Number(gp.codigo_grupo),
             nombre_grupo: gp.nombre_grupo || "",
             nivel: 0,
             cantidad: Number(gp.cantidad || 0),
             venta_total: toDec(gp.venta_total),
+            id_tipo_gasto: 1,
+            codigo_item: "GRUPO",
+            descripcion: "GRUPO",
             orden: Number(gp.orden || 0),
             costo_envio: toDec(gp.costo_envio),
             costo_envio_total: toDec(gp.costo_envio_total),
             costo_envio_unidad: toDec(gp.costo_envio_unidad),
             total_por_grupo: gp.total_por_grupo || 0
           };
-          savePromises.push(api.put(`cotizaciones/lista_suministros/${numReg}/`, payloadGroup));
-        }
+          const resGroup = await api.post(`cotizaciones/lista_suministros/${numReg}/`, payloadGroup);
+          realGroupId = resGroup.data.id_suministro;
+          realGroupCode = resGroup.data.codigo_grupo;
 
-        for (const item of (gp.items || [])) {
-          const isItemTemp = typeof item.id_suministro === 'string' && item.id_suministro.startsWith('temp_');
-          if (isItemTemp) {
+          tempIdToRealIdMap.set(gp.id, realGroupId);
+          tempGroupCodeToRealGroupCodeMap.set(gp.codigo_grupo, realGroupCode);
+
+          const itemPromises = (gp.items || []).map(async (item) => {
             const payloadItem = {
               id_registro: numReg,
-              codigo_grupo: Number(gp.codigo_grupo),
+              codigo_grupo: Number(realGroupCode),
               nivel: 1,
               codigo_item: item.codigo_item || "S/C",
               descripcion: item.descripcion || "S/D",
               cantidad: Number(item.cantidad || 0),
-              precio_venta: toDec(item.precio_venta),
-              venta_total: toDec(item.venta_total),
               costo_precio: toDec(item.costo_precio),
               costo_total: toDec(Number(item.costo_precio || 0) * Number(item.cantidad || 0)),
               porcentaje_utilidad: toDec(item.porcentaje_utilidad),
               utilidad: toDec(item.utilidad),
+              precio_venta: toDec(item.precio_venta),
+              venta_total: toDec(item.venta_total),
               id_marca: (item.id_marca && item.id_marca !== "null" && item.id_marca !== "undefined") ? Number(item.id_marca) : null,
               proveedor: item.proveedor || "",
               id_tipo_gasto: 1,
@@ -680,30 +674,50 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
               id_unidad_tiempo_entrega: (item.id_unidad_tiempo_entrega && item.id_unidad_tiempo_entrega !== "null" && item.id_unidad_tiempo_entrega !== "undefined") ? Number(item.id_unidad_tiempo_entrega) : null,
               orden: Number(item.orden || 0)
             };
-            const postPromise = api.post(`cotizaciones/lista_suministros/${numReg}/`, payloadItem).then(res => {
-              tempIdToRealIdMap.set(item.id_suministro, res.data.id_suministro);
-            });
-            savePromises.push(postPromise);
-          } else {
-            const origItem = origGp?.items?.find(it => it.id_suministro === item.id_suministro);
-            if (hasItemChanged(item, origItem)) {
+            const resItem = await api.post(`cotizaciones/lista_suministros/${numReg}/`, payloadItem);
+            tempIdToRealIdMap.set(item.id_suministro, resItem.data.id_suministro);
+          });
+          await Promise.all(itemPromises);
+        } else {
+          if (hasGroupChanged(gp, origGp)) {
+            const payloadGroup = {
+              id_suministro: gp.id,
+              id_registro: numReg,
+              codigo_grupo: Number(gp.codigo_grupo),
+              nombre_grupo: gp.nombre_grupo || "",
+              nivel: 0,
+              cantidad: Number(gp.cantidad || 0),
+              venta_total: toDec(gp.venta_total),
+              orden: Number(gp.orden || 0),
+              costo_envio: toDec(gp.costo_envio),
+              costo_envio_total: toDec(gp.costo_envio_total),
+              costo_envio_unidad: toDec(gp.costo_envio_unidad),
+              total_por_grupo: gp.total_por_grupo || 0
+            };
+            savePromises.push(api.put(`cotizaciones/lista_suministros/${numReg}/`, payloadGroup));
+          }
+
+          for (const item of (gp.items || [])) {
+            const isItemTemp = typeof item.id_suministro === 'string' && item.id_suministro.startsWith('temp_');
+            if (isItemTemp) {
               const payloadItem = {
-                id_suministro: item.id_suministro,
                 id_registro: numReg,
-                codigo_grupo: Number(item.codigo_grupo || gp.codigo_grupo),
+                codigo_grupo: Number(gp.codigo_grupo),
+                nivel: 1,
                 codigo_item: item.codigo_item || "S/C",
                 descripcion: item.descripcion || "S/D",
                 cantidad: Number(item.cantidad || 0),
+                precio_venta: toDec(item.precio_venta),
+                venta_total: toDec(item.venta_total),
                 costo_precio: toDec(item.costo_precio),
                 costo_total: toDec(Number(item.costo_precio || 0) * Number(item.cantidad || 0)),
                 porcentaje_utilidad: toDec(item.porcentaje_utilidad),
                 utilidad: toDec(item.utilidad),
-                precio_venta: toDec(item.precio_venta),
-                venta_total: toDec(item.venta_total),
                 id_marca: (item.id_marca && item.id_marca !== "null" && item.id_marca !== "undefined") ? Number(item.id_marca) : null,
                 proveedor: item.proveedor || "",
-                tipo_unidad: item.tipo_unidad || "UNI",
+                id_tipo_gasto: 1,
                 observacion: item.observacion || "",
+                tipo_unidad: item.tipo_unidad || "UNI",
                 costo_envio: toDec(item.costo_envio),
                 porcentaje_envio: toDec(item.porcentaje_envio),
                 costo_envio_total: toDec(Number(item.costo_envio || 0) * Number(item.cantidad || 0)),
@@ -713,68 +727,137 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
                 id_unidad_tiempo_entrega: (item.id_unidad_tiempo_entrega && item.id_unidad_tiempo_entrega !== "null" && item.id_unidad_tiempo_entrega !== "undefined") ? Number(item.id_unidad_tiempo_entrega) : null,
                 orden: Number(item.orden || 0)
               };
-              savePromises.push(api.put(`cotizaciones/lista_suministros/${numReg}/`, payloadItem));
+              const postPromise = api.post(`cotizaciones/lista_suministros/${numReg}/`, payloadItem).then(res => {
+                tempIdToRealIdMap.set(item.id_suministro, res.data.id_suministro);
+              });
+              savePromises.push(postPromise);
+            } else {
+              const origItem = origGp?.items?.find(it => it.id_suministro === item.id_suministro);
+              if (hasItemChanged(item, origItem)) {
+                const payloadItem = {
+                  id_suministro: item.id_suministro,
+                  id_registro: numReg,
+                  codigo_grupo: Number(item.codigo_grupo || gp.codigo_grupo),
+                  codigo_item: item.codigo_item || "S/C",
+                  descripcion: item.descripcion || "S/D",
+                  cantidad: Number(item.cantidad || 0),
+                  costo_precio: toDec(item.costo_precio),
+                  costo_total: toDec(Number(item.costo_precio || 0) * Number(item.cantidad || 0)),
+                  porcentaje_utilidad: toDec(item.porcentaje_utilidad),
+                  utilidad: toDec(item.utilidad),
+                  precio_venta: toDec(item.precio_venta),
+                  venta_total: toDec(item.venta_total),
+                  id_marca: (item.id_marca && item.id_marca !== "null" && item.id_marca !== "undefined") ? Number(item.id_marca) : null,
+                  proveedor: item.proveedor || "",
+                  tipo_unidad: item.tipo_unidad || "UNI",
+                  observacion: item.observacion || "",
+                  costo_envio: toDec(item.costo_envio),
+                  porcentaje_envio: toDec(item.porcentaje_envio),
+                  costo_envio_total: toDec(Number(item.costo_envio || 0) * Number(item.cantidad || 0)),
+                  costo_envio_unidad: toDec(item.costo_envio),
+                  costo_con_envio: toDec(item.costo_con_envio),
+                  tiempo_entrega: (item.tiempo_entrega !== "" && item.tiempo_entrega !== undefined && item.tiempo_entrega !== null && !isNaN(item.tiempo_entrega)) ? Number(item.tiempo_entrega) : null,
+                  id_unidad_tiempo_entrega: (item.id_unidad_tiempo_entrega && item.id_unidad_tiempo_entrega !== "null" && item.id_unidad_tiempo_entrega !== "undefined") ? Number(item.id_unidad_tiempo_entrega) : null,
+                  orden: Number(item.orden || 0)
+                };
+                savePromises.push(api.put(`cotizaciones/lista_suministros/${numReg}/`, payloadItem));
+              }
             }
           }
         }
       }
-    }
 
-    if (savePromises.length > 0) {
-      await Promise.all(savePromises);
-    }
+      if (savePromises.length > 0) {
+        await Promise.all(savePromises);
+      }
 
-    const reorderItems = [];
-    let counter = 1;
-    const sorted = Object.values(gruposSuministros).sort((a, b) => (a.orden || 0) - (b.orden || 0));
+      const reorderItems = [];
+      let counter = 1;
+      const sorted = Object.values(gruposSuministros).sort((a, b) => (a.orden || 0) - (b.orden || 0));
 
-    sorted.forEach((grupo) => {
-      const realId = tempIdToRealIdMap.get(grupo.id) || grupo.id;
-      const realCode = tempGroupCodeToRealGroupCodeMap.get(grupo.codigo_grupo) || grupo.codigo_grupo;
-      reorderItems.push({
-        id_suministro: realId,
-        orden: counter++,
-        codigo_grupo: parseInt(realCode, 10)
+      sorted.forEach((grupo) => {
+        const realId = tempIdToRealIdMap.get(grupo.id) || grupo.id;
+        const realCode = tempGroupCodeToRealGroupCodeMap.get(grupo.codigo_grupo) || grupo.codigo_grupo;
+        reorderItems.push({
+          id_suministro: realId,
+          orden: counter++,
+          codigo_grupo: parseInt(realCode, 10)
+        });
+
+        if (grupo.items && Array.isArray(grupo.items)) {
+          grupo.items.forEach((item) => {
+            const realItemId = tempIdToRealIdMap.get(item.id_suministro) || item.id_suministro;
+            reorderItems.push({
+              id_suministro: realItemId,
+              orden: counter++,
+              codigo_grupo: parseInt(realCode, 10)
+            });
+          });
+        }
       });
 
-      if (grupo.items && Array.isArray(grupo.items)) {
-        grupo.items.forEach((item) => {
-          const realItemId = tempIdToRealIdMap.get(item.id_suministro) || item.id_suministro;
-          reorderItems.push({
-            id_suministro: realItemId,
-            orden: counter++,
-            codigo_grupo: parseInt(realCode, 10)
-          });
+      if (reorderItems.length > 0) {
+        await api.put(`cotizaciones/lista_suministros/${numReg}/`, {
+          reorder_items: reorderItems
         });
       }
-    });
 
-    if (reorderItems.length > 0) {
-      await api.put(`cotizaciones/lista_suministros/${numReg}/`, {
-        reorder_items: reorderItems
-      });
+      const updateStateWithRealIdsAndOrders = (prev) => {
+        const next = {};
+        let orderCounter = 1;
+
+        const sortedGroups = Object.values(prev).sort((a, b) => (a.orden || 0) - (b.orden || 0));
+
+        sortedGroups.forEach((gp) => {
+          const realCode = tempGroupCodeToRealGroupCodeMap.get(Number(gp.codigo_grupo)) || Number(gp.codigo_grupo);
+          const realId = tempIdToRealIdMap.get(gp.id) || gp.id;
+          const groupOrder = orderCounter++;
+
+          const updatedItems = (gp.items || []).map(item => {
+            const realItemId = tempIdToRealIdMap.get(item.id_suministro) || item.id_suministro;
+            return {
+              ...item,
+              id_suministro: realItemId,
+              codigo_grupo: realCode,
+              orden: orderCounter++
+            };
+          });
+
+          next[realCode] = {
+            ...gp,
+            id: realId,
+            codigo_grupo: realCode,
+            orden: groupOrder,
+            items: updatedItems
+          };
+        });
+        return next;
+      };
+
+      setDeletedSuministroIds([]);
+      setGruposSuministros(prev => updateStateWithRealIdsAndOrders(prev));
+      setOriginalGruposSuministros(prev => updateStateWithRealIdsAndOrders(prev));
+
+      return {
+        type: hasAdd ? 'add' : (hasDelete ? 'delete' : (hasUpdate ? 'update' : 'save')),
+        message: hasAdd 
+          ? "Suministros agregados correctamente" 
+          : (hasDelete 
+              ? "Suministro eliminado correctamente" 
+              : (hasUpdate 
+                  ? "Suministros actualizados correctamente" 
+                  : "Suministros guardados")),
+        title: hasAdd 
+          ? "ITEMS AGREGADOS" 
+          : (hasDelete 
+              ? "SUMINISTRO ELIMINADO" 
+              : (hasUpdate 
+                  ? "SUMINISTROS ACTUALIZADOS" 
+                  : "SUMINISTROS GUARDADOS"))
+      };
+    } finally {
+      isSavingRef.current = false;
     }
-
-    setDeletedSuministroIds([]);
-    await fetchSuministros();
-
-    return {
-      type: hasAdd ? 'add' : (hasDelete ? 'delete' : (hasUpdate ? 'update' : 'save')),
-      message: hasAdd 
-        ? "Suministros agregados correctamente" 
-        : (hasDelete 
-            ? "Suministro eliminado correctamente" 
-            : (hasUpdate 
-                ? "Suministros actualizados correctamente" 
-                : "Suministros guardados")),
-      title: hasAdd 
-        ? "ITEMS AGREGADOS" 
-        : (hasDelete 
-            ? "SUMINISTRO ELIMINADO" 
-            : (hasUpdate 
-                ? "SUMINISTROS ACTUALIZADOS" 
-                : "SUMINISTROS GUARDADOS"))
-    };
   };
 
   const handleExportarGrupoXLS = (codigo_grupo) => {

@@ -39,7 +39,7 @@ export default function TendenciasCharts({
       </div>
 
       {/* GRID DE GRÁFICOS - Cada gráfico debe manejar su propio contenedor blanco internamente */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <VentasMensualesChart data={data.ventas_mensuales} viewScope={viewScope} cotizaciones={cotizaciones} />
         <ComercialChart data={data.ranking_comercial} viewScope={viewScope} cotizaciones={cotizaciones} />
         <ClientesChart data={data.clientes_recurrentes} viewScope={viewScope} cotizaciones={cotizaciones} />

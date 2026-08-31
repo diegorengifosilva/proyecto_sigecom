@@ -2647,7 +2647,61 @@ def apertura_detalle(request, id_apertura):
 
         if request.method == 'GET':
             serializer = CotizacionAperturaSerializer(apertura)
-            return Response(serializer.data)
+            from compras_api.models import SolicitudOrdenCompra, SolicitudPasajes
+            from django.db.models import Q
+            
+            solicitudes_qs = SolicitudOrdenCompra.objects.filter(Q(id_apertura=id_apertura) | Q(nivel_grupo=id_apertura) | Q(nivel_grupo=str(id_apertura)))
+            pasajes_qs = SolicitudPasajes.objects.filter(Q(id_apertura=id_apertura) | Q(nivel_grupo=id_apertura) | Q(nivel_grupo=str(id_apertura)))
+            
+            rel_solicitudes = []
+            for s in solicitudes_qs:
+                rel_solicitudes.append({
+                    "id_registro": s.id_solicitud,
+                    "id_solicitud": s.id_solicitud,
+                    "codigo": s.codigo,
+                    "fecha": s.fecha.strftime("%Y-%m-%d") if s.fecha else None,
+                    "concepto": s.concepto or s.referencia or "Solicitud de Compra",
+                    "num": s.num or 1,
+                    "nivel_grupo": s.nivel_grupo,
+                    "tipo_movimiento": s.tipo_movimiento_id,
+                    "monto_soles": float(s.monto_soles or 0.00),
+                    "monto_dolares": float(s.monto_dolares or 0.00),
+                    "tipo_moneda": s.tipo_moneda or "S",
+                    "estado_nombre": s.id_estado.nombre if s.id_estado else "Pendiente",
+                    "tipo_gasto": s.tipo_gasto or "03",
+                    "tipo": s.tipo or "Suministro"
+                })
+                
+            for p in pasajes_qs:
+                rel_solicitudes.append({
+                    "id_registro": p.id_pasaje,
+                    "id_solicitud": p.id_pasaje,
+                    "codigo": p.codigo or p.cog,
+                    "fecha": p.fecha.strftime("%Y-%m-%d") if p.fecha else None,
+                    "concepto": p.concepto or f"Pasaje {p.lugar_origen} a {p.lugar_destino}",
+                    "num": 5, # Map to Otros
+                    "nivel_grupo": p.nivel_grupo or 5,
+                    "tipo_movimiento": p.tipo_movimiento_id or 5,
+                    "monto_soles": float(p.monto_soles or 0.00),
+                    "monto_dolares": float(p.monto_dolares or 0.00),
+                    "tipo_moneda": p.tipo_moneda or "S",
+                    "estado_nombre": p.id_estado.nombre if p.id_estado else "Pendiente",
+                    "tipo_gasto": p.tipo_gasto or "02",
+                    "tipo": p.transporte or "Pasaje"
+                })
+                
+            cotizacion_id = apertura.id_registro_id
+            tipos_gasto_presentes = []
+            if cotizacion_id:
+                from .models import CotizacionSuministro, CotizacionServicio
+                suministros_gastos = set(CotizacionSuministro.objects.filter(id_registro_id=cotizacion_id).values_list('id_tipo_gasto_id', flat=True))
+                servicios_gastos = set(CotizacionServicio.objects.filter(id_registro_id=cotizacion_id).values_list('id_tipo_gasto_id', flat=True))
+                tipos_gasto_presentes = [tg for tg in list(suministros_gastos.union(servicios_gastos)) if tg is not None]
+
+            data = serializer.data
+            data["solicitudes"] = rel_solicitudes
+            data["tipos_gasto_presentes"] = tipos_gasto_presentes
+            return Response(data)
 
         elif request.method == 'DELETE':
             apertura.delete()
@@ -6057,14 +6111,15 @@ def generar_copiar_cotizacion(request, id_registro):
             # 🔹 1. REPLICAR SUMINISTROS
             # =====================================================
             fase_actual = "INSERTAR_SUMINISTROS"
-            suministros_origen = CotizacionSuministro.objects.filter(id_registro=base.id_registro)
+            suministros_origen = CotizacionSuministro.objects.filter(id_registro=base.id_registro).order_by('orden', 'id_suministro')
             nuevos_suministros = []
 
-            for s in suministros_origen:
+            for idx, s in enumerate(suministros_origen, 1):
                 datos = {k: v for k, v in s.__dict__.items() if not k.startswith('_')}
                 datos.pop('id_suministro', None)
                 datos.pop('id', None)
                 datos['id_registro_id'] = nueva_coti.id_registro
+                datos['orden'] = idx
                 nuevos_suministros.append(CotizacionSuministro(**datos))
 
             if nuevos_suministros:
@@ -6074,14 +6129,15 @@ def generar_copiar_cotizacion(request, id_registro):
             # 🔹 2. REPLICAR SERVICIOS
             # =====================================================
             fase_actual = "INSERTAR_SERVICIOS"
-            servicios_origen = CotizacionServicio.objects.filter(id_registro=base.id_registro)
+            servicios_origen = CotizacionServicio.objects.filter(id_registro=base.id_registro).order_by('orden', 'id_servicio')
             nuevos_servicios = []
 
-            for s in servicios_origen:
+            for idx, s in enumerate(servicios_origen, 1):
                 datos = {k: v for k, v in s.__dict__.items() if not k.startswith('_')}
                 datos.pop('id_servicio', None)
                 datos.pop('id', None)
                 datos['id_registro_id'] = nueva_coti.id_registro
+                datos['orden'] = idx
                 nuevos_servicios.append(CotizacionServicio(**datos))
 
             if nuevos_servicios:

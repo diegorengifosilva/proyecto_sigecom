@@ -91,17 +91,17 @@ def _sincronizar_suministros_legados(cursor, cotizacion_id: int):
     Elimina e inserta masivamente los suministros de una cotización en la BD legada.
     """
     # 1. Eliminar suministros antiguos de esta cotización
-    cursor.execute("DELETE FROM db_vc.vc_mov_cotizaciones_su WHERE num_reg = %s", [cotizacion_id])
+    cursor.execute("DELETE FROM backup_30_08_2026.vc_mov_cotizaciones_su WHERE num_reg = %s", [cotizacion_id])
 
     # 2. Obtener los suministros nuevos de la base local
-    suministros = CotizacionSuministro.objects.filter(id_registro=cotizacion_id).order_by('orden')
+    suministros = CotizacionSuministro.objects.filter(id_registro=cotizacion_id).order_by('orden', 'id_suministro')
 
     if not suministros.exists():
         return
 
     # 3. Preparar los datos mapeados
     suministros_data = []
-    for sumin in suministros:
+    for idx, sumin in enumerate(suministros, 1):
         # id_tipo_gasto -> mov: si es 1 pasa a '01', si es 2 pasa a '02'
         id_gasto = sumin.id_tipo_gasto_id
         mov = '01' if id_gasto == 1 else '02' if id_gasto == 2 else None
@@ -119,7 +119,7 @@ def _sincronizar_suministros_legados(cursor, cotizacion_id: int):
             cog[:5],                                 # cog
             (sumin.nombre_grupo or "")[:200],        # nog
             sumin.nivel,                             # nig
-            sumin.orden,                             # num
+            idx,                                     # num
             (sumin.codigo_item or "")[:60],          # cod
             (sumin.descripcion or "")[:5000],        # des
             (sumin.proveedor or "")[:50],            # pro
@@ -139,7 +139,7 @@ def _sincronizar_suministros_legados(cursor, cotizacion_id: int):
 
     # 4. Inserción masiva eficiente
     sql_sumin = """
-        INSERT INTO db_vc.vc_mov_cotizaciones_su (
+        INSERT INTO backup_30_08_2026.vc_mov_cotizaciones_su (
             num_reg, cog, nog, nig, num, cod, des, pro, can, puc, toc, cau, tou, val, tot, mov, tpr, tde, tog
         ) VALUES (
             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
@@ -154,7 +154,7 @@ def _sincronizar_servicios_legados(cursor, cotizacion_id: int):
     Elimina e inserta masivamente los servicios de una cotización en la BD legada.
     """
     # 1. Eliminar servicios antiguos de esta cotización
-    cursor.execute("DELETE FROM db_vc.vc_mov_cotizaciones_mo WHERE num_reg = %s", [cotizacion_id])
+    cursor.execute("DELETE FROM backup_30_08_2026.vc_mov_cotizaciones_mo WHERE num_reg = %s", [cotizacion_id])
 
     # 2. Obtener los servicios nuevos de la base local
     servicios = CotizacionServicio.objects.filter(id_registro=cotizacion_id).order_by('orden', 'id_servicio')
@@ -201,7 +201,7 @@ def _sincronizar_servicios_legados(cursor, cotizacion_id: int):
 
     # 4. Inserción masiva eficiente
     sql_serv = """
-        INSERT INTO db_vc.vc_mov_cotizaciones_mo (
+        INSERT INTO backup_30_08_2026.vc_mov_cotizaciones_mo (
             num_reg, cog, nog, nig, num, cod, des, pro, can, puc, toc, cau, tou, val, tot, mov, tpr, tde, tog
         ) VALUES (
             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
@@ -216,7 +216,7 @@ def _sincronizar_mensajes_legados(cursor, cotizacion_id: int):
     Elimina e inserta masivamente los mensajes de una cotización en la BD legada.
     """
     # 1. Eliminar mensajes antiguos de esta cotización
-    cursor.execute("DELETE FROM db_vc.vc_mov_cotizaciones_msj WHERE num_reg = %s", [str(cotizacion_id)])
+    cursor.execute("DELETE FROM backup_30_08_2026.vc_mov_cotizaciones_msj WHERE num_reg = %s", [str(cotizacion_id)])
 
     # 2. Obtener los mensajes nuevos de la base local
     mensajes = CotizacionMensaje.objects.filter(id_registro=cotizacion_id).select_related('id_usuario').order_by('fecha', 'id_mensaje')
@@ -238,7 +238,7 @@ def _sincronizar_mensajes_legados(cursor, cotizacion_id: int):
 
     # 4. Inserción masiva eficiente
     sql_msj = """
-        INSERT INTO db_vc.vc_mov_cotizaciones_msj (
+        INSERT INTO backup_30_08_2026.vc_mov_cotizaciones_msj (
             num_reg, dat, cod, msj, act
         ) VALUES (
             %s, %s, %s, %s, %s
@@ -253,7 +253,7 @@ def _sincronizar_seguimientos_legados(cursor, cotizacion_id: int):
     Elimina e inserta masivamente los seguimientos de una cotización en la BD legada.
     """
     # 1. Eliminar seguimientos antiguos de esta cotización
-    cursor.execute("DELETE FROM db_vc.vc_mov_cotizaciones_vi WHERE num_reg = %s", [cotizacion_id])
+    cursor.execute("DELETE FROM backup_30_08_2026.vc_mov_cotizaciones_vi WHERE num_reg = %s", [cotizacion_id])
 
     # 2. Obtener los seguimientos nuevos de la base local
     seguimientos = CotizacionSeguimiento.objects.filter(id_registro=cotizacion_id).select_related('id_usuario').order_by('fecha', 'id_seguimiento')
@@ -282,7 +282,7 @@ def _sincronizar_seguimientos_legados(cursor, cotizacion_id: int):
 
     # 4. Inserción masiva eficiente
     sql_seg = """
-        INSERT INTO db_vc.vc_mov_cotizaciones_vi (
+        INSERT INTO backup_30_08_2026.vc_mov_cotizaciones_vi (
             num_reg, num, dat, fec, hor, des, cod, act
         ) VALUES (
             %s, %s, %s, %s, %s, %s, %s, %s
@@ -296,7 +296,7 @@ def _ejecutar_sincronizacion_legada(cotizacion_id: int):
     """
     Función de fondo que se ejecuta en un hilo secundario.
     Traduce la cotización de proyecto_sigecom.cotizaciones e inserta o actualiza
-    en la tabla legado db_vc.vc_mov_cotizaciones.
+    en la tabla legado backup_30_08_2026.vc_mov_cotizaciones.
     """
     lock = get_lock_for_cotizacion(cotizacion_id)
     lock.acquire()
@@ -375,9 +375,9 @@ def _ejecutar_sincronizacion_legada(cotizacion_id: int):
             descripcion_total = None
 
         # 6. Preparar sentencia SQL con ON DUPLICATE KEY UPDATE
-        # Nota: Usamos INSERT INTO db_vc.vc_mov_cotizaciones.
+        # Nota: Usamos INSERT INTO backup_30_08_2026.vc_mov_cotizaciones.
         sql = """
-            INSERT INTO db_vc.vc_mov_cotizaciones (
+            INSERT INTO backup_30_08_2026.vc_mov_cotizaciones (
                 num_reg, anno, mes, cotin, cotit, cotif, refer, empre, codir, nombr, cargr, teler, movir, mailr,
                 codic, nombc, telec, mov1c, mov2c, mailc,
                 codit, nombt, telet, mov1t, mov2t, mailt,
@@ -535,7 +535,7 @@ def disparar_sincronizacion_legada(cotizacion_id: int):
 def _ejecutar_eliminacion_legada(cotizacion_id: int):
     """
     Función de fondo que se ejecuta en un hilo secundario.
-    Elimina los registros correspondientes en la BD legada db_vc.
+    Elimina los registros correspondientes en la BD legada backup_30_08_2026.
     """
     lock = get_lock_for_cotizacion(cotizacion_id)
     lock.acquire()
@@ -544,11 +544,11 @@ def _ejecutar_eliminacion_legada(cotizacion_id: int):
 
         db_alias = "legacy" if "legacy" in connections else "default"
         with connections[db_alias].cursor() as cursor:
-            cursor.execute("DELETE FROM db_vc.vc_mov_cotizaciones_su WHERE num_reg = %s", [cotizacion_id])
-            cursor.execute("DELETE FROM db_vc.vc_mov_cotizaciones_mo WHERE num_reg = %s", [cotizacion_id])
-            cursor.execute("DELETE FROM db_vc.vc_mov_cotizaciones_msj WHERE num_reg = %s", [cotizacion_id])
-            cursor.execute("DELETE FROM db_vc.vc_mov_cotizaciones_vi WHERE num_reg = %s", [cotizacion_id])
-            cursor.execute("DELETE FROM db_vc.vc_mov_cotizaciones WHERE num_reg = %s", [cotizacion_id])
+            cursor.execute("DELETE FROM backup_30_08_2026.vc_mov_cotizaciones_su WHERE num_reg = %s", [cotizacion_id])
+            cursor.execute("DELETE FROM backup_30_08_2026.vc_mov_cotizaciones_mo WHERE num_reg = %s", [cotizacion_id])
+            cursor.execute("DELETE FROM backup_30_08_2026.vc_mov_cotizaciones_msj WHERE num_reg = %s", [cotizacion_id])
+            cursor.execute("DELETE FROM backup_30_08_2026.vc_mov_cotizaciones_vi WHERE num_reg = %s", [cotizacion_id])
+            cursor.execute("DELETE FROM backup_30_08_2026.vc_mov_cotizaciones WHERE num_reg = %s", [cotizacion_id])
 
         logger.info(f"[SyncLegado] Eliminación legada exitosa para cotización ID {cotizacion_id}.")
 
@@ -575,7 +575,7 @@ def _ejecutar_sincronizacion_cliente_legado(cliente_id: int):
     """
     Función de fondo que se ejecuta en un hilo secundario.
     Traduce el cliente local e inserta o actualiza
-    en la tabla legado db_vc.vc_tab_clientes.
+    en la tabla legado backup_30_08_2026.vc_tab_clientes.
     """
     lock = get_lock_for_cliente(cliente_id)
     lock.acquire()
@@ -608,7 +608,7 @@ def _ejecutar_sincronizacion_cliente_legado(cliente_id: int):
                 activo_str = "1"
 
         sql = """
-            INSERT INTO db_vc.vc_tab_clientes (
+            INSERT INTO backup_30_08_2026.vc_tab_clientes (
                 codigo, nombre, iniciales, ruc, dir, tipo, fpago, fecha, web, rleg, ubic, logo, activo
             ) VALUES (
                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
@@ -661,7 +661,7 @@ def disparar_sincronizacion_cliente_legado(cliente_id: int):
 def _ejecutar_eliminacion_cliente_legado(cliente_id: int):
     """
     Función de fondo que se ejecuta en un hilo secundario.
-    Elimina el registro del cliente en la BD legada db_vc.vc_tab_clientes.
+    Elimina el registro del cliente en la BD legada backup_30_08_2026.vc_tab_clientes.
     """
     lock = get_lock_for_cliente(cliente_id)
     lock.acquire()
@@ -670,7 +670,7 @@ def _ejecutar_eliminacion_cliente_legado(cliente_id: int):
 
         db_alias = "legacy" if "legacy" in connections else "default"
         with connections[db_alias].cursor() as cursor:
-            cursor.execute("DELETE FROM db_vc.vc_tab_clientes WHERE codigo = %s", [cliente_id])
+            cursor.execute("DELETE FROM backup_30_08_2026.vc_tab_clientes WHERE codigo = %s", [cliente_id])
 
         logger.info(f"[SyncLegado] Eliminación legada exitosa para cliente ID {cliente_id}.")
 
@@ -697,7 +697,7 @@ def _ejecutar_sincronizacion_representante_legado(representante_id: int):
     """
     Función de fondo que se ejecuta en un hilo secundario.
     Traduce el representante local e inserta o actualiza
-    en la tabla legado db_vc.vc_tab_clientes_d.
+    en la tabla legado backup_30_08_2026.vc_tab_clientes_d.
     """
     lock = get_lock_for_representante(representante_id)
     lock.acquire()
@@ -726,7 +726,7 @@ def _ejecutar_sincronizacion_representante_legado(representante_id: int):
                 activo_str = "1"
 
         sql = """
-            INSERT INTO db_vc.vc_tab_clientes_d (
+            INSERT INTO backup_30_08_2026.vc_tab_clientes_d (
                 codigo, empresa, representante, cargo, telefono, movil, email, direccion, activo
             ) VALUES (
                 %s, %s, %s, %s, %s, %s, %s, %s, %s
@@ -774,7 +774,7 @@ def disparar_sincronizacion_representante_legado(representante_id: int):
 def _ejecutar_eliminacion_representante_legado(representante_id: int, cliente_id: int = None):
     """
     Función de fondo que se ejecuta en un hilo secundario.
-    Elimina el registro del representante en la BD legada db_vc.vc_tab_clientes_d.
+    Elimina el registro del representante en la BD legada backup_30_08_2026.vc_tab_clientes_d.
     """
     lock = get_lock_for_representante(representante_id)
     lock.acquire()
@@ -785,12 +785,12 @@ def _ejecutar_eliminacion_representante_legado(representante_id: int, cliente_id
         with connections[db_alias].cursor() as cursor:
             if cliente_id is not None:
                 cursor.execute(
-                    "DELETE FROM db_vc.vc_tab_clientes_d WHERE codigo = %s AND empresa = %s",
+                    "DELETE FROM backup_30_08_2026.vc_tab_clientes_d WHERE codigo = %s AND empresa = %s",
                     [representante_id, str(cliente_id)[:5]]
                 )
             else:
                 cursor.execute(
-                    "DELETE FROM db_vc.vc_tab_clientes_d WHERE codigo = %s",
+                    "DELETE FROM backup_30_08_2026.vc_tab_clientes_d WHERE codigo = %s",
                     [representante_id]
                 )
 
@@ -819,7 +819,7 @@ def _ejecutar_sincronizacion_marca_legado(marca_id: int):
     """
     Función de fondo que se ejecuta en un hilo secundario.
     Traduce la marca local (TipoMarca) e inserta o actualiza
-    en la tabla legado db_vc.vc_tab_tproveedor.
+    en la tabla legado backup_30_08_2026.vc_tab_tproveedor.
     """
     lock = get_lock_for_marca(marca_id)
     lock.acquire()
@@ -842,7 +842,7 @@ def _ejecutar_sincronizacion_marca_legado(marca_id: int):
                 activo_str = "1"
 
         sql = """
-            INSERT INTO db_vc.vc_tab_tproveedor (
+            INSERT INTO backup_30_08_2026.vc_tab_tproveedor (
                 codigo, nombre, activo
             ) VALUES (
                 %s, %s, %s
@@ -882,7 +882,7 @@ def disparar_sincronizacion_marca_legado(marca_id: int):
 def _ejecutar_eliminacion_marca_legado(marca_id: int):
     """
     Función de fondo que se ejecuta en un hilo secundario.
-    Elimina el registro de la marca en la BD legada db_vc.vc_tab_tproveedor.
+    Elimina el registro de la marca en la BD legada backup_30_08_2026.vc_tab_tproveedor.
     """
     lock = get_lock_for_marca(marca_id)
     lock.acquire()
@@ -892,7 +892,7 @@ def _ejecutar_eliminacion_marca_legado(marca_id: int):
         db_alias = "legacy" if "legacy" in connections else "default"
         with connections[db_alias].cursor() as cursor:
             codigo = str(marca_id or 0).zfill(2)[:2]
-            cursor.execute("DELETE FROM db_vc.vc_tab_tproveedor WHERE codigo = %s", [codigo])
+            cursor.execute("DELETE FROM backup_30_08_2026.vc_tab_tproveedor WHERE codigo = %s", [codigo])
 
 
         logger.info(f"[SyncLegado] Eliminación legada exitosa para marca ID {marca_id}.")
@@ -920,7 +920,7 @@ def _ejecutar_sincronizacion_tipo_personal_legado(personal_id: int):
     """
     Función de fondo que se ejecuta en un hilo secundario.
     Traduce el tipo de personal local (TipoPersonal) e inserta o actualiza
-    en la tabla legado db_vc.vc_tab_categorias.
+    en la tabla legado backup_30_08_2026.vc_tab_categorias.
     """
     personal = TipoPersonal.objects.filter(id_personal=personal_id).first()
     if not personal:
@@ -951,7 +951,7 @@ def _ejecutar_sincronizacion_tipo_personal_legado(personal_id: int):
                 activo_str = "1"
 
         sql = """
-            INSERT INTO db_vc.vc_tab_categorias (
+            INSERT INTO backup_30_08_2026.vc_tab_categorias (
                 codigo, nombre, cos_min, cos_max, cod_area, activo
             ) VALUES (
                 %s, %s, %s, %s, %s, %s
@@ -994,7 +994,7 @@ def disparar_sincronizacion_tipo_personal_legado(personal_id: int):
 def _ejecutar_eliminacion_tipo_personal_legado(codigo: str):
     """
     Función de fondo que se ejecuta en un hilo secundario.
-    Elimina el registro de la categoría en la BD legada db_vc.vc_tab_categorias.
+    Elimina el registro de la categoría en la BD legada backup_30_08_2026.vc_tab_categorias.
     """
     cod_clean = (codigo or "").replace("-", "").strip()[:4]
 
@@ -1005,7 +1005,7 @@ def _ejecutar_eliminacion_tipo_personal_legado(codigo: str):
 
         db_alias = "legacy" if "legacy" in connections else "default"
         with connections[db_alias].cursor() as cursor:
-            cursor.execute("DELETE FROM db_vc.vc_tab_categorias WHERE codigo = %s", [cod_clean])
+            cursor.execute("DELETE FROM backup_30_08_2026.vc_tab_categorias WHERE codigo = %s", [cod_clean])
 
         logger.info(f"[SyncLegado] Eliminación legada exitosa para TipoPersonal Código {cod_clean}.")
 
@@ -1032,7 +1032,7 @@ def _ejecutar_sincronizacion_gasto_detalle_legado(gasto_detalle_id: int):
     """
     Función de fondo que se ejecuta en un hilo secundario.
     Traduce el detalle de tipo de gasto local (TipoGastoDetalle) e inserta o actualiza
-    en la tabla legado db_vc.vc_tab_tgastos_d.
+    en la tabla legado backup_30_08_2026.vc_tab_tgastos_d.
     """
     gasto_det = TipoGastoDetalle.objects.filter(id_gasto_detalle=gasto_detalle_id).select_related('id_tipo_gasto').first()
     if not gasto_det:
@@ -1061,7 +1061,7 @@ def _ejecutar_sincronizacion_gasto_detalle_legado(gasto_detalle_id: int):
                 activo_str = "1"
 
         sql = """
-            INSERT INTO db_vc.vc_tab_tgastos_d (
+            INSERT INTO backup_30_08_2026.vc_tab_tgastos_d (
                 codigo, nombre, unimed, importe, cod_tipo, activo, cantidad
             ) VALUES (
                 %s, %s, NULL, NULL, %s, %s, NULL
@@ -1102,7 +1102,7 @@ def disparar_sincronizacion_gasto_detalle_legado(gasto_detalle_id: int):
 def _ejecutar_eliminacion_gasto_detalle_legado(codigo: str):
     """
     Función de fondo que se ejecuta en un hilo secundario.
-    Elimina el registro del detalle de gasto en la BD legada db_vc.vc_tab_tgastos_d.
+    Elimina el registro del detalle de gasto en la BD legada backup_30_08_2026.vc_tab_tgastos_d.
     """
     cod_clean = (codigo or "").replace("-", "").strip()[:5]
     lock = get_lock_for_gasto_detalle(cod_clean)
@@ -1112,7 +1112,7 @@ def _ejecutar_eliminacion_gasto_detalle_legado(codigo: str):
 
         db_alias = "legacy" if "legacy" in connections else "default"
         with connections[db_alias].cursor() as cursor:
-            cursor.execute("DELETE FROM db_vc.vc_tab_tgastos_d WHERE codigo = %s", [cod_clean])
+            cursor.execute("DELETE FROM backup_30_08_2026.vc_tab_tgastos_d WHERE codigo = %s", [cod_clean])
 
         logger.info(f"[SyncLegado] Eliminación legada exitosa para TipoGastoDetalle Código {cod_clean}.")
 
@@ -1139,7 +1139,7 @@ def _ejecutar_sincronizacion_usuario_legado(usuario_id: int):
     """
     Función de fondo que se ejecuta en un hilo secundario.
     Traduce el usuario local (Usuario) e inserta o actualiza
-    en la tabla legado db_vc.seg_usuarios.
+    en la tabla legado backup_30_08_2026.seg_usuarios.
     """
     usr = Usuario.objects.filter(id_usuario=usuario_id).select_related('id_area', 'id_cargo').first()
     if not usr:
@@ -1184,7 +1184,7 @@ def _ejecutar_sincronizacion_usuario_legado(usuario_id: int):
         cargo = str(usr.id_cargo_id or 0).zfill(3)[:3]
 
         sql = """
-            INSERT INTO db_vc.seg_usuarios (
+            INSERT INTO backup_30_08_2026.seg_usuarios (
                 usuario_usu, nomb_cort_usu, email_usu, email_o, fech_crea_usu,
                 dni, telefono, movil1, movil2, fecha_nac, fecha_ing,
                 password_usu, doc, dir, estc, sex, activo, area, cargo
@@ -1248,7 +1248,7 @@ def disparar_sincronizacion_usuario_legado(usuario_id: int):
 def _ejecutar_eliminacion_usuario_legado(username: str):
     """
     Función de fondo que se ejecuta en un hilo secundario.
-    Elimina el registro de usuario en la BD legada db_vc.seg_usuarios.
+    Elimina el registro de usuario en la BD legada backup_30_08_2026.seg_usuarios.
     """
     usr_clean = (username or "")[:30]
     lock = get_lock_for_usuario(usr_clean)
@@ -1258,7 +1258,7 @@ def _ejecutar_eliminacion_usuario_legado(username: str):
 
         db_alias = "legacy" if "legacy" in connections else "default"
         with connections[db_alias].cursor() as cursor:
-            cursor.execute("DELETE FROM db_vc.seg_usuarios WHERE usuario_usu = %s", [usr_clean])
+            cursor.execute("DELETE FROM backup_30_08_2026.seg_usuarios WHERE usuario_usu = %s", [usr_clean])
 
         logger.info(f"[SyncLegado] Eliminación legada exitosa para Usuario '{usr_clean}'.")
 
@@ -1328,7 +1328,7 @@ def _ejecutar_sincronizacion_producto_legado(producto_id: int):
             proveedor = (prod.proveedor or "")[:20]
 
             sql = """
-                INSERT INTO db_vc.vc_tab_rockwell (
+                INSERT INTO backup_30_08_2026.vc_tab_rockwell (
                     codigo, codigo2, descripcion, precio, proveedor, activo
                 ) VALUES (
                     %s, %s, %s, %s, %s, %s
@@ -1356,7 +1356,7 @@ def _ejecutar_sincronizacion_producto_legado(producto_id: int):
             proveedor = (prod.proveedor or "")[:70]
 
             sql = f"""
-                INSERT INTO db_vc.{target_table} (
+                INSERT INTO backup_30_08_2026.{target_table} (
                     codigo, nombre, um, descripcion, precio_s, precio_d, cantidad, ocodigo, stock_min, stock_max, descuento, proveedor, activo
                 ) VALUES (
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
@@ -1433,7 +1433,7 @@ def _ejecutar_eliminacion_producto_legado(codigo: str, marca_nombre: str = ""):
 
         db_alias = "legacy" if "legacy" in connections else "default"
         with connections[db_alias].cursor() as cursor:
-            cursor.execute(f"DELETE FROM db_vc.{target_table} WHERE codigo = %s", [cod_clean])
+            cursor.execute(f"DELETE FROM backup_30_08_2026.{target_table} WHERE codigo = %s", [cod_clean])
 
         logger.info(f"[SyncLegado] Eliminación legada exitosa para Producto '{cod_clean}' en '{target_table}'.")
 
@@ -1460,7 +1460,7 @@ def _ejecutar_sincronizacion_condicion_legada(cotizacion_id: int):
     """
     Función de fondo que obtiene las condiciones generales de la cotización
     desde la BD nueva (concatenando historial si aplica) y actualiza
-    la columna acu_e en db_vc.vc_mov_cotizaciones.
+    la columna acu_e en backup_30_08_2026.vc_mov_cotizaciones.
     """
     lock = get_lock_for_cotizacion(cotizacion_id)
     lock.acquire()
@@ -1476,7 +1476,7 @@ def _ejecutar_sincronizacion_condicion_legada(cotizacion_id: int):
         db_alias = "legacy" if "legacy" in connections else "default"
         with connections[db_alias].cursor() as cursor:
             cursor.execute(
-                "UPDATE db_vc.vc_mov_cotizaciones SET acu_e = %s WHERE num_reg = %s",
+                "UPDATE backup_30_08_2026.vc_mov_cotizaciones SET acu_e = %s WHERE num_reg = %s",
                 [descripcion_total, cotizacion_id]
             )
 
@@ -1520,7 +1520,7 @@ def get_lock_for_apertura(apertura_id: int):
 def _ejecutar_sincronizacion_apertura_legada(apertura_id: int):
     """
     Función de fondo que sincroniza un registro de CotizacionApertura
-    con la tabla legacy db_vc.vc_mov_orden.
+    con la tabla legacy backup_30_08_2026.vc_mov_orden.
     """
     lock = get_lock_for_apertura(apertura_id)
     lock.acquire()
@@ -1536,7 +1536,7 @@ def _ejecutar_sincronizacion_apertura_legada(apertura_id: int):
         db_alias = "legacy" if "legacy" in connections else "default"
         with connections[db_alias].cursor() as cursor:
             sql = """
-                INSERT INTO db_vc.vc_mov_orden (
+                INSERT INTO backup_30_08_2026.vc_mov_orden (
                     num_reg, anno, mes, onum, ofec, ofece, ofecc, ofecf, otot, oesta,
                     onpla, odpla, otco, oceq, ocma, ocrh, ocen, ocse, ocot, num_regc,
                     adj, resp, totfa, salfa, oobs, des_a, des_t, des_m, des_p, doc,
@@ -1648,7 +1648,7 @@ def disparar_sincronizacion_apertura_legada(apertura_id: int):
 
 def _ejecutar_eliminacion_apertura_legada(apertura_id: int):
     """
-    Función de fondo que elimina la apertura de la BD legada db_vc.vc_mov_orden.
+    Función de fondo que elimina la apertura de la BD legada backup_30_08_2026.vc_mov_orden.
     """
     lock = get_lock_for_apertura(apertura_id)
     lock.acquire()
@@ -1657,7 +1657,7 @@ def _ejecutar_eliminacion_apertura_legada(apertura_id: int):
 
         db_alias = "legacy" if "legacy" in connections else "default"
         with connections[db_alias].cursor() as cursor:
-            cursor.execute("DELETE FROM db_vc.vc_mov_orden WHERE num_reg = %s", [apertura_id])
+            cursor.execute("DELETE FROM backup_30_08_2026.vc_mov_orden WHERE num_reg = %s", [apertura_id])
 
         logger.info(f"[SyncLegado] Eliminación legada exitosa para apertura ID {apertura_id}.")
 

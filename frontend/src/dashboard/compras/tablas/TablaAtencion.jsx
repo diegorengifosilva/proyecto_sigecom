@@ -22,7 +22,7 @@ const TablaAtencion = ({
     "Código", 
     "Tipo", 
     "Area", 
-    "Nombre", 
+    "Solicitante", 
     "Concepto",
     "Estado", 
     "Monto $", 
@@ -70,16 +70,16 @@ const TablaAtencion = ({
     const statusStr = String(estado || "Pendiente").toLowerCase();
     
     let colorClasses = "bg-slate-50 text-slate-700 border-slate-200";
-    if (statusStr.includes("pendiente")) {
+    if (statusStr.includes("envio") || statusStr.includes("envío")) {
+      colorClasses = "bg-red-50 text-red-700 border-red-200/50";
+    } else if (statusStr.includes("atencion") || statusStr.includes("atención")) {
       colorClasses = "bg-amber-50 text-amber-700 border-amber-200/50";
-    } else if (statusStr.includes("seguimiento")) {
-      colorClasses = "bg-blue-50 text-blue-700 border-blue-200/50";
-    } else if (statusStr.includes("adjudicado") || statusStr.includes("aprobado")) {
+    } else if (statusStr.includes("pendiente de liquidacion") || statusStr.includes("pendiente de liquidación")) {
+      colorClasses = "bg-sky-50 text-sky-700 border-sky-200/50";
+    } else if (statusStr.includes("enviada")) {
       colorClasses = "bg-emerald-50 text-emerald-700 border-emerald-200/50";
-    } else if (statusStr.includes("postergada")) {
-      colorClasses = "bg-purple-50 text-purple-700 border-purple-200/50";
-    } else if (statusStr.includes("perdida")) {
-      colorClasses = "bg-rose-50 text-rose-700 border-rose-200/50";
+    } else if (statusStr.includes("aprobada")) {
+      colorClasses = "bg-zinc-900 text-zinc-50 border-zinc-950";
     } else if (statusStr.includes("anulado")) {
       colorClasses = "bg-gray-100 text-gray-600 border-gray-300/50";
     }
@@ -227,7 +227,7 @@ const TablaAtencion = ({
 
               {/* Concepto */}
               <td className="px-4 py-2">
-                <div className="text-sm text-gray-600 font-medium line-clamp-1 max-w-xs xl:max-w-md" title={item.concepto}>
+                <div className="text-sm text-gray-700 font-medium line-clamp-1 max-w-xs xl:max-w-md" title={item.concepto}>
                   {item.concepto}
                 </div>
               </td>

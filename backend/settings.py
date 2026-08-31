@@ -142,7 +142,7 @@ DATABASES = {
     },
     "legacy": {
         "ENGINE": "django.db.backends.mysql",
-        "NAME": "backup_actual",
+        "NAME": "backup_30_08_2026",
         "USER": "admin",
         "PASSWORD": "270509",
         "HOST": "127.0.0.1",

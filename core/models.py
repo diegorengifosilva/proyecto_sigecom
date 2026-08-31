@@ -97,6 +97,18 @@ class Estado(models.Model):
     def __str__(self):
         return self.nombre
 
+class EstadoSolicitud(models.Model):
+    id_estado = models.AutoField(primary_key=True)
+    nombre = models.CharField(max_length=255)
+    activo = models.IntegerField(default=1, null=True, blank=True)
+
+    class Meta:
+        managed = False
+        db_table = 'estado_solicitud'
+
+    def __str__(self):
+        return self.nombre
+
 class TipoCotizacion(models.Model):
     id_tipo = models.CharField(max_length=1, primary_key=True)
     nombre = models.CharField(max_length=45)
