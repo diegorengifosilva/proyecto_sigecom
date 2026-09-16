@@ -16,32 +16,25 @@ export default function ClienteModal({ open, onClose, onGuardar, onEliminar, cli
                 // MODO EDICIÓN
                 setFormData({
                     ...clienteData,
+                    codigo: clienteData.id_cliente_formateado || String(clienteData.id_cliente).padStart(5, '0'),
+                    direccion: clienteData.direccion || clienteData.dir || "",
+                    pagina_web: clienteData.pagina_web || clienteData.web || "",
+                    representante_legal: clienteData.representante_legal || clienteData.rleg || "",
+                    ubicacion: clienteData.ubicacion || clienteData.ubic || "",
                     activo: String(clienteData.activo === true || clienteData.activo === "1" ? "1" : "0"),
                 });
             } else {
-                // MODO NUEVO: Cálculo del siguiente código
-                const codigosNumericos = clientes
-                    .map(c => parseInt(c.codigo))
-                    .filter(n => !isNaN(n));
-
-                const proximoCodigo = codigosNumericos.length > 0
-                    ? Math.max(...codigosNumericos) + 1
-                    : 10001;
-
                 setFormData({
-                    codigo: String(proximoCodigo),
+                    codigo: "Auto",
                     nombre: "",
                     iniciales: "",
                     ruc: "",
-                    dir: "",
-                    tipo: "1",
+                    direccion: "",
+                    tipo: 0,
                     forma_pago: "",
-                    fecha: new Date().toISOString().split('T')[0],
-                    rub: "",
-                    eva: "",
-                    web: "",
-                    rleg: "",
-                    ubic: "",
+                    pagina_web: "",
+                    representante_legal: "",
+                    ubicacion: "",
                     logo: "",
                     activo: "1",
                 });
@@ -52,7 +45,6 @@ export default function ClienteModal({ open, onClose, onGuardar, onEliminar, cli
     const handleChange = (e) => {
         const { name, value, type, checked } = e.target;
 
-        // Bloqueo de longitud para RUC
         if (name === "ruc" && value.length > 11) return;
 
         setFormData((prev) => {
@@ -75,19 +67,19 @@ export default function ClienteModal({ open, onClose, onGuardar, onEliminar, cli
             return;
         }
 
-        // VALIDACIÓN EXACTA
-        if (!formData.ruc || formData.ruc.length !== 11) {
+        if (formData.ruc && formData.ruc.length !== 11) {
             alert("El RUC debe tener exactamente 11 dígitos");
             return;
         }
 
         const dataParaEnviar = {
             ...formData,
-            // Convertimos a entero para evitar el error 1366 de MySQL
-            codigo: parseInt(formData.codigo),
-            // Si tienes otros campos numéricos como 'tipo', asegúralos también
-            tipo: parseInt(formData.tipo)
+            tipo: parseInt(formData.tipo) || 0
         };
+
+        if (clienteData?.id_cliente) {
+            dataParaEnviar.id_cliente = clienteData.id_cliente;
+        }
 
         onGuardar(dataParaEnviar);
     };
@@ -178,8 +170,8 @@ export default function ClienteModal({ open, onClose, onGuardar, onEliminar, cli
 
                         <InputField
                             label="Dirección:"
-                            name="dir"
-                            value={formData.dir || ""}
+                            name="direccion"
+                            value={formData.direccion || ""}
                             onChange={handleChange}
                             inline size="sm"
                         />
@@ -187,15 +179,15 @@ export default function ClienteModal({ open, onClose, onGuardar, onEliminar, cli
                         <div className="grid grid-cols-2 gap-4">
                             <InputField
                                 label="Ubicación:"
-                                name="ubic"
-                                value={formData.ubic || ""}
+                                name="ubicacion"
+                                value={formData.ubicacion || ""}
                                 onChange={handleChange}
                                 inline size="sm"
                             />
                             <InputField
                                 label="Página Web:"
-                                name="web"
-                                value={formData.web || ""}
+                                name="pagina_web"
+                                value={formData.pagina_web || ""}
                                 onChange={handleChange}
                                 inline size="sm"
                             />
@@ -217,10 +209,9 @@ export default function ClienteModal({ open, onClose, onGuardar, onEliminar, cli
                                 inline size="sm"
                             />
                             <InputField
-                                label="Fecha Reg:"
-                                name="fecha"
-                                type="date"
-                                value={formData.fecha || ""}
+                                label="Representante Legal:"
+                                name="representante_legal"
+                                value={formData.representante_legal || ""}
                                 onChange={handleChange}
                                 inline size="sm"
                             />
@@ -256,12 +247,12 @@ export default function ClienteModal({ open, onClose, onGuardar, onEliminar, cli
                             variant="ghost"
                             onClick={() => {
                                 if (window.confirm(`¿Estás seguro de eliminar a ${formData.nombre}?`)) {
-                                    onEliminar(formData.codigo);
+                                    onEliminar(clienteData.id_cliente);
                                 }
                             }}
                             className="mr-auto text-[11px] font-black uppercase tracking-widest text-red-400 hover:text-red-700 hover:bg-red-50 rounded-xl transition-all flex items-center gap-2"
                         >
-                            <Trash2 size={16} /> {/* No olvides importar Trash2 de lucide-react */}
+                            <Trash2 size={16} />
                             Eliminar
                         </Button>
                     )}

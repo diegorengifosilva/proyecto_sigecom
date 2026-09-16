@@ -33,7 +33,8 @@ export default function SemaforoCumplimiento({
           8: { minimo: Number(minima[8] || 0), maximo: Number(maxima[8] || 0) }
         };
         localStorage.setItem(`vc_personal_goals_${anno}`, JSON.stringify(personalGoals));
-        queryClient.invalidateQueries(["resumenComercial"]);
+        queryClient.invalidateQueries({ queryKey: ["dashboardMetas"] });
+        queryClient.invalidateQueries({ queryKey: ["resumenComercial"] });
         setOpenModal(false);
       } else {
         const payload = {
@@ -46,7 +47,8 @@ export default function SemaforoCumplimiento({
           ]
         };
         await api.post("dashboard/objetivos/", payload);
-        queryClient.invalidateQueries(["resumenComercial"]);
+        queryClient.invalidateQueries({ queryKey: ["dashboardMetas"] });
+        queryClient.invalidateQueries({ queryKey: ["resumenComercial"] });
         setOpenModal(false);
       }
     } catch (err) {

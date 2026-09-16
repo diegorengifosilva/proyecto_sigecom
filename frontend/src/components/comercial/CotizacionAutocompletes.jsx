@@ -776,17 +776,31 @@ export const ProductoAutocomplete = ({
   const inputRef = useRef(null);
   const dropdownRef = useRef(null);
   const cacheRef = useRef({});
+  const valueRef = useRef(value);
+  const blurTimerRef = useRef(null);
   const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 });
+  valueRef.current = value;
 
   // Bust cache if catalogoVersion changes
   useEffect(() => {
     cacheRef.current = {};
   }, [catalogoVersion]);
 
-  // Sync with parent value
   useEffect(() => {
-    if (!isFocused) {
+    return () => {
+      if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
+    };
+  }, []);
+
+  // Sync with parent value. If the parent cleared the field, always drop the
+  // local query even if this input is still focused (quick-add reset).
+  useEffect(() => {
+    if (!isFocused || !(value || "")) {
       setQuery(value || "");
+    }
+    if (!(value || "")) {
+      setShowDropdown(false);
+      setHighlightIndex(-1);
     }
   }, [value, isFocused]);
 
@@ -938,11 +952,16 @@ export const ProductoAutocomplete = ({
   );
 
   const handleBlur = () => {
-    setTimeout(() => {
+    blurTimerRef.current = setTimeout(() => {
       setIsFocused(false);
       setShowDropdown(false);
       setHighlightIndex(-1);
-      if (query && query !== value) {
+      const currentValue = valueRef.current || "";
+      if (!currentValue) {
+        setQuery("");
+        return;
+      }
+      if (query && query !== currentValue) {
         const match = results.find(item => (item.codigo || '').toUpperCase() === query.trim().toUpperCase());
         if (match) {
           onSelect(match);
@@ -1978,7 +1997,8 @@ export const MarcaAutocomplete = ({
   tabIndex,
   placeholder = "-- Marca --",
   onKeyDown,
-  idRegistro
+  idRegistro,
+  id
 }) => {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
@@ -2207,6 +2227,7 @@ export const MarcaAutocomplete = ({
             {query || placeholder}
           </span>
           <input
+            id={id}
             ref={inputRef}
             type="text"
             tabIndex={tabIndex}

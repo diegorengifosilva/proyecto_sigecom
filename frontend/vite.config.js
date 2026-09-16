@@ -8,11 +8,23 @@ export default defineConfig(({ mode }) => {
   // Carga las variables del archivo .env.local
   const env = loadEnv(mode, process.cwd(), '');
 
-  // Usa la variable VITE_API_URL o un valor por defecto
-  const apiUrl = env.VITE_API_URL || 'http://localhost:8000/api';
+  const apiUrl = env.VITE_API_URL || 'http://127.0.0.1:8000/api';
 
-  // Limpia la URL base para el proxy (quita "/api" si está presente)
-  const proxyTarget = apiUrl.replace(/\/api\/?$/, '');
+  // Guardia: un VITE_API_URL http://IP rompe login/reportes en HTTPS (mixed content).
+  if (mode === 'production') {
+    const prodApi = (env.VITE_API_URL || '/api/').trim();
+    if (/^https?:\/\//i.test(prodApi)) {
+      throw new Error(
+        `[SIGECOM] VITE_API_URL de producción debe ser relativa ("/api/"), no "${prodApi}". ` +
+        `No borres frontend/.env.production y no hagas el build con una IP HTTP.`
+      );
+    }
+  }
+
+  // Si VITE_API_URL es relativa (/api/), el proxy debe apuntar al backend local
+  const proxyTarget = apiUrl.startsWith('http')
+    ? apiUrl.replace(/\/api\/?$/, '')
+    : 'http://127.0.0.1:8000';
 
   return {
     plugins: [
@@ -21,7 +33,20 @@ export default defineConfig(({ mode }) => {
         registerType: 'autoUpdate',
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
         workbox: {
-          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024
+          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+          navigateFallback: 'index.html',
+          navigateFallbackDenylist: [
+            /^\/api\//,
+            /^\/admin\//,
+            /^\/media\//,
+            /^\/static\//,
+          ],
+          runtimeCaching: [
+            {
+              urlPattern: /\/(api|admin|media|static)\//,
+              handler: 'NetworkOnly',
+            },
+          ],
         },
         manifest: {
           name: 'V&C Cotizaciones ERP',

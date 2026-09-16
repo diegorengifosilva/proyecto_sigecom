@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Loader, Search, ListFilter, SlidersHorizontal,
@@ -10,6 +10,7 @@ import Table from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import AreaModal from "../Modal/AreaModal";
+import useResponsivePageSize from "@/hook/useResponsivePageSize";
 
 const fetchAreas = async () => {
   const { data } = await api.get("users/areas/");
@@ -19,6 +20,8 @@ const fetchAreas = async () => {
 export default function TablaAreas() {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, tableAreaRef] = useResponsivePageSize();
 
   // ESTADOS PARA EL MODAL
   const [modalOpen, setModalOpen] = useState(false);
@@ -29,7 +32,6 @@ export default function TablaAreas() {
     queryFn: fetchAreas,
   });
 
-  // MUTACIÓN PARA GUARDAR/ACTUALIZAR (Ejemplo básico)
   const saveMutation = useMutation({
     mutationFn: async (formData) => {
       if (formData.codigo === "Auto") {
@@ -44,13 +46,11 @@ export default function TablaAreas() {
     },
   });
 
-  // Función para abrir modal en modo edición
   const handleEdit = (area) => {
     setSelectedArea(area);
     setModalOpen(true);
   };
 
-  // Función para abrir modal en modo creación
   const handleNew = () => {
     setSelectedArea(null);
     setModalOpen(true);
@@ -61,39 +61,41 @@ export default function TablaAreas() {
     String(a.codigo).includes(searchTerm)
   );
 
+  const totalPages = Math.ceil(areasFiltradas.length / pageSize) || 1;
+  const paginatedAreas = areasFiltradas.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  useEffect(() => {
+    setCurrentPage((p) => Math.min(p, totalPages));
+  }, [totalPages]);
+
   return (
-    <div className="h-full flex flex-col space-y-4">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-slate-100 pb-3">
-        <div>
-          <h1 className="text-lg font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
-            <ListFilter size={18} className="text-cyan-600" />
-            Áreas de la Empresa
-          </h1>
-          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Gestión de departamentos y correlativos de cotización</p>
+    <div className="h-full flex flex-col min-h-0 gap-3">
+      {/* TOOLBAR UNIFICADO: BÚSQUEDA A LA IZQUIERDA, BOTÓN ACCIÓN A LA DERECHA */}
+      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 shrink-0">
+        <div className="relative w-full sm:w-80">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+          <Input 
+            placeholder="Buscar por código o nombre..."
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="pl-8 bg-white border-slate-200 text-xs h-8.5 rounded-lg shadow-xs"
+          />
         </div>
+
         <Button
           onClick={handleNew}
-          className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 h-9 text-xs font-bold uppercase tracking-wider rounded-xl shadow-lg shadow-cyan-100 flex items-center gap-1.5 self-start sm:self-auto"
+          className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 h-8.5 text-xs font-bold uppercase tracking-wider rounded-lg shadow-sm flex items-center gap-1.5 self-start sm:self-auto shrink-0"
         >
           <Plus size={14} strokeWidth={3} />
           Nueva Área
         </Button>
       </div>
 
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-        <Input 
-          placeholder="Buscar por código o nombre..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-8 bg-white border-slate-200 text-xs h-8.5 rounded-lg shadow-sm"
-        />
-      </div>
-
       {/* TABLA */}
-      <div className="flex-1 overflow-auto relative rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div ref={tableAreaRef} className="flex-1 min-h-0 overflow-hidden relative rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col">
         {(isLoading || isFetching) && (
           <div className="absolute inset-0 z-30 bg-white/60 backdrop-blur-[2px] flex items-center justify-center">
             <div className="flex flex-col items-center gap-2">
@@ -104,38 +106,45 @@ export default function TablaAreas() {
         )}
 
         <Table
+          disablePagination={false}
+          pagination={{
+            currentPage: currentPage,
+            totalPages: totalPages,
+            total: areasFiltradas.length,
+            from: areasFiltradas.length > 0 ? (currentPage - 1) * pageSize + 1 : 0,
+            to: Math.min(currentPage * pageSize, areasFiltradas.length),
+            onPageChange: (p) => setCurrentPage(p)
+          }}
           headers={[
             "Código", "Nombre", "Responsable", "Correlativo", "Estado",
           ].map((h) => (
-            <span className="text-xs font-black py-2 uppercase tracking-widest text-slate-700 text-center block">
+            <span key={h} className="text-xs font-black py-2 uppercase tracking-widest text-slate-700 text-center block">
               {h}
             </span>
           ))}
 
-          data={areasFiltradas}
-
-          /* CLAVE: Al dar clic en la fila, abrimos el modal de edición */
+          data={paginatedAreas}
           onRowClick={(area) => handleEdit(area)}
 
           renderRow={(area) => [
-            <span className="text-xs font-bold text-slate-600 text-center block">
+            <span key="cod" className="text-xs font-bold text-slate-600 text-center block">
               {area.codigo}
             </span>,
 
-            <span className="text-xs font-semibold text-slate-800 text-left block px-4">
+            <span key="nom" className="text-xs font-semibold text-slate-800 text-left block px-4">
               {area.nombre}
             </span>,
 
-            <span className="text-xs font-medium text-slate-600 text-left block px-4">
+            <span key="resp" className="text-xs font-medium text-slate-600 text-left block px-4">
               {area.responsable}
             </span>,
 
-            <span className="text-xs font-mono font-bold text-slate-500 text-center block">
+            <span key="corr" className="text-xs font-mono font-bold text-slate-500 text-center block">
               {String(area.correlativo).padStart(3, '0')}
             </span>,
 
-            <div className="flex justify-center">
-              <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase border ${area.activo
+            <div key="est" className="flex justify-center">
+              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase border ${area.activo
                 ? "bg-emerald-50 text-emerald-700 border-emerald-100"
                 : "bg-slate-50 text-slate-500 border-slate-100"
                 }`}>
@@ -146,7 +155,6 @@ export default function TablaAreas() {
         />
       </div>
 
-      {/* COMPONENTE MODAL */}
       <AreaModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}

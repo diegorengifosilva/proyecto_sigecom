@@ -178,7 +178,7 @@ from django.contrib.auth.hashers import check_password
 from caja_chica_api.serializers import SegUsuarioSerializer
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
-# Login DB_VC
+# Login db_vc
 @csrf_exempt
 @api_view(['POST'])
 def login_usuario(request):

@@ -1,9 +1,21 @@
 # caja_chica_api/ocr_utils.py
 
-from PIL import Image
-import cv2
-import numpy as np
-from pdf2image import convert_from_path
+try:
+    from PIL import Image
+except Exception:
+    Image = None
+try:
+    import cv2
+except Exception:
+    cv2 = None
+try:
+    import numpy as np
+except Exception:
+    np = None
+try:
+    from pdf2image import convert_from_path
+except Exception:
+    convert_from_path = None
 from concurrent.futures import ThreadPoolExecutor
 
 # --------------------------

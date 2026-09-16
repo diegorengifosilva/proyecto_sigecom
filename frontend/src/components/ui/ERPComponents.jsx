@@ -82,6 +82,15 @@ export const StatusBadge = ({ status }) => {
     );
   }
 
+  // 8. APROBADA / APROBADO
+  if (statusString === 'aprobada' || statusString === 'aprobado' || statusString.includes('aprobad')) {
+    return (
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200/60 shadow-sm">
+        Aprobada
+      </span>
+    );
+  }
+
   // 9. ANULADO / ANULADA (Red)
   if (statusString === 'anulado' || statusString === 'anulada' || statusString.includes('anulad')) {
     return (

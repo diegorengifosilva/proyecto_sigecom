@@ -1,12 +1,12 @@
 // frontend/src/dashboard/aprobacion_cotizacion/AprobacionCotizacion.jsx
-import React, { useEffect, useState, useMemo, useCallback } from "react";
+import React, { useEffect, useState, useMemo, useCallback, lazy, Suspense } from "react";
 import { useAuth } from "@/context/AuthContext";
 import api from "@/services/api";
 import { BriefcaseBusiness, FilePlus, Eye, TrendingUp, DollarSign, BarChart3, Filter, Loader, Calculator, FileSpreadsheet, Wallet2, Landmark, Scale, Coins, User, MoreHorizontal, ClipboardCheck, LayoutDashboard, History, Globe, ListTodo, Layout, Plus, ArrowUpRight, Cpu, Award, FileText, FolderCheck, CalendarRange, Printer } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { toast } from "react-toastify";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import Table from "@/components/ui/table";
 import KpiCard from "@/components/ui/KpiCard";
 import FilterCard from "@/components/ui/FilterCard";
@@ -19,31 +19,28 @@ import TablaCoti from "../../../components/TablaCoti";
 import TablaHistorial from "../../../components/TablaHistorial";
 import KpisCotizaciones from "../../../components/KpisCotizaciones";
 import ResumenDashboard from "./ResumenDashboard";
-import RendimientoDashboard from "./rendimiento/RendimientoDashboard";
-import AnalisisComercial from "./analisis/AnalisisDashboard";
 import GraficoDinamico from "./analisis/GraficoDinamico";
-import AutomatizacionDashboard from "./automatizacion/AutomatizacionDashboard";
 import KpisResumen from "./resumen/KpisResumen";
 import KpisLogistica from "./resumen/KpisLogistica";
 import VcAiInsights from "./resumen/VcAiInsights";
 import { FilterDropdown, ERPButton } from "@/components/ui/ERPComponents";
 
+const RendimientoDashboard = lazy(() => import("./rendimiento/RendimientoDashboard"));
+const AnalisisComercial = lazy(() => import("./analisis/AnalisisDashboard"));
+const AutomatizacionDashboard = lazy(() => import("./automatizacion/AutomatizacionDashboard"));
+
 export default function DashboardComercial() {
   const { authUser: user, logout } = useAuth();
   const activeModule = "comercial";
-  const [cotizaciones, setCotizaciones] = useState([]);
   const [viewScope, setViewScope] = useState("global");
-  const [stats, setStats] = useState({});
   const [filtro, setFiltro] = useState("Todos");
   const [fechaInicio, setFechaInicio] = useState("");
   const [fechaFin, setFechaFin] = useState("");
-  const [clientes, setClientes] = useState([]);
   const [detalleOpen, setDetalleOpen] = useState(false);
   const [cotizacionSeleccionada, setCotizacionSeleccionada] = useState(null);
   const navigate = useNavigate();
   const [openNueva, setOpenNueva] = useState(false);
-  const [annoActual, setAnnoActual] = useState(new Date().getFullYear()); // año actual por defecto
-  const [processingFilters, setProcessingFilters] = useState(false);
+  const [annoActual, setAnnoActual] = useState(new Date().getFullYear());
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   const [currentFilters, setCurrentFilters] = useState({
@@ -54,88 +51,88 @@ export default function DashboardComercial() {
     index: 1,
     num_regs: 10000,
   });
-  const [clientesMap, setClientesMap] = useState({});
+
+  const dashParams = useMemo(() => ({
+    anno: currentFilters.anno,
+    mes: currentFilters.mes,
+    personal: viewScope === "personal" ? "true" : "false",
+  }), [currentFilters.anno, currentFilters.mes, viewScope]);
+
+  const fetchCotizaciones = useCallback(async () => {
+    try {
+      const { data } = await api.get("cotizaciones/lista_cotizaciones/", {
+        params: {
+          anno: currentFilters.anno,
+          mes: currentFilters.mes,
+          personal: viewScope === "personal",
+          incluir_oportunidades: true,
+        },
+      });
+
+      const tabla = Array.isArray(data?.tabla) ? data.tabla : [];
+      const cleaned = tabla.map((item) => ({
+        ...item,
+        id_registro: item.id_registro || item.num_reg,
+        codigo: item.codigo || "",
+        fecha: item.fecha || item.cotif,
+        cliente: item.cliente_nombre || item.cliente || "-",
+        area: item.area_nombre || item.area || "-",
+        estado: item.estado_nombre || item.estado || "-",
+        comercial_nombre: item.comercial_nombre || "-",
+        comercial_dni: item.comercial_dni || "",
+        id_comercial: item.id_comercial || null,
+        visita_tecnica: item.visita_tecnica || null,
+        fecha_limite: item.fecha_limite || null,
+        estado_nombre: (item.estado_nombre || item.estado || "-").toString().trim() || "-",
+      }));
+
+      cleaned.sort((a, b) => {
+        const fechaA = a.fecha ? new Date(a.fecha) : new Date(0);
+        const fechaB = b.fecha ? new Date(b.fecha) : new Date(0);
+        if (fechaB - fechaA !== 0) return fechaB - fechaA;
+        return (b.numero || "").localeCompare(a.numero || "");
+      });
+
+      return {
+        cotizaciones: cleaned,
+        stats: data?.dashboard || {},
+        alertas: data?.alertas_agendadas || [],
+      };
+    } catch (e) {
+      console.error("Error cargando cotizaciones:", e);
+      if (e?.response?.status === 401) logout();
+      toast.error("Error cargando las cotizaciones.");
+      return { cotizaciones: [], stats: {}, alertas: [] };
+    }
+  }, [currentFilters.anno, currentFilters.mes, viewScope, logout]);
+
   const {
     data: queryData,
     isLoading,
     isFetching,
-    error,
   } = useQuery({
-    queryKey: ["cotizaciones", currentFilters, viewScope],
-    queryFn: () => fetchCotizaciones({ ...currentFilters, personal: viewScope === "personal" }),
-    keepPreviousData: true,
-    staleTime: 60 * 1000, // Cache de 1 minuto para cotizaciones filtradas
-    cacheTime: 5 * 60 * 1000
+    queryKey: ["dashboardCotizaciones", currentFilters.anno, currentFilters.mes, viewScope],
+    queryFn: fetchCotizaciones,
+    placeholderData: keepPreviousData,
+    staleTime: 45 * 1000,
+    gcTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,
   });
 
-  useEffect(() => {
-    if (queryData) {
-      setCotizaciones(queryData.cotizaciones || []);
-      setStats(queryData.stats || {});
-    }
-  }, [queryData]);
-
-  const {
-    data: cotizacionesAnualData,
-  } = useQuery({
-    queryKey: ["cotizacionesAnual", currentFilters.anno, currentFilters.mes, viewScope],
-    queryFn: async () => {
-      try {
-        const token = localStorage.getItem("access_token");
-        const queryMes = currentFilters.mes === "%" ? (new Date().getMonth() + 1) : currentFilters.mes;
-        const { data: resData } = await api.get("cotizaciones/lista_cotizaciones/", {
-          headers: { Authorization: `Bearer ${token}` },
-          params: {
-            anno: currentFilters.anno,
-            mes: queryMes,
-            personal: viewScope === "personal",
-            incluir_oportunidades: true,
-            num_regs: 1000
-          }
-        });
-        const list = resData.tabla || resData.results || [];
-        const cleaned = list.map(item => ({
-          ...item,
-          id_registro: item.id_registro || item.num_reg,
-          codigo: item.codigo || "",
-          fecha: item.fecha || item.cotif,
-          cliente: item.cliente_nombre || item.cliente || "-",
-          comercial_nombre: item.comercial_nombre || "-",
-          comercial_dni: item.comercial_dni || "",
-          id_comercial: item.id_comercial || null,
-          visita_tecnica: item.visita_tecnica || null,
-          fecha_limite: item.fecha_limite || null,
-          estado_nombre: item.estado?.trim() || "-",
-        }));
-        return {
-          cotizaciones: cleaned,
-          alertas: resData.alertas_agendadas || []
-        };
-      } catch (e) {
-        console.error(e);
-        return { cotizaciones: [], alertas: [] };
-      }
-    },
-    keepPreviousData: true,
-    staleTime: 5 * 60 * 1000, // Cache de 5 minutos para cotizaciones anuales
-    cacheTime: 10 * 60 * 1000
-  });
+  const cotizaciones = queryData?.cotizaciones || [];
+  const stats = queryData?.stats || {};
 
   const {
     data: aperturasAnualData,
   } = useQuery({
-    queryKey: ["aperturasAnual", currentFilters.anno, currentFilters.mes],
+    queryKey: ["dashboardAperturas", currentFilters.anno, currentFilters.mes],
     queryFn: async () => {
       try {
-        const token = localStorage.getItem("access_token");
-        const queryMes = currentFilters.mes === "%" ? (new Date().getMonth() + 1) : currentFilters.mes;
         const { data: resData } = await api.get("cotizaciones/lista_aperturas/", {
-          headers: { Authorization: `Bearer ${token}` },
           params: {
             anno: currentFilters.anno,
-            mes: queryMes,
-            num_regs: 1000
-          }
+            mes: currentFilters.mes,
+          },
         });
         return resData.tabla || resData.results || [];
       } catch (e) {
@@ -143,115 +140,93 @@ export default function DashboardComercial() {
         return [];
       }
     },
-    keepPreviousData: true,
-    staleTime: 5 * 60 * 1000, // Cache de 5 minutos para aperturas anuales
-    cacheTime: 10 * 60 * 1000
+    placeholderData: keepPreviousData,
+    staleTime: 45 * 1000,
+    gcTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,
   });
 
   const {
-    data: resumenComercialData,
-    isLoading: isLoadingResumen,
-    isFetching: isFetchingResumen,
+    data: kpisData,
+    isLoading: isLoadingKpis,
+    isFetching: isFetchingKpis,
   } = useQuery({
-    queryKey: ["resumenComercial", currentFilters.anno, currentFilters.mes, viewScope],
+    queryKey: ["dashboardKpis", dashParams],
     queryFn: async () => {
       try {
-        const token = localStorage.getItem("access_token");
-        const { data } = await api.get("dashboard/resumen_comercial/", {
-          headers: { Authorization: `Bearer ${token}` },
-          params: {
-            anno: currentFilters.anno,
-            mes: currentFilters.mes,
-            personal: viewScope === "personal" ? "true" : "false"
-          }
-        });
+        const { data } = await api.get("dashboard/kpis/", { params: dashParams });
         return data;
       } catch (err) {
-        console.error("Error cargando datos consolidados del dashboard:", err);
+        console.error("Error cargando KPIs del dashboard:", err);
         return null;
       }
     },
-    keepPreviousData: true,
-    staleTime: 60 * 1000, // Cache de 1 minuto para KPIs y tendencias dinámicas
-    cacheTime: 5 * 60 * 1000
+    placeholderData: keepPreviousData,
+    staleTime: 45 * 1000,
+    gcTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,
   });
+
+  const {
+    data: metasData,
+    isLoading: isLoadingMetas,
+    isFetching: isFetchingMetas,
+  } = useQuery({
+    queryKey: ["dashboardMetas", dashParams],
+    queryFn: async () => {
+      try {
+        const params = { anno: dashParams.anno, mes: dashParams.mes, personal: dashParams.personal };
+        const [objRes, logRes] = await Promise.all([
+          api.get("dashboard/objetivos/", { params: { anno: dashParams.anno } }),
+          api.get("dashboard/logrado/", { params }),
+        ]);
+        return { objetivos: objRes.data, logrado: logRes.data };
+      } catch (err) {
+        console.error("Error cargando metas del dashboard:", err);
+        return { objetivos: null, logrado: null };
+      }
+    },
+    placeholderData: keepPreviousData,
+    staleTime: 45 * 1000,
+    gcTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,
+  });
+
+  const {
+    data: tendenciasData,
+    isLoading: isLoadingTendencias,
+    isFetching: isFetchingTendencias,
+  } = useQuery({
+    queryKey: ["dashboardTendencias", dashParams],
+    queryFn: async () => {
+      try {
+        const { data } = await api.get("dashboard/tendencias/", { params: dashParams });
+        return data;
+      } catch (err) {
+        console.error("Error cargando tendencias del dashboard:", err);
+        return null;
+      }
+    },
+    placeholderData: keepPreviousData,
+    staleTime: 45 * 1000,
+    gcTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,
+  });
+
+  const resumenComercialData = useMemo(() => ({
+    objetivos: metasData?.objetivos,
+    logrado: metasData?.logrado,
+    kpis: kpisData,
+    tendencias: tendenciasData,
+  }), [metasData, kpisData, tendenciasData]);
+
+  const isFetchingResumen = isFetchingKpis || isFetchingMetas || isFetchingTendencias;
 
   const { scrollY } = useScroll();
   const shadowOpacity = useTransform(scrollY, [0, 50], [0, 0.25]);
   const blurValue = useTransform(scrollY, [0, 100], [4, 8]);
 
   const [tabActiva, setTabActiva] = useState("resumen");
-  const [areas, setAreas] = useState([]);
-
-  // Fetch cotizaciones con filtro por año actual
-  const fetchCotizaciones = useCallback(async (params = { anno: annoActual }) => {
-    try {
-      const token = localStorage.getItem("access_token");
-      const { data } = await api.get("cotizaciones/lista_cotizaciones/", {
-        headers: { Authorization: `Bearer ${token}` },
-        params,
-      });
-
-      const tabla = Array.isArray(data?.tabla) ? data.tabla : [];
-      const dashboard = data?.dashboard || {};
-
-      const dataLimpia = tabla.map((item) => ({
-        ...item,
-        cliente: item.cliente_nombre || item.cliente || "-",
-        area: item.area_nombre || item.area || "-",
-        estado: item.estado_nombre || item.estado || "-",
-      }));
-
-      dataLimpia.sort((a, b) => {
-        const fechaA = a.fecha ? new Date(a.fecha) : new Date(0);
-        const fechaB = b.fecha ? new Date(b.fecha) : new Date(0);
-        if (fechaB - fechaA !== 0) return fechaB - fechaA;
-        return (b.numero || "").localeCompare(a.numero || "");
-      });
-
-      setCotizaciones(dataLimpia);
-      setStats(dashboard);
-      return { cotizaciones: dataLimpia, stats: dashboard };
-    } catch (e) {
-      console.error("Error cargando cotizaciones:", e);
-      if (e?.response?.status === 401) logout();
-      toast.error("Error cargando las cotizaciones.");
-      return { cotizaciones: [], stats: {} };
-    }
-  }, [annoActual, logout]);
-
-  // ==========================
-  // CARGAR AREAS
-  // ==========================
-  useEffect(() => {
-    if (!open) return;
-
-    api.get("users/areas/")
-      .then(res => setAreas(Array.isArray(res.data) ? res.data : []))
-      .catch(() => setAreas([]));
-  }, [open]);
-
-  // ===========
-  // CLIENTES
-  // ===========
-  useEffect(() => {
-    const fetchClientes = async () => {
-      try {
-        const res = await api.get("/core/clientes/");
-        const data = Array.isArray(res.data) ? res.data : [];
-        setClientes(data);
-        
-        const map = {};
-        data.forEach(c => {
-          map[c.codigo] = c.nombre;
-        });
-        setClientesMap(map);
-      } catch (err) {
-        console.error("Error cargando clientes", err);
-      }
-    };
-    fetchClientes();
-  }, []);
 
   // Efecto scroll flotante
   useEffect(() => {
@@ -275,6 +250,8 @@ export default function DashboardComercial() {
 
   // Aplicamos el filtro de año, mes y alcance personal
   const cotizacionesFiltradasPorFecha = cotizaciones.filter(c => {
+    const esOportunidad = c.id_estado === 11 || c.estado_nombre === "Oportunidad";
+    if (esOportunidad) return false;
     const fecha = new Date(c.fecha || c.cotif);
     const pasaAnno = !currentFilters.anno || fecha.getFullYear() === Number(currentFilters.anno);
     const pasaMes = currentFilters.mes === "%" || (fecha.getMonth() + 1 === Number(currentFilters.mes));
@@ -290,24 +267,22 @@ export default function DashboardComercial() {
     return pasaAnno && pasaMes && pasaAlcance;
   });
 
-  const todasCotizacionesFiltradasPorAlcance = useMemo(() => {
-    return cotizacionesAnualData?.cotizaciones || [];
-  }, [cotizacionesAnualData]);
+  const todasCotizacionesFiltradasPorAlcance = useMemo(() => cotizaciones, [cotizaciones]);
 
   const todasAlertasFiltradasPorAlcance = useMemo(() => {
-    const list = cotizacionesAnualData?.alertas || [];
+    const list = queryData?.alertas || [];
     return list.filter(al => {
       let pasaAlcance = true;
       if (viewScope === "personal" && user) {
         const userId = user.id_usuario || user.id || user.dni;
         const cUserId = al.id_comercial;
-        pasaAlcance = String(cUserId) === String(userId) || 
-                      String(al.id_comercial) === String(user.dni) || 
+        pasaAlcance = String(cUserId) === String(userId) ||
+                      String(al.id_comercial) === String(user.dni) ||
                       (al.comercial_nombre && user.nombre_completo && al.comercial_nombre.trim().toLowerCase() === user.nombre_completo.trim().toLowerCase());
       }
       return pasaAlcance;
     });
-  }, [cotizacionesAnualData, viewScope, user]);
+  }, [queryData?.alertas, viewScope, user]);
 
   const todasAperturasFiltradasPorAlcance = useMemo(() => {
     const list = aperturasAnualData || [];
@@ -633,8 +608,8 @@ export default function DashboardComercial() {
             anno={currentFilters.anno} 
             mes={currentFilters.mes} 
             viewScope={viewScope} 
-            data={resumenComercialData?.kpis}
-            loading={isLoadingResumen}
+            data={kpisData}
+            loading={isLoadingKpis && !kpisData}
           />
         ) : (
           <KpisLogistica anno={currentFilters.anno} mes={currentFilters.mes} />
@@ -661,41 +636,48 @@ export default function DashboardComercial() {
                 alertas={todasAlertasFiltradasPorAlcance}
                 viewScope={viewScope}
                 resumenData={resumenComercialData}
-                loading={isLoadingResumen}
+                loading={isLoadingMetas && !metasData}
+                loadingTendencias={isLoadingTendencias && !tendenciasData}
               />
             </div>
 
             {/* SECCIÓN 2: RENDIMIENTO / LEADERBOARD / SIMULADOR */}
             <div id="dashboard-rendimiento" className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4 scroll-mt-6">
-              <RendimientoDashboard 
-                module={activeModule}
-                anno={currentFilters.anno} 
-                mes={currentFilters.mes} 
-                cotizaciones={cotizacionesFiltradasPorFecha} 
-                viewScope={viewScope}
-              />
+              <Suspense fallback={<div className="h-48 bg-slate-50 animate-pulse rounded-2xl" />}>
+                <RendimientoDashboard 
+                  module={activeModule}
+                  anno={currentFilters.anno} 
+                  mes={currentFilters.mes} 
+                  cotizaciones={cotizacionesFiltradasPorFecha} 
+                  viewScope={viewScope}
+                />
+              </Suspense>
             </div>
 
             {/* SECCIÓN 3: PIVOT CONSTRUCTOR Y GRÁFICOS */}
             <div id="dashboard-analisis" className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4 scroll-mt-6">
-              <AnalisisComercial 
-                module={activeModule}
-                cotizaciones={cotizacionesFiltradasPorFecha} 
-                anno={currentFilters.anno} 
-                mes={currentFilters.mes} 
-                viewScope={viewScope}
-              />
+              <Suspense fallback={<div className="h-64 bg-slate-50 animate-pulse rounded-2xl" />}>
+                <AnalisisComercial 
+                  module={activeModule}
+                  cotizaciones={cotizacionesFiltradasPorFecha} 
+                  anno={currentFilters.anno} 
+                  mes={currentFilters.mes} 
+                  viewScope={viewScope}
+                />
+              </Suspense>
             </div>
 
           </div>
 
           {/* COLUMNA LATERAL / SIDEBAR (DERECHA - 4/12 en lg, 3/12 en xl) */}
           <div id="dashboard-automatizacion" className="col-span-12 lg:col-span-4 xl:col-span-3 space-y-6 flex flex-col scroll-mt-6">
-            <AutomatizacionDashboard 
-              module={activeModule}
-              anno={currentFilters.anno} 
-              mes={currentFilters.mes} 
-            />
+            <Suspense fallback={<div className="h-64 bg-slate-50 animate-pulse rounded-2xl" />}>
+              <AutomatizacionDashboard 
+                module={activeModule}
+                anno={currentFilters.anno} 
+                mes={currentFilters.mes} 
+              />
+            </Suspense>
           </div>
 
         </div>

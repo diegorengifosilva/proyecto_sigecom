@@ -16,7 +16,7 @@ export default function RepresentanteModal({ open, onClose, onGuardar, onElimina
         queryFn: async () => {
             const { data } = await api.get("core/clientes/");
             return data.map(c => ({
-                id: String(c.codigo),
+                id: c.id_cliente,
                 nombre: c.nombre
             }));
         },
@@ -29,32 +29,31 @@ export default function RepresentanteModal({ open, onClose, onGuardar, onElimina
                 // MODO EDICIÓN
                 setFormData({
                     ...repData,
-                    activo: String(repData.activo ?? "1"),
+                    codigo: repData.id_rep_formateado || String(repData.id_representante).padStart(5, '0'),
+                    nombre_representante: repData.nombre_representante || repData.representante || "",
+                    id_cliente: repData.id_cliente || "",
+                    cargo: repData.cargo || "",
+                    telefono: repData.telefono || "",
+                    movil: repData.movil || "",
+                    email: repData.email || "",
+                    direccion: repData.direccion || "",
+                    activo: repData.activo === true || repData.activo === 1 || repData.activo === "1" ? "1" : "0",
                 });
             } else {
-                // MODO NUEVO: Lógica de autoincremento (igual que en Clientes)
-                const codigosNumericos = representantes
-                    .map(r => parseInt(r.codigo))
-                    .filter(n => !isNaN(n));
-
-                const proximoCodigo = codigosNumericos.length > 0
-                    ? Math.max(...codigosNumericos) + 1
-                    : 1; // O el número base que prefieras para representantes
-
                 setFormData({
-                    codigo: String(proximoCodigo),
-                    representante: "",
+                    codigo: "Auto",
+                    nombre_representante: "",
                     cargo: "",
                     telefono: "",
                     movil: "",
                     email: "",
-                    empresa: "",
+                    id_cliente: empresas[0]?.id || "",
                     direccion: "",
                     activo: "1",
                 });
             }
         }
-    }, [open, repData, representantes]);
+    }, [open, repData, empresas]);
 
     const handleChange = (e) => {
         const { name, value, type, checked } = e.target;
@@ -65,16 +64,31 @@ export default function RepresentanteModal({ open, onClose, onGuardar, onElimina
     };
 
     const handleSubmit = () => {
-        // VALIDACIONES BÁSICAS
-        if (!formData.representante?.trim()) {
+        if (!formData.nombre_representante?.trim()) {
             alert("El nombre del representante es obligatorio");
             return;
         }
-        if (!formData.empresa) {
-            alert("Debe seleccionar una empresa");
+        if (!formData.id_cliente) {
+            alert("Debe seleccionar una empresa cliente");
             return;
         }
-        onGuardar(formData);
+
+        const payload = {
+            id_cliente: parseInt(formData.id_cliente),
+            nombre_representante: formData.nombre_representante,
+            cargo: formData.cargo || "",
+            telefono: formData.telefono || "",
+            movil: formData.movil || "",
+            email: formData.email || "",
+            direccion: formData.direccion || "",
+            activo: formData.activo === "1" || formData.activo === 1 ? 1 : 0
+        };
+
+        if (repData?.id_representante) {
+            payload.id_representante = repData.id_representante;
+        }
+
+        onGuardar(payload);
     };
 
     return (
@@ -127,8 +141,8 @@ export default function RepresentanteModal({ open, onClose, onGuardar, onElimina
 
                         <InputField
                             label="Representante:"
-                            name="representante"
-                            value={formData.representante || ""}
+                            name="nombre_representante"
+                            value={formData.nombre_representante || ""}
                             onChange={handleChange}
                             inline size="sm"
                             className="font-bold text-slate-800"
@@ -178,8 +192,8 @@ export default function RepresentanteModal({ open, onClose, onGuardar, onElimina
 
                         <SelectField
                             label="Empresa:"
-                            name="empresa"
-                            value={formData.empresa || ""}
+                            name="id_cliente"
+                            value={formData.id_cliente || ""}
                             onChange={handleChange}
                             inline size="sm"
                             options={empresas}
@@ -221,8 +235,8 @@ export default function RepresentanteModal({ open, onClose, onGuardar, onElimina
                         <Button
                             variant="ghost"
                             onClick={() => {
-                                if (window.confirm(`¿Estás seguro de eliminar a ${formData.representante}?`)) {
-                                    onEliminar(formData.codigo);
+                                if (window.confirm(`¿Estás seguro de eliminar a ${formData.nombre_representante}?`)) {
+                                    onEliminar(repData.id_representante);
                                 }
                             }}
                             className="mr-auto text-[11px] font-black uppercase tracking-widest text-red-400 hover:text-red-700 hover:bg-red-50 rounded-xl transition-all flex items-center gap-2"

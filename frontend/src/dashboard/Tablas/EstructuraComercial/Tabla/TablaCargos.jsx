@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Loader, Search, MoreHorizontal, ChartSpline, Plus, Edit2, Trash2
@@ -9,6 +9,7 @@ import Table from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import CargoModal from "../Modal/CargoModal";
+import useResponsivePageSize from "@/hook/useResponsivePageSize";
 
 const fetchCargos = async () => {
   const { data } = await api.get("cotizaciones/users/cargos/");
@@ -19,6 +20,8 @@ const fetchCargos = async () => {
 export default function TablaCargos() {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, tableAreaRef] = useResponsivePageSize();
 
   // ESTADOS PARA EL MODAL
   const [modalOpen, setModalOpen] = useState(false);
@@ -29,12 +32,9 @@ export default function TablaCargos() {
     queryFn: fetchCargos,
   });
 
-  // MUTACIÓN PARA GUARDAR/ACTUALIZAR
   const saveMutation = useMutation({
     mutationFn: async (formData) => {
-      // Si el cargo ya existe (estamos editando), usamos PUT
       const existe = cargos.some(c => c.codigo === formData.codigo && formData.codigo !== "NUEVO");
-
       if (existe) {
         return await api.put(`cotizaciones/users/cargos/`, formData);
       } else {
@@ -63,39 +63,41 @@ export default function TablaCargos() {
     String(c.codigo).includes(searchTerm)
   );
 
+  const totalPages = Math.ceil(cargosFiltrados.length / pageSize) || 1;
+  const paginatedCargos = cargosFiltrados.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  useEffect(() => {
+    setCurrentPage((p) => Math.min(p, totalPages));
+  }, [totalPages]);
+
   return (
-    <div className="h-full flex flex-col space-y-4">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-slate-100 pb-3">
-        <div>
-          <h1 className="text-lg font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
-            <Search size={18} className="text-cyan-600" />
-            Cargos de Personal
-          </h1>
-          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Mapeo de roles y puestos organizacionales</p>
+    <div className="h-full flex flex-col min-h-0 gap-3">
+      {/* TOOLBAR UNIFICADO: BÚSQUEDA A LA IZQUIERDA, BOTÓN ACCIÓN A LA DERECHA */}
+      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 shrink-0">
+        <div className="relative w-full sm:w-80">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+          <Input 
+            placeholder="Buscar por código o descripción..."
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="pl-8 bg-white border-slate-200 text-xs h-8.5 rounded-lg shadow-xs"
+          />
         </div>
+
         <Button
           onClick={handleNew}
-          className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 h-9 text-xs font-bold uppercase tracking-wider rounded-xl shadow-lg shadow-cyan-100 flex items-center gap-1.5 self-start sm:self-auto"
+          className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 h-8.5 text-xs font-bold uppercase tracking-wider rounded-lg shadow-sm flex items-center gap-1.5 self-start sm:self-auto shrink-0"
         >
           <Plus size={14} strokeWidth={3} />
           Nuevo Cargo
         </Button>
       </div>
 
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-        <Input 
-          placeholder="Buscar por código o descripción..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-8 bg-white border-slate-200 text-xs h-8.5 rounded-lg shadow-sm"
-        />
-      </div>
-
       {/* TABLA */}
-      <div className="flex-1 overflow-auto relative rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div ref={tableAreaRef} className="flex-1 min-h-0 overflow-hidden relative rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col">
         {(isLoading || isFetching) && (
           <div className="absolute inset-0 z-30 bg-white/60 backdrop-blur-[2px] flex items-center justify-center">
             <div className="flex flex-col items-center gap-2">
@@ -106,32 +108,41 @@ export default function TablaCargos() {
         )}
 
         <Table
+          disablePagination={false}
+          pagination={{
+            currentPage: currentPage,
+            totalPages: totalPages,
+            total: cargosFiltrados.length,
+            from: cargosFiltrados.length > 0 ? (currentPage - 1) * pageSize + 1 : 0,
+            to: Math.min(currentPage * pageSize, cargosFiltrados.length),
+            onPageChange: (p) => setCurrentPage(p)
+          }}
           headers={[
             "Código", "Nombre", "Nombre Otro", "Estado"
           ].map((h) => (
-            <span className="text-xs font-black py-2 uppercase tracking-widest text-slate-700 text-center block">
+            <span key={h} className="text-xs font-black py-2 uppercase tracking-widest text-slate-700 text-center block">
               {h}
             </span>
           ))}
 
-          data={cargosFiltrados}
+          data={paginatedCargos}
           onRowClick={(cargo) => handleEdit(cargo)}
 
           renderRow={(cargo) => [
-            <span className="text-xs font-bold text-slate-600 text-center block">
+            <span key="cod" className="text-xs font-bold text-slate-600 text-center block">
               {cargo.codigo}
             </span>,
 
-            <span className="text-xs font-semibold text-slate-800 text-left block px-4">
+            <span key="nom" className="text-xs font-semibold text-slate-800 text-left block px-4">
               {cargo.nombre}
             </span>,
 
-            <span className="text-xs font-medium text-slate-500 text-left block px-4 italic">
+            <span key="nom_otro" className="text-xs font-medium text-slate-500 text-left block px-4 italic">
               {cargo.nom}
             </span>,
 
-            <div className="flex justify-center">
-              <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase border ${cargo.activo
+            <div key="est" className="flex justify-center">
+              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase border ${cargo.activo
                   ? "bg-emerald-50 text-emerald-700 border-emerald-100"
                   : "bg-slate-50 text-slate-500 border-slate-100"
                 }`}>

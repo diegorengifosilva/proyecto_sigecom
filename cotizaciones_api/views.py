@@ -9,7 +9,7 @@ import pandas as pd
 import platform
 import subprocess
 import logging
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from html import unescape
 from openpyxl import Workbook
 from weasyprint import HTML
@@ -18,6 +18,7 @@ import tempfile
 from pathlib import Path
 import shutil
 from docxtpl import DocxTemplate, RichText
+from .report_word import apply_rich_text_line_spacing, apply_section_keep_together
 import jinja2
 
 from unidecode import unidecode
@@ -34,11 +35,11 @@ from django.http import JsonResponse, HttpResponse, FileResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import ensure_csrf_cookie, csrf_exempt
 from django.utils import timezone
-from django.db.models import Sum, Count, Q, F, Max, DecimalField, ExpressionWrapper, Func, F, Value, TextField, IntegerField
+from django.db.models import Sum, Count, Q, F, Max, DecimalField, ExpressionWrapper, Func, F, Value, TextField, IntegerField, Exists, OuterRef, Prefetch
 from django.db.models.functions import TruncDate, Coalesce, ExtractMonth, Lower
 from django.core.exceptions import ValidationError
 from django.core.cache import cache
-from django.db import transaction, IntegrityError
+from django.db import transaction, IntegrityError, connections
 from django.views.decorators.http import require_GET
 from django.utils.dateparse import parse_date
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
@@ -48,7 +49,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 # ─── Django REST Framework ──────────────────────────
 from rest_framework.decorators import api_view, parser_classes, permission_classes, action, authentication_classes
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
 from rest_framework import status, viewsets, generics, filters, permissions
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -74,6 +75,7 @@ CACHE_DETAIL_PREFIX = "liquidacion_detail_"
 from django.conf import settings
 from datetime import date, datetime, timedelta
 from django.utils.timezone import now
+from .quill_html import list_marker, quill_html_for_report
 from .models import (
     Cotizacion,
     CotizacionSuministro,
@@ -83,6 +85,8 @@ from .models import (
     CotizacionCondicionGeneral,
     CotizacionSeguimiento,
     CotizacionApertura,
+    CotizacionAperturaSuministro,
+    CotizacionAperturaServicio,
     alm_articulos,
     vc_tab_notas,
     vc_mov_orden,
@@ -110,6 +114,8 @@ from .serializers import (
     CotizacionAperturaTablaSerializer,
     AlmArticulosSerializer,
     NotasSerializer,
+    fetch_orden_su_by_apertura,
+    fetch_orden_mo_by_apertura,
 )
 
 from users.serializers import (
@@ -414,55 +420,16 @@ def lista_cotizaciones(request):
             qs = qs.filter(id_comercial=request.user)
 
         # ============================================================
-        # Metrics Processing (Dashboard)
+        # Metrics + tabla en un solo recorrido (evita count + 2 queries)
         # ============================================================
-        total_regs = qs.count()
-        monto_soles = monto_dolares = este_mes_conteo = 0
-        stats_estados = {"Pendiente": 0, "En Seguimiento": 0, "Adjudicado": 0, "Postergada": 0, "Perdida": 0, "Anulado": 0}
-        stats_clientes = {}
-        conteo_meses = [0] * 12
-
-        for c in qs:
-            monto = float(c.total_cotizacion or 0)
-            if c.tipo_moneda == "D": monto_dolares += monto
-            else: monto_soles += monto
-
-            if c.fecha:
-                conteo_meses[c.fecha.month - 1] += 1
-                if c.fecha.month == hoy_date.month and c.fecha.year == hoy_date.year:
-                    este_mes_conteo += 1
-
-            est_nom = c.id_estado.nombre if c.id_estado else "Sin Estado"
-            stats_estados[est_nom] = stats_estados.get(est_nom, 0) + 1
-
-            cli_id = c.id_cliente_id or "S/C"
-            cli_nom = c.id_cliente.nombre if c.id_cliente else (c.representante_nombre or "Desconocido")
-            if cli_id not in stats_clientes:
-                stats_clientes[cli_id] = {"nombre": cli_nom, "cantidad": 0, "total": 0}
-            stats_clientes[cli_id]["cantidad"] += 1
-            stats_clientes[cli_id]["total"] += monto
-
-        clientes_lista = sorted([{"id": k, **v, "porcentaje": round((v["cantidad"]/total_regs)*100, 2) if total_regs else 0} for k, v in stats_clientes.items()], key=lambda x: x["cantidad"], reverse=True)[:10]
-
-        dashboard_data = {
-            "total": total_regs,
-            "esteMes": este_mes_conteo,
-            "montoTotalSoles": round(monto_soles, 2),
-            "montoTotalDolares": round(monto_dolares, 2),
-            "promedioSoles": round(monto_soles / total_regs, 2) if total_regs and monto_soles else 0,
-            "estados": stats_estados,
-            "porMes": conteo_meses,
-            "clientes": clientes_lista,
-        }
-
         AREA_MAP = {
-            1: "Industria", 
-            2: "Minería", 
-            3: "Mantenimiento", 
-            4: "Petroquímica", 
+            1: "Industria",
+            2: "Minería",
+            3: "Mantenimiento",
+            4: "Petroquímica",
             8: "Seguridad"
         }
-        
+
         def calc_date(start_dt, val, code):
             if not start_dt or val is None or not code:
                 return None
@@ -498,10 +465,36 @@ def lista_cotizaciones(request):
                 pass
             return None
 
+        rows = list(qs.order_by('-fecha', '-id_registro'))
+        total_regs = len(rows)
+        monto_soles = monto_dolares = este_mes_conteo = 0
+        stats_estados = {"Pendiente": 0, "En Seguimiento": 0, "Adjudicado": 0, "Postergada": 0, "Perdida": 0, "Anulado": 0}
+        stats_clientes = {}
+        conteo_meses = [0] * 12
         tabla_data = []
-        ordered_qs = qs.order_by('-fecha', '-id_registro')
         from decimal import Decimal
-        for c in ordered_qs:
+        for c in rows:
+            monto = float(c.total_cotizacion or 0)
+            if c.tipo_moneda == "D":
+                monto_dolares += monto
+            else:
+                monto_soles += monto
+
+            if c.fecha:
+                conteo_meses[c.fecha.month - 1] += 1
+                if c.fecha.month == hoy_date.month and c.fecha.year == hoy_date.year:
+                    este_mes_conteo += 1
+
+            est_nom = c.id_estado.nombre if c.id_estado else "Sin Estado"
+            stats_estados[est_nom] = stats_estados.get(est_nom, 0) + 1
+
+            cli_id = c.id_cliente_id or "S/C"
+            cli_nom = c.id_cliente.nombre if c.id_cliente else (c.representante_nombre or "Desconocido")
+            if cli_id not in stats_clientes:
+                stats_clientes[cli_id] = {"nombre": cli_nom, "cantidad": 0, "total": 0}
+            stats_clientes[cli_id]["cantidad"] += 1
+            stats_clientes[cli_id]["total"] += monto
+
             comercial_nombre = c.id_comercial.nombre_completo if c.id_comercial else "Por asignar"
             comercial_correo = c.id_comercial.correo if c.id_comercial else None
             comercial_movil_corporativo = c.id_comercial.movil_coorporativo if c.id_comercial else None
@@ -571,6 +564,23 @@ def lista_cotizaciones(request):
                 "fecha_entrega_servicios": format_datetime(dt_serv),
                 "fecha_validez_oferta": format_datetime(dt_vali),
             })
+
+        clientes_lista = sorted(
+            [{"id": k, **v, "porcentaje": round((v["cantidad"] / total_regs) * 100, 2) if total_regs else 0} for k, v in stats_clientes.items()],
+            key=lambda x: x["cantidad"],
+            reverse=True
+        )[:10]
+
+        dashboard_data = {
+            "total": total_regs,
+            "esteMes": este_mes_conteo,
+            "montoTotalSoles": round(monto_soles, 2),
+            "montoTotalDolares": round(monto_dolares, 2),
+            "promedioSoles": round(monto_soles / total_regs, 2) if total_regs and monto_soles else 0,
+            "estados": stats_estados,
+            "porMes": conteo_meses,
+            "clientes": clientes_lista,
+        }
 
         # Recordatorios de Seguimiento agendados
         alertas_qs = CotizacionMensaje.objects.filter(
@@ -827,6 +837,25 @@ def formatear_mensaje_cambio(label, old_val, new_val):
 @permission_classes([IsAuthenticated])
 def cotizacion_detalle(request, id_registro):
     try:
+        if request.method == "GET":
+            cot = Cotizacion.objects.select_related(
+                'id_cliente', 'id_estado', 'id_tipo', 'id_representante',
+                'id_comercial', 'id_tecnico',
+                'id_unidad_tiempo_entrega_suministros',
+                'id_unidad_tiempo_entrega_servicios',
+                'id_unidad_tiempo_validez'
+            ).annotate(
+                _has_apertura=Exists(
+                    CotizacionApertura.objects.filter(id_registro_id=OuterRef('id_registro'))
+                )
+            ).filter(id_registro=id_registro).first()
+
+            if not cot:
+                return Response({"error": "Cotización no encontrada"}, status=404)
+
+            serializer = CotizacionModalSerializer(cot, context={"include_nested": False})
+            return Response(serializer.data)
+
         from django.db.models import Prefetch
 
         suministros_qs = CotizacionSuministro.objects.select_related(
@@ -852,11 +881,7 @@ def cotizacion_detalle(request, id_registro):
         if not cot:
             return Response({"error": "Cotización no encontrada"}, status=404)
 
-        if request.method == "GET":
-            serializer = CotizacionModalSerializer(cot)
-            return Response(serializer.data)
-
-        elif request.method == "PUT":
+        if request.method == "PUT":
             if cot.estado_envio == 2:
                 return Response(
                     {"error": "La cotización está congelada (ya fue enviada al cliente). No se admiten modificaciones."}, 
@@ -1249,14 +1274,6 @@ def listar_suministros(request, id_registro):
         # 📄 LISTAR
         # ======================
         if request.method == "GET":
-            # Auto-ajuste de la longitud de la columna 'detalle' en la BD física
-            try:
-                from django.db import connection
-                with connection.cursor() as cursor:
-                    cursor.execute("ALTER TABLE cotizaciones_seguimiento MODIFY COLUMN detalle VARCHAR(1000) NULL")
-            except Exception:
-                pass
-
             # Usamos select_related para traer los nombres de marca y gasto de una vez
             suministros = CotizacionSuministro.objects.select_related(
                 'id_marca', 'id_tipo_gasto', 'id_unidad_tiempo_entrega'
@@ -1310,7 +1327,9 @@ def listar_suministros(request, id_registro):
             if isinstance(request.data, dict) and "reorder_items" in request.data:
                 items_data = request.data.get("reorder_items", [])
                 for item_info in items_data:
-                    item_id = item_info.get("id_suministro")
+                    item_id = _parse_id_servicio(item_info.get("id_suministro"))
+                    if item_id is None:
+                        continue
                     new_orden = item_info.get("orden")
                     new_codigo_grupo = item_info.get("codigo_grupo")
                     
@@ -1468,6 +1487,15 @@ def clean_text(text):
     # Reemplaza cualquier secuencia de espacios o saltos de línea por un solo espacio
     text = re.sub(r"\s+", " ", text)
     return text.strip()
+
+def _parse_id_servicio(raw):
+    """IDs temporales del frontend (temp_*, virtual_*) no son PKs reales."""
+    if raw is None or raw is False or raw == "":
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
 
 @api_view(["GET", "POST", "PUT", "DELETE"])
 @permission_classes([IsAuthenticated])
@@ -1649,7 +1677,9 @@ def listar_servicios(request, id_registro):
             if isinstance(request.data, dict) and "reorder_items" in request.data:
                 items_data = request.data.get("reorder_items", [])
                 for item_info in items_data:
-                    item_id = item_info.get("id_servicio")
+                    item_id = _parse_id_servicio(item_info.get("id_servicio"))
+                    if item_id is None:
+                        continue
                     new_orden = item_info.get("orden")
                     new_codigo_servicio = item_info.get("codigo_servicio")
                     
@@ -1667,7 +1697,9 @@ def listar_servicios(request, id_registro):
                         pass
                 return Response({"message": "Orden actualizado correctamente"})
 
-            item_id = request.data.get("id_servicio")
+            item_id = _parse_id_servicio(request.data.get("id_servicio"))
+            if item_id is None:
+                return Response({"error": "ID de servicio inválido"}, status=400)
             
             # Validamos que el registro pertenezca a la cotización
             servicio_instancia = CotizacionServicio.objects.get(
@@ -1797,24 +1829,19 @@ def listar_servicios(request, id_registro):
     except CotizacionServicio.DoesNotExist:
         return Response({"error": "Servicio no encontrado en esta cotización"}, status=404)
     except Exception as e:
+        logger.exception("Error en lista_servicios id_registro=%s", id_registro)
         return Response({"error": str(e)}, status=500)
 
 @api_view(['GET', 'POST', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def gestionar_adjuntos(request, id_registro):
-    # Mantenemos tu ruta física personalizada
-    ruta_carpeta = r"C:\xampp\htdocs\vc\ocfiles"
+    from .oc_files import oc_save_dir
+    ruta_carpeta = oc_save_dir()
     
-    # Validación de seguridad por estado congelado
+    # Validación de existencia
     cot = Cotizacion.objects.filter(id_registro=id_registro).first()
     if not cot:
         return Response({"error": "Cotización no encontrada"}, status=404)
-
-    if request.method in ["POST", "DELETE"] and cot.estado_envio == 2:
-        return Response(
-            {"error": "La cotización está congelada (ya fue enviada al cliente). No se admiten modificaciones."}, 
-            status=400
-        )
 
     # --- MÉTODO POST: GUARDAR ---
     if request.method == "POST":
@@ -1886,8 +1913,7 @@ def gestionar_adjuntos(request, id_registro):
                     "description": adj.descripcion,
                     "fecha": adj.fecha.strftime('%d/%m/%Y %H:%M'),
                     "usuario": nombre_usuario,
-                    # El path de descarga ahora también usa id_registro
-                    "file_path": f"/api/cotizaciones/adjuntos/descargar/{id_registro}_{adj.nombre}/"
+                    "file_path": f"cotizaciones/adjuntos/{id_registro}/archivo/{adj.id_adjuntos}/",
                 })
             
             return Response({"ok": True, "archivos": archivos_lista})
@@ -1908,22 +1934,108 @@ def gestionar_adjuntos(request, id_registro):
                 except OSError:
                     pass # Evita que el endpoint falle si el archivo no está físicamente
             
-            # Borrado físico (Hard Delete) como pidió el usuario
+            nombre_elim = adjunto.nombre
             adjunto.delete()
 
-            # REGISTRO EN TRAZABILIDAD
             CotizacionSeguimiento.objects.create(
                 id_registro_id=id_registro,
-                detalle=f"Se eliminó adjunto: {adjunto.nombre}",
+                detalle=f"Se eliminó adjunto: {nombre_elim}",
                 id_usuario=request.user,
                 activo="1"
             )
-            
-            return Response({"ok": True, "mensaje": "Archivo y registro eliminados permanentemente"})
+            return Response({"ok": True})
         except CotizacionAdjunto.DoesNotExist:
             return Response({"ok": False, "error": "Adjunto no encontrado"}, status=404)
         except Exception as e:
             return Response({"ok": False, "error": str(e)}, status=500)
+
+    return Response({"ok": False, "error": "Método no permitido"}, status=405)
+
+
+def _servir_archivo_adjunto(path_completo, nombre_descarga):
+    import mimetypes
+    from urllib.parse import quote
+
+    content_type, _ = mimetypes.guess_type(path_completo)
+    if not content_type:
+        content_type = "application/octet-stream"
+
+    response = FileResponse(open(path_completo, "rb"), content_type=content_type)
+    safe_name = (nombre_descarga or os.path.basename(path_completo)).replace('"', "")
+    response["Content-Disposition"] = (
+        f'attachment; filename="{safe_name}"; filename*=UTF-8\'\'{quote(safe_name)}'
+    )
+    return response
+
+
+def _resolver_ruta_adjunto(adjunto, id_registro=None):
+    from .oc_files import oc_search_dirs
+    candidatos = []
+    if adjunto.ruta:
+        candidatos.append(adjunto.ruta)
+    nombre = adjunto.nombre or ""
+    for oc_dir in oc_search_dirs():
+        if id_registro and nombre:
+            candidatos.append(os.path.join(oc_dir, f"{id_registro}_{nombre}"))
+        if nombre:
+            candidatos.append(os.path.join(oc_dir, nombre))
+    for path in candidatos:
+        if path and os.path.exists(path):
+            return path
+    return None
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def descargar_adjunto_por_id(request, id_registro, id_adjunto):
+    adjunto = CotizacionAdjunto.objects.filter(
+        id_adjuntos=id_adjunto, id_registro=id_registro
+    ).first()
+    if not adjunto:
+        return Response({"error": "El archivo adjunto no existe."}, status=404)
+    path_completo = _resolver_ruta_adjunto(adjunto, id_registro)
+    if not path_completo:
+        return Response(
+            {"error": "El archivo adjunto no existe o no fue encontrado en el servidor."},
+            status=404,
+        )
+    try:
+        return _servir_archivo_adjunto(path_completo, adjunto.nombre)
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def descargar_adjunto_cotizacion(request, nombre_fisico):
+    from urllib.parse import unquote
+    from .oc_files import oc_search_dirs
+
+    nombre_fisico = unquote(nombre_fisico or "").rstrip("/")
+    path_completo = None
+    for oc_dir in oc_search_dirs():
+        p = os.path.join(oc_dir, nombre_fisico)
+        if os.path.exists(p):
+            path_completo = p
+            break
+
+    if not path_completo or not os.path.exists(path_completo):
+        adjunto = CotizacionAdjunto.objects.filter(ruta=path_completo).first() if path_completo else None
+        if not adjunto:
+            adjunto = CotizacionAdjunto.objects.filter(nombre=nombre_fisico).first()
+        if not adjunto and "_" in nombre_fisico:
+            _, _, resto = nombre_fisico.partition("_")
+            if resto:
+                adjunto = CotizacionAdjunto.objects.filter(nombre=resto).first()
+        if adjunto:
+            path_completo = _resolver_ruta_adjunto(adjunto, adjunto.id_registro_id) or path_completo
+        if not path_completo or not os.path.exists(path_completo):
+            return Response({"error": "El archivo adjunto no existe o no fue encontrado en el servidor."}, status=404)
+
+    try:
+        return _servir_archivo_adjunto(path_completo, os.path.basename(path_completo))
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
 
 @api_view(["GET", "POST", "PATCH", "DELETE"])
 @permission_classes([IsAuthenticated])
@@ -2271,51 +2383,33 @@ def lista_oportunidades(request):
                 qs = qs.filter(**{f"{campo_real}__icontains": valor_norm})
 
         # ============================================================
-        # 3) Dashboard Métricas Cortas para Oportunidades
+        # 3) Dashboard + tabla en un solo recorrido
         # ============================================================
-        total_regs = qs.count()
         hoy_date = date.today()
-        este_mes_conteo = 0
-        
-        # Estadísticas internas del pipeline (1 a 4)
         stats_pipeline = {
-            "Pendiente": 0,    # 1
-            "No Cotizado": 0,  # 2
-            "Rechazado": 0,    # 3
-            "Cotizado": 0      # 4
+            "Pendiente": 0,
+            "No Cotizado": 0,
+            "Rechazado": 0,
+            "Cotizado": 0
         }
-        
         MAPPING_ESTADOS = {1: "Pendiente", 2: "No Cotizado", 3: "Rechazado", 4: "Cotizado"}
         conteo_meses = [0] * 12
+        este_mes_conteo = 0
+        tabla_data = []
+        rows = list(qs.order_by('-recepcion_solicitud', '-id_registro'))
+        total_regs = len(rows)
 
-        for c in qs:
-            # Conteo mensual basado en recepción de la solicitud
+        for c in rows:
             if c.recepcion_solicitud:
-                # El campo puede ser un objeto datetime, extraemos solo el mes para el índice de la lista
                 mes_idx = c.recepcion_solicitud.month - 1
                 conteo_meses[mes_idx] += 1
-                
                 if c.recepcion_solicitud.month == hoy_date.month and c.recepcion_solicitud.year == hoy_date.year:
                     este_mes_conteo += 1
 
-            # Distribución por pipeline (Manejo del default 1 si viene vacío)
             est_int = c.estado_oportunidad or 1
             nom_est = MAPPING_ESTADOS.get(est_int, "Pendiente")
             stats_pipeline[nom_est] = stats_pipeline.get(nom_est, 0) + 1
 
-        dashboard_data = {
-            "total": total_regs,
-            "esteMes": este_mes_conteo,
-            "pipeline": stats_pipeline,
-            "porMes": conteo_meses
-        }
-
-        # ============================================================
-        # 4) Respuesta con Serialización manual ultra-rápida
-        # ============================================================
-        tabla_data = []
-        ordered_qs = qs.order_by('-recepcion_solicitud', '-id_registro')
-        for c in ordered_qs:
             comercial_nombre = c.id_comercial.nombre_completo if c.id_comercial else "Por asignar"
             comercial_correo = c.id_comercial.correo if c.id_comercial else None
             comercial_movil_corporativo = c.id_comercial.movil_coorporativo if c.id_comercial else None
@@ -2340,6 +2434,13 @@ def lista_oportunidades(request):
                 "comentario": c.comentario,
                 "fijar": c.fijar,
             })
+
+        dashboard_data = {
+            "total": total_regs,
+            "esteMes": este_mes_conteo,
+            "pipeline": stats_pipeline,
+            "porMes": conteo_meses
+        }
 
         return Response({
             "dashboard": dashboard_data,
@@ -2516,17 +2617,18 @@ def lista_aperturas(request):
         # ============================================================
         # Procesamiento de Métricas (Dashboard)
         # ============================================================
-        total_regs = qs.count()
+        rows = list(qs.order_by('-anno', '-mes', '-id_apertura'))
+        total_regs = len(rows)
         monto_soles = monto_dolares = este_mes_conteo = 0
         
         # Estructura de estados según las órdenes
-        stats_estados = {"Pendiente": 0, "Aprobada": 0, "Facturada": 0, "Anulada": 0, "Desconocido": 0}
-        MAPEO_ESTADOS = {1: "Pendiente", 2: "Aprobada", 3: "Facturada", 4: "Anulada"}
+        stats_estados = {"Adjudicado": 0, "Pendiente": 0, "Anulado": 0}
+        MAPEO_ESTADOS = {1: "Adjudicado", 2: "Pendiente", 4: "Anulado"}
         
         stats_clientes = {}
         conteo_meses = [0] * 12
 
-        for ap in qs:
+        for ap in rows:
             # Procesamos montos financieros basados en la orden (Heredando la moneda del padre)
             monto = float(ap.total_orden or 0)
             moneda_padre = ap.id_registro.tipo_moneda if ap.id_registro else "S"
@@ -2543,7 +2645,7 @@ def lista_aperturas(request):
                     este_mes_conteo += 1
 
             # Clasificación de estados de orden
-            est_nom = MAPEO_ESTADOS.get(ap.estado_orden, "Desconocido")
+            est_nom = ap.estado_orden.nombre if ap.estado_orden else "Pendiente"
             stats_estados[est_nom] = stats_estados.get(est_nom, 0) + 1
 
             # Segmentación de clientes top por órdenes de apertura consumidas
@@ -2585,13 +2687,13 @@ def lista_aperturas(request):
             "clientes": clientes_lista,
         }
 
-        # Serialización limpia del listado de la tabla manual ultra-rápida
+        # Serialización limpia del listado de la tabla
         tabla_data = []
-        ordered_qs = qs.order_by('-anno', '-mes', '-id_apertura')
         from decimal import Decimal
         AREA_MAP = {1: "Industria", 2: "Minería", 3: "Mantenimiento", 4: "Petroquímica", 8: "Seguridad"}
-        for ap in ordered_qs:
-            estado_orden_nombre = "Pendiente" if ap.estado_orden == 1 else ("Aprobada" if ap.estado_orden == 2 else ("Facturada" if ap.estado_orden == 3 else ("Anulada" if ap.estado_orden == 4 else "Desconocido")))
+        for ap in rows:
+            est_id = ap.estado_orden_id
+            estado_orden_nombre = ap.estado_orden.nombre if ap.estado_orden else "Pendiente"
             plazo_unidad = ap.orden_plazo_unidad.nombre if ap.orden_plazo_unidad else None
             
             cotizacion_id = ap.id_registro.id_registro if ap.id_registro else None
@@ -2611,6 +2713,7 @@ def lista_aperturas(request):
                     "id_area": ap.id_registro.id_area,
                     "area_nombre": AREA_MAP.get(ap.id_registro.id_area, "Otros"),
                     "fijar": ap.id_registro.fijar,
+                    "tipo_moneda": ap.id_registro.tipo_moneda,
                     "comercial_nombre": ap.id_registro.id_comercial.nombre_completo if ap.id_registro.id_comercial else "Por asignar",
                     "comercial_dni": ap.id_registro.id_comercial.dni if ap.id_registro.id_comercial else "",
                     "id_comercial": ap.id_registro.id_comercial_id,
@@ -2632,7 +2735,7 @@ def lista_aperturas(request):
                 "numero_orden": ap.numero_orden,
                 "id_registro": id_registro_data,
                 "total_orden": total_orden_val,
-                "estado_orden": ap.estado_orden,
+                "estado_orden": est_id,
                 "estado_orden_nombre": estado_orden_nombre,
                 "orden_plazo_valor": ap.orden_plazo_valor,
                 "plazo_unidad": plazo_unidad,
@@ -2645,6 +2748,7 @@ def lista_aperturas(request):
                 "cliente_nombre": cliente_nombre,
                 "area_nombre": area_nombre,
                 "prio": ap.prio,
+                "tipo_moneda": ap.id_registro.tipo_moneda if ap.id_registro else "S",
                 "id_comercial": ap.id_registro.id_comercial_id if ap.id_registro else None,
             })
 
@@ -2664,6 +2768,15 @@ def apertura_detalle(request, id_apertura):
                 'id_registro',
                 'id_registro__id_cliente',
                 'id_registro__id_estado'
+            ).prefetch_related(
+                Prefetch(
+                    'suministros_apertura',
+                    queryset=CotizacionAperturaSuministro.objects.select_related('id_suministro')
+                ),
+                Prefetch(
+                    'servicios_apertura',
+                    queryset=CotizacionAperturaServicio.objects.select_related('id_servicio')
+                ),
             ).get(id_apertura=id_apertura)
         except CotizacionApertura.DoesNotExist:
             return Response({"error": "Apertura no encontrada"}, status=404)
@@ -2673,8 +2786,8 @@ def apertura_detalle(request, id_apertura):
             from compras_api.models import SolicitudOrdenCompra, SolicitudPasajes
             from django.db.models import Q
             
-            solicitudes_qs = SolicitudOrdenCompra.objects.filter(Q(id_apertura=id_apertura) | Q(nivel_grupo=id_apertura) | Q(nivel_grupo=str(id_apertura)))
-            pasajes_qs = SolicitudPasajes.objects.filter(Q(id_apertura=id_apertura) | Q(nivel_grupo=id_apertura) | Q(nivel_grupo=str(id_apertura)))
+            solicitudes_qs = SolicitudOrdenCompra.objects.filter(Q(nivel_grupo=id_apertura) | Q(nivel_grupo=str(id_apertura)))
+            pasajes_qs = SolicitudPasajes.objects.filter(Q(nivel_grupo=id_apertura) | Q(nivel_grupo=str(id_apertura)))
             
             rel_solicitudes = []
             for s in solicitudes_qs:
@@ -2710,9 +2823,12 @@ def apertura_detalle(request, id_apertura):
                     "tipo_moneda": p.tipo_moneda or "S",
                     "estado_nombre": p.id_estado.nombre if p.id_estado else "Pendiente",
                     "tipo_gasto": p.tipo_gasto or "02",
+                    "transporte": p.transporte or "",
                     "tipo": p.transporte or "Pasaje"
                 })
                 
+            rel_solicitudes.sort(key=lambda x: (x["fecha"] or "", x["id_registro"] or 0))
+
             cotizacion_id = apertura.id_registro_id
             tipos_gasto_presentes = []
             if cotizacion_id:
@@ -2727,7 +2843,14 @@ def apertura_detalle(request, id_apertura):
             return Response(data)
 
         elif request.method == 'DELETE':
+            from .oc_files import delete_oc_files
+            id_reg_descuento = apertura.id_registro_id
+            delete_oc_files(id_apertura)
             apertura.delete()
+            try:
+                repartir_descuento_aperturas(id_reg_descuento)
+            except Exception:
+                pass
             return Response({"message": "Orden de compra eliminada correctamente"}, status=200)
 
         elif request.method in ['PUT', 'PATCH']:
@@ -2754,9 +2877,27 @@ def apertura_detalle(request, id_apertura):
                 apertura.mes_entrega = data['orden_devengo_mes']
                 
             if 'estado_orden' in data:
-                apertura.estado_orden = data['estado_orden']
+                nuevo_estado = data['estado_orden']
             elif 'orden_compra_estado' in data:
-                apertura.estado_orden = data['orden_compra_estado']
+                nuevo_estado = data['orden_compra_estado']
+            else:
+                nuevo_estado = None
+
+            if nuevo_estado is not None:
+                try:
+                    nuevo_estado_int = int(nuevo_estado)
+                except (TypeError, ValueError):
+                    nuevo_estado_int = apertura.estado_orden
+                if nuevo_estado_int in (2, 3):
+                    from .oc_files import resolve_oc_file
+                    path, _ext = resolve_oc_file(apertura.id_apertura)
+                    has_file = bool(path) or bool((apertura.orden_adjunta or "").strip())
+                    if not has_file:
+                        return Response(
+                            {"error": "Adjunte el PDF de la Orden de Compra para marcarla como Aprobada o Facturada."},
+                            status=400
+                        )
+                apertura.estado_orden_id = nuevo_estado_int
                 
             if 'prio' in data:
                 apertura.prio = data['prio']
@@ -2768,9 +2909,23 @@ def apertura_detalle(request, id_apertura):
                 apertura.orden_adjunta = data['orden_adjunta']
             if 'responsables' in data:
                 responsables_val = data['responsables']
-                apertura.responsables = responsables_val
+                resp_items = [x.strip() for x in re.split(r'[;,]', responsables_val or '') if x.strip() and '@' in x]
+                normalized_resp = ",".join(resp_items) + ("," if resp_items else "")
+                old_resp = apertura.responsables
+                apertura.responsables = normalized_resp
                 if apertura.id_registro_id:
-                    CotizacionApertura.objects.filter(id_registro=apertura.id_registro_id).update(responsables=responsables_val)
+                    aperturas_rel = CotizacionApertura.objects.filter(id_registro=apertura.id_registro_id)
+                    for ap_item in aperturas_rel:
+                        if ap_item.id_apertura != apertura.id_apertura:
+                            ap_item.responsables = normalized_resp
+                            ap_item.save()
+                    quote_codigo = ""
+                    cot = getattr(apertura, "id_registro", None)
+                    if cot is not None:
+                        quote_codigo = cot.codigo or ""
+                    if quote_codigo:
+                        from .services.legacy_sync import disparar_quitar_orden_usu_por_diff
+                        disparar_quitar_orden_usu_por_diff(quote_codigo, old_resp, normalized_resp)
                 
             if 'orden_plazo_valor' in data:
                 apertura.orden_plazo_valor = data['orden_plazo_valor']
@@ -2855,54 +3010,19 @@ def apertura_detalle(request, id_apertura):
 
 def sync_apertura_oc_file(apertura):
     try:
-        from django.conf import settings
-        ruta_carpeta = os.path.join(settings.BASE_DIR, 'cotizaciones_api', 'ocfiles')
-        extensiones = ['.pdf', '.xlsx', '.xls', '.docx', '.doc']
-        path_completo = None
-        ext_encontrada = None
-        id_apertura_str = str(int(apertura.id_apertura)).strip()
-        
-        for ext in extensiones:
-            path_test = os.path.join(ruta_carpeta, f"{id_apertura_str}{ext}")
-            if os.path.exists(path_test):
-                path_completo = path_test
-                ext_encontrada = ext
-                break
+        from .oc_files import resolve_oc_file
+        path_completo, ext_encontrada = resolve_oc_file(apertura.id_apertura)
 
         if not path_completo:
             return False
 
-        texto_completo = extract_text_from_file(path_completo, ext_encontrada)
-        if not texto_completo:
+        sug = apply_oc_pdf_suggestions(apertura, path_completo, ext_encontrada)
+        if not sug.get("aplicadas"):
             return False
 
-        texto_metadata = extract_text_from_file(path_completo, ext_encontrada, max_pages=2)
-
-        changed = False
-        nro_orden = extract_order_number(texto_metadata)
-        if nro_orden and apertura.numero_orden != nro_orden:
-            apertura.numero_orden = nro_orden
-            changed = True
-        
-        total_ext = extract_total_amount(texto_metadata)
-        if total_ext and abs(Decimal(str(total_ext)) - (apertura.total_orden or Decimal('0'))) > Decimal('0.01'):
-            apertura.total_orden = Decimal(str(total_ext))
-            changed = True
-
-        if apertura.id_registro_id:
-            matched_supplies, matched_services = match_apertura_items(texto_completo, apertura.id_registro_id)
-            new_doc = ",".join(matched_supplies) if matched_supplies else ""
-            new_ti1 = ",".join(matched_services) if matched_services else ""
-            
-            if apertura.doc != new_doc or apertura.ti1 != new_ti1 or changed:
-                apertura.doc = new_doc
-                apertura.ti1 = new_ti1
-                recalculate_apertura_costs(apertura)
-                changed = True
-
-        if changed:
-            apertura.save()
-            return True
+        recalculate_apertura_costs(apertura, preserve_total=True)
+        apertura.save()
+        return True
 
     except Exception as ex:
         logger.error(f"Error auto-syncing OC for apertura {apertura.id_apertura}: {ex}", exc_info=True)
@@ -2935,14 +3055,6 @@ def cleanup_duplicate_aperturas(id_registro):
                             primary.total_orden = dupe.total_orden
                         primary.save()
                         dupe.delete()
-
-        remaining = list(CotizacionApertura.objects.filter(id_registro=id_registro).order_by('id_apertura'))
-        if len(remaining) > 1:
-            has_real_filled = any(bool(a.orden_adjunta) or (a.total_orden and Decimal(str(a.total_orden)) > 0) or bool(a.numero_orden) for a in remaining)
-            if has_real_filled:
-                for a in remaining:
-                    if not a.orden_adjunta and not a.numero_orden and (not a.total_orden or a.total_orden == 0):
-                        a.delete()
     except Exception as e:
         logger.error(f"Error cleaning up duplicate aperturas for {id_registro}: {e}", exc_info=True)
 
@@ -3002,14 +3114,32 @@ def aperturas_por_registro(request, id_registro):
                 'id_registro__id_unidad_tiempo_validez'
             ).filter(id_registro=target_id_registro)
 
-        serializer = CotizacionAperturaSerializer(aperturas, many=True)
+        aperturas = aperturas.prefetch_related(
+            Prefetch(
+                'suministros_apertura',
+                queryset=CotizacionAperturaSuministro.objects.select_related('id_suministro')
+            ),
+            Prefetch(
+                'servicios_apertura',
+                queryset=CotizacionAperturaServicio.objects.select_related('id_servicio')
+            ),
+        )
+        ap_ids = [ap.id_apertura for ap in aperturas]
+        serializer = CotizacionAperturaSerializer(
+            aperturas,
+            many=True,
+            context={
+                "_orden_su_cache": fetch_orden_su_by_apertura(ap_ids),
+                "_orden_mo_cache": fetch_orden_mo_by_apertura(ap_ids),
+            },
+        )
         return Response(serializer.data)
     except Exception as e:
         import traceback
         return Response({"error": str(e), "traceback": traceback.format_exc()}, status=500)
 
 @api_view(['POST'])
-@parser_classes([MultiPartParser, FormParser])
+@parser_classes([MultiPartParser, FormParser, JSONParser])
 @permission_classes([IsAuthenticated])
 def crear_nueva_oc(request, id_registro):
     try:
@@ -3028,6 +3158,8 @@ def crear_nueva_oc(request, id_registro):
         if empty_ap:
             nueva_apertura = empty_ap
             nueva_apertura.estado_orden = 1
+            nueva_apertura.doc = None
+            nueva_apertura.ti1 = None
             nueva_apertura.save()
         else:
             aperturas_existentes = CotizacionApertura.objects.filter(id_registro=id_registro)
@@ -3042,15 +3174,17 @@ def crear_nueva_oc(request, id_registro):
                 estado_orden=1,
                 total_orden=0,
                 presupuesto=0,
+                doc=None,
+                ti1=None,
                 responsables=responsables or ""
             )
         
         archivo = request.FILES.get("archivo")
         if archivo:
-            from django.conf import settings
-            ruta_carpeta = os.path.join(settings.BASE_DIR, 'cotizaciones_api', 'ocfiles')
+            from .oc_files import oc_save_dir
+            ruta_carpeta = oc_save_dir()
             if not os.path.exists(ruta_carpeta):
-                os.makedirs(ruta_carpeta)
+                os.makedirs(ruta_carpeta, exist_ok=True)
 
             ext = os.path.splitext(archivo.name)[1].lower()
             if not ext:
@@ -3065,31 +3199,19 @@ def crear_nueva_oc(request, id_registro):
 
             url_descarga = f"/api/cotizaciones/ocfiles/ver/{nueva_apertura.id_apertura}/"
             nueva_apertura.orden_adjunta = url_descarga
-            nueva_apertura.fecha_orden = timezone.now()
-
-            try:
-                texto_completo = extract_text_from_file(path_destino, ext)
-                texto_metadata = extract_text_from_file(path_destino, ext, max_pages=2)
-                
-                if texto_metadata:
-                    nro_orden = extract_order_number(texto_metadata)
-                    if nro_orden:
-                        nueva_apertura.numero_orden = nro_orden
-                    total_ext = extract_total_amount(texto_metadata)
-                    if total_ext:
-                        nueva_apertura.total_orden = Decimal(str(total_ext))
-                    
-                if texto_completo and nueva_apertura.id_registro_id:
-                    matched_supplies, matched_services = match_apertura_items(texto_completo, nueva_apertura.id_registro_id)
-                    nueva_apertura.doc = ",".join(matched_supplies) if matched_supplies else ""
-                    nueva_apertura.ti1 = ",".join(matched_services) if matched_services else ""
-                    recalculate_apertura_costs(nueva_apertura)
-            except Exception as ocr_err:
-                logger.error(f"Error procesando OCR en crear_nueva_oc: {ocr_err}", exc_info=True)
-            
+            sugerencias = apply_oc_pdf_suggestions(nueva_apertura, path_destino, ext)
+            recalculate_apertura_costs(nueva_apertura, preserve_total=True)
+            nueva_apertura.save()
+        else:
+            sugerencias = {"sugeridas": {}, "aplicadas": [], "pendientes": []}
+            recalculate_apertura_costs(nueva_apertura, preserve_total=True)
             nueva_apertura.save()
 
         cleanup_duplicate_aperturas(id_registro)
+        try:
+            repartir_descuento_aperturas(id_registro)
+        except Exception:
+            pass
 
         aperturas_all = CotizacionApertura.objects.select_related(
             'orden_plazo_unidad',
@@ -3098,10 +3220,402 @@ def crear_nueva_oc(request, id_registro):
             'id_registro__id_estado'
         ).filter(id_registro=id_registro)
         serializer = CotizacionAperturaSerializer(aperturas_all, many=True)
-        return Response(serializer.data, status=201)
+        return Response({
+            "aperturas": serializer.data,
+            "id_apertura": nueva_apertura.id_apertura,
+            "sugerencias": sugerencias,
+        }, status=201)
     except Exception as e:
         import traceback
         return Response({"error": str(e), "traceback": traceback.format_exc()}, status=500)
+
+def recalcular_totales_apertura(apertura):
+    """
+    Recalcula los montos desglosados (equipos, materiales, hh, costo_servicios, otros),
+    presupuesto y utilidad desglosada para una CotizacionApertura basándose únicamente en sus
+    CotizacionAperturaSuministro y CotizacionAperturaServicio vinculados.
+    """
+    from decimal import Decimal
+    equipos = Decimal("0.00")
+    materiales = Decimal("0.00")
+    hh = Decimal("0.00")
+    costo_servicios = Decimal("0.00")
+    otros = Decimal("0.00")
+    total_venta = Decimal("0.00")
+
+    qid = apertura.id_registro_id
+    suministros_links = CotizacionAperturaSuministro.objects.filter(id_apertura=apertura).select_related('id_suministro', 'id_suministro__id_tipo_gasto')
+    has_item_rows = any(
+        link.id_suministro
+        and getattr(link.id_suministro, 'nivel', 0) > 0
+        and link.id_suministro.id_registro_id == qid
+        for link in suministros_links
+    )
+
+    for link in suministros_links:
+        sum_obj = link.id_suministro
+        if not sum_obj:
+            continue
+        if qid and sum_obj.id_registro_id != qid:
+            continue
+        if has_item_rows and getattr(sum_obj, 'nivel', 0) == 0:
+            continue
+
+        c_tot = Decimal(str(sum_obj.costo_total or "0.00"))
+        v_tot = Decimal(str(sum_obj.venta_total or "0.00"))
+        total_venta += v_tot
+
+        is_material = bool((sum_obj.codigo_grupo and "MT" in str(sum_obj.codigo_grupo)) or (sum_obj.id_tipo_gasto_id == 2))
+        if is_material:
+            materiales += c_tot
+        else:
+            equipos += c_tot
+
+    servicios_links = CotizacionAperturaServicio.objects.filter(id_apertura=apertura).select_related('id_servicio', 'id_servicio__id_tipo_gasto')
+    has_srv_items = any(
+        link.id_servicio
+        and getattr(link.id_servicio, 'nivel', 0) == 2
+        and link.id_servicio.id_registro_id == qid
+        for link in servicios_links
+    )
+    for link in servicios_links:
+        ser_obj = link.id_servicio
+        if not ser_obj:
+            continue
+        if qid and ser_obj.id_registro_id != qid:
+            continue
+        if has_srv_items and getattr(ser_obj, 'nivel', 0) != 2:
+            continue
+        c_tot = Decimal(str(ser_obj.costo_total or "0.00"))
+        v_tot = Decimal(str(ser_obj.cotizado_total or "0.00"))
+        total_venta += v_tot
+
+        tg_code = ""
+        if ser_obj.id_tipo_gasto:
+            tg_code = str(getattr(ser_obj.id_tipo_gasto, 'codigo', '') or '')
+        
+        if '04' in tg_code or ser_obj.id_tipo_gasto_id in [3, 4]:
+            hh += c_tot
+        elif '05' in tg_code or ser_obj.id_tipo_gasto_id in [4, 5]:
+            costo_servicios += c_tot
+        else:
+            otros += c_tot
+
+    apertura.orden_compra_equipos = equipos
+    apertura.orden_compra_materiales = materiales
+    apertura.orden_compra_hh = hh
+    apertura.orden_compra_costo_servicios = costo_servicios
+    apertura.orden_compra_otros = otros
+
+    apertura.total_orden = total_venta
+
+    costos_sum = equipos + materiales + hh + costo_servicios + otros + Decimal(str(apertura.orden_compra_entrega or "0.00"))
+    apertura.presupuesto = costos_sum
+    apertura.uti_des = apertura.total_orden - costos_sum
+    
+    update_fields = [
+        'orden_compra_equipos', 'orden_compra_materiales', 'orden_compra_hh',
+        'orden_compra_costo_servicios', 'orden_compra_otros', 'presupuesto', 'uti_des',
+        'total_orden'
+    ]
+
+    apertura.save(update_fields=update_fields)
+    return apertura
+
+def _servicios_del_mismo_grupo(id_registro, id_servicio):
+    """Recorre la jerarquía de servicios de la cotización (nivel 0 → 1 → 2) y
+    devuelve todos los registros del grupo que contiene `id_servicio`."""
+    todos = list(
+        CotizacionServicio.objects.filter(id_registro_id=id_registro).order_by("orden", "id_servicio")
+    )
+    if not todos:
+        return []
+    try:
+        target = int(id_servicio)
+    except (TypeError, ValueError):
+        return []
+
+    groups = []
+    bucket = []
+    for s in todos:
+        if s.nivel == 0:
+            if bucket:
+                groups.append(bucket)
+            bucket = [s]
+        elif bucket:
+            bucket.append(s)
+        else:
+            bucket = [s]
+    if bucket:
+        groups.append(bucket)
+
+    for group in groups:
+        if any(x.id_servicio == target for x in group):
+            return group
+    return [s for s in todos if s.id_servicio == target]
+
+
+def _legacy_db_alias():
+    return "legacy" if "legacy" in connections else "default"
+
+
+def _sync_orden_su_grupo(apertura, codigo_grupo, unlink=False):
+    """Mantiene db_vc.vc_mov_orden_su alineado al vincular/desvincular en 5.0."""
+    if not apertura or not apertura.id_apertura or codigo_grupo in (None, ""):
+        return
+    cog = str(codigo_grupo).strip()
+    num_reg = apertura.id_apertura
+    try:
+        with connections[_legacy_db_alias()].cursor() as cur:
+            if unlink:
+                cur.execute(
+                    "DELETE FROM db_vc.vc_mov_orden_su WHERE num_reg = %s AND cog = %s",
+                    [num_reg, cog],
+                )
+                return
+            cur.execute(
+                "SELECT 1 FROM db_vc.vc_mov_orden_su WHERE num_reg = %s AND cog = %s LIMIT 1",
+                [num_reg, cog],
+            )
+            if cur.fetchone():
+                return
+            rows = list(
+                CotizacionSuministro.objects.filter(
+                    id_registro=apertura.id_registro_id, codigo_grupo=codigo_grupo
+                ).order_by("orden", "id_suministro")
+            )
+            if not rows:
+                return
+            cur.execute(
+                "SELECT COALESCE(MAX(num), 0) FROM db_vc.vc_mov_orden_su WHERE num_reg = %s",
+                [num_reg],
+            )
+            n = cur.fetchone()[0] or 0
+            sql = """
+                INSERT INTO db_vc.vc_mov_orden_su (
+                    num_reg, cog, nog, nig, num, cod, des, pro, can, puc, toc,
+                    cau, tou, val, tot, mov, tpr, tde, tog
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s
+                )
+            """
+            for s in rows:
+                n += 1
+                id_gasto = s.id_tipo_gasto_id
+                mov = "01" if id_gasto == 1 else "02" if id_gasto == 2 else "01"
+                nog = (s.nombre_grupo or "")[:200] if s.nivel == 0 else ""
+                cur.execute(sql, [
+                    num_reg, cog[:5], nog, s.nivel, n,
+                    (s.codigo_item or "")[:60],
+                    (s.descripcion or "")[:5000],
+                    (s.proveedor or "")[:50],
+                    s.cantidad, s.costo_precio, s.costo_total,
+                    None, None, getattr(s, "precio_venta", None), s.venta_total,
+                    mov, "0", s.tiempo_entrega,
+                    "1" if s.nivel == 0 else "",
+                ])
+    except Exception as e:
+        logger.error("[SyncLegado] orden_su grupo %s OC %s: %s", cog, num_reg, e, exc_info=True)
+
+
+def _sync_orden_mo_grupo(apertura, id_servicio, unlink=False):
+    """Mantiene db_vc.vc_mov_orden_mo alineado al vincular/desvincular servicios en 5.0."""
+    if not apertura or not apertura.id_apertura or not id_servicio:
+        return
+    num_reg = apertura.id_apertura
+    try:
+        miembros = _servicios_del_mismo_grupo(apertura.id_registro_id, id_servicio)
+        if not miembros:
+            return
+        header = next((s for s in miembros if s.nivel == 0), miembros[0])
+        prefix = (header.codigo_servicio or "")[:2]
+        if not prefix:
+            return
+        mov_map = {1: "01", 2: "02", 3: "04", 4: "05", 5: "06"}
+        with connections[_legacy_db_alias()].cursor() as cur:
+            if unlink:
+                cur.execute(
+                    "DELETE FROM db_vc.vc_mov_orden_mo WHERE num_reg = %s AND LEFT(cog, 2) = %s",
+                    [num_reg, prefix],
+                )
+                return
+            cur.execute(
+                "SELECT 1 FROM db_vc.vc_mov_orden_mo WHERE num_reg = %s AND LEFT(cog, 2) = %s LIMIT 1",
+                [num_reg, prefix],
+            )
+            if cur.fetchone():
+                return
+            cur.execute(
+                "SELECT COALESCE(MAX(num), 0) FROM db_vc.vc_mov_orden_mo WHERE num_reg = %s",
+                [num_reg],
+            )
+            n = cur.fetchone()[0] or 0
+            sql = """
+                INSERT INTO db_vc.vc_mov_orden_mo (
+                    num_reg, cog, nog, nig, num, cod, des, pro, can, puc, toc,
+                    cau, tou, val, tot, mov, tpr, tde, tog
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s
+                )
+            """
+            for s in miembros:
+                n += 1
+                nog = (s.nombre_servicio or "")[:200] if s.nivel == 0 else ""
+                cur.execute(sql, [
+                    num_reg,
+                    (s.codigo_servicio or "")[:5],
+                    nog,
+                    s.nivel,
+                    n,
+                    (s.codigo_item or "")[:60],
+                    (s.descripcion_item or "")[:100],
+                    str(s.horas or "")[:50],
+                    s.cantidad_hombres,
+                    s.costo_hombre_dia,
+                    s.costo_total,
+                    s.porcentaje,
+                    s.utilidad,
+                    s.cotizado_hombre_dia,
+                    s.cotizado_total,
+                    mov_map.get(s.id_tipo_gasto_id),
+                    str(s.id_area_id or "")[:1],
+                    s.cantidad_dias,
+                    s.descripcion_servicio,
+                ])
+    except Exception as e:
+        logger.error("[SyncLegado] orden_mo servicio %s OC %s: %s", id_servicio, num_reg, e, exc_info=True)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def vincular_suministro_apertura(request, id_apertura):
+    try:
+        apertura = CotizacionApertura.objects.get(id_apertura=id_apertura)
+        codigo_grupo = request.data.get('codigo_grupo')
+        id_suministro = request.data.get('id_suministro')
+        
+        if codigo_grupo:
+            id_reg = apertura.id_registro_id
+            suministros = CotizacionSuministro.objects.filter(id_registro=id_reg, codigo_grupo=codigo_grupo)
+            for s in suministros:
+                CotizacionAperturaSuministro.objects.get_or_create(
+                    id_apertura=apertura,
+                    id_suministro=s
+                )
+            _sync_orden_su_grupo(apertura, codigo_grupo, unlink=False)
+        elif id_suministro:
+            suministro = CotizacionSuministro.objects.get(id_suministro=id_suministro)
+            CotizacionAperturaSuministro.objects.get_or_create(
+                id_apertura=apertura,
+                id_suministro=suministro
+            )
+            _sync_orden_su_grupo(apertura, suministro.codigo_grupo, unlink=False)
+        else:
+            return Response({"error": "codigo_grupo o id_suministro es requerido"}, status=400)
+
+        recalcular_totales_apertura(apertura)
+        serializer = CotizacionAperturaSerializer(apertura)
+        return Response({"mensaje": "Suministro vinculado exitosamente", "apertura": serializer.data}, status=200)
+    except CotizacionApertura.DoesNotExist:
+        return Response({"error": "Apertura no encontrada"}, status=404)
+    except CotizacionSuministro.DoesNotExist:
+        return Response({"error": "Suministro no encontrado"}, status=404)
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def desvincular_suministro_apertura(request, id_apertura):
+    try:
+        apertura = CotizacionApertura.objects.get(id_apertura=id_apertura)
+        codigo_grupo = request.data.get('codigo_grupo')
+        id_suministro = request.data.get('id_suministro')
+        
+        if codigo_grupo:
+            id_reg = apertura.id_registro_id
+            sum_ids = CotizacionSuministro.objects.filter(id_registro=id_reg, codigo_grupo=codigo_grupo).values_list('id_suministro', flat=True)
+            CotizacionAperturaSuministro.objects.filter(
+                id_apertura=apertura,
+                id_suministro_id__in=sum_ids
+            ).delete()
+            _sync_orden_su_grupo(apertura, codigo_grupo, unlink=True)
+        elif id_suministro:
+            CotizacionAperturaSuministro.objects.filter(
+                id_apertura=apertura,
+                id_suministro_id=id_suministro
+            ).delete()
+        else:
+            return Response({"error": "codigo_grupo o id_suministro es requerido"}, status=400)
+
+        recalcular_totales_apertura(apertura)
+        serializer = CotizacionAperturaSerializer(apertura)
+        return Response({"mensaje": "Suministro desvinculado exitosamente", "apertura": serializer.data}, status=200)
+    except CotizacionApertura.DoesNotExist:
+        return Response({"error": "Apertura no encontrada"}, status=404)
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def vincular_servicio_apertura(request, id_apertura):
+    try:
+        apertura = CotizacionApertura.objects.get(id_apertura=id_apertura)
+        id_servicio = request.data.get('id_servicio')
+        if not id_servicio:
+            return Response({"error": "id_servicio es requerido"}, status=400)
+        
+        servicio = CotizacionServicio.objects.get(id_servicio=id_servicio)
+        if servicio.nivel == 0:
+            miembros = _servicios_del_mismo_grupo(apertura.id_registro_id, id_servicio)
+        else:
+            miembros = [servicio]
+        for s in miembros:
+            CotizacionAperturaServicio.objects.get_or_create(
+                id_apertura=apertura,
+                id_servicio=s
+            )
+        _sync_orden_mo_grupo(apertura, id_servicio, unlink=False)
+        recalcular_totales_apertura(apertura)
+        serializer = CotizacionAperturaSerializer(apertura)
+        return Response({"mensaje": "Servicio vinculado exitosamente", "apertura": serializer.data}, status=200)
+    except CotizacionApertura.DoesNotExist:
+        return Response({"error": "Apertura no encontrada"}, status=404)
+    except CotizacionServicio.DoesNotExist:
+        return Response({"error": "Servicio no encontrado"}, status=404)
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def desvincular_servicio_apertura(request, id_apertura):
+    try:
+        apertura = CotizacionApertura.objects.get(id_apertura=id_apertura)
+        id_servicio = request.data.get('id_servicio')
+        if not id_servicio:
+            return Response({"error": "id_servicio es requerido"}, status=400)
+        
+        servicio = CotizacionServicio.objects.filter(id_servicio=id_servicio).first()
+        if servicio and servicio.nivel == 0:
+            ids = [s.id_servicio for s in _servicios_del_mismo_grupo(apertura.id_registro_id, id_servicio)]
+            CotizacionAperturaServicio.objects.filter(
+                id_apertura=apertura,
+                id_servicio_id__in=ids
+            ).delete()
+            _sync_orden_mo_grupo(apertura, id_servicio, unlink=True)
+        else:
+            CotizacionAperturaServicio.objects.filter(
+                id_apertura=apertura,
+                id_servicio_id=id_servicio
+            ).delete()
+        recalcular_totales_apertura(apertura)
+        serializer = CotizacionAperturaSerializer(apertura)
+        return Response({"mensaje": "Servicio desvinculado exitosamente", "apertura": serializer.data}, status=200)
+    except CotizacionApertura.DoesNotExist:
+        return Response({"error": "Apertura no encontrada"}, status=404)
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
 
 # Helper functions for automatic OC extraction & matching
 def extract_text_from_file(file_path, file_extension, max_pages=None):
@@ -3305,6 +3819,91 @@ def extract_total_amount(text):
                 return val
     return None
 
+def extract_order_date(text):
+    """Intenta leer una fecha de emisión (dd/mm/yyyy) en las primeras páginas."""
+    if not text:
+        return None
+    import datetime
+    patterns = [
+        r'(?:FECHA(?:\s+DE)?\s+(?:EMISI[OÓ]N|ORDEN|PEDIDO)|DATE)[^\d]{0,24}(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4})',
+        r'\b(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{4})\b',
+    ]
+    for pat in patterns:
+        match = re.search(pat, text, re.IGNORECASE)
+        if not match:
+            continue
+        raw = match.group(1).replace('-', '/').replace('.', '/')
+        parts = raw.split('/')
+        if len(parts) != 3:
+            continue
+        d, mo, y = parts
+        if len(y) == 2:
+            y = '20' + y
+        try:
+            return datetime.datetime(int(y), int(mo), int(d))
+        except ValueError:
+            try:
+                return datetime.datetime(int(y), int(d), int(mo))
+            except ValueError:
+                continue
+    return None
+
+def apply_oc_pdf_suggestions(apertura, file_path, ext):
+    """
+    Extrae número, total y fecha del PDF.
+    Completa solo campos vacíos. Nunca cambia doc/ti1 (partidas).
+    """
+    sugeridas = {}
+    aplicadas = []
+    pendientes = []
+    try:
+        texto = extract_text_from_file(file_path, ext, max_pages=2)
+    except Exception as exc:
+        logger.error(f"Error leyendo PDF de OC {apertura.id_apertura}: {exc}", exc_info=True)
+        return {"sugeridas": sugeridas, "aplicadas": aplicadas, "pendientes": pendientes}
+
+    nro = extract_order_number(texto) if texto else None
+    total_ext = extract_total_amount(texto) if texto else None
+    fecha_ext = extract_order_date(texto) if texto else None
+
+    if nro:
+        sugeridas["numero_orden"] = nro
+        actual = (apertura.numero_orden or "").strip()
+        if not actual:
+            apertura.numero_orden = nro
+            aplicadas.append("numero_orden")
+        elif actual != str(nro).strip():
+            pendientes.append("numero_orden")
+
+    if total_ext:
+        sugeridas["total_orden"] = float(total_ext)
+        try:
+            actual_total = Decimal(str(apertura.total_orden or 0))
+        except Exception:
+            actual_total = Decimal("0")
+        if actual_total == 0:
+            apertura.total_orden = Decimal(str(total_ext))
+            aplicadas.append("total_orden")
+        elif abs(actual_total - Decimal(str(total_ext))) > Decimal("0.01"):
+            pendientes.append("total_orden")
+
+    if fecha_ext:
+        sugeridas["fecha_orden"] = fecha_ext.strftime("%Y-%m-%d")
+        if not apertura.fecha_orden:
+            apertura.fecha_orden = fecha_ext
+            aplicadas.append("fecha_orden")
+        else:
+            try:
+                actual_d = apertura.fecha_orden.date() if hasattr(apertura.fecha_orden, "date") else apertura.fecha_orden
+                if str(actual_d) != fecha_ext.strftime("%Y-%m-%d"):
+                    pendientes.append("fecha_orden")
+            except Exception:
+                pendientes.append("fecha_orden")
+    elif not apertura.fecha_orden:
+        apertura.fecha_orden = timezone.now()
+
+    return {"sugeridas": sugeridas, "aplicadas": aplicadas, "pendientes": pendientes}
+
 def remove_accents(input_str):
     import unicodedata
     if not input_str:
@@ -3489,7 +4088,7 @@ def match_apertura_items(text, id_registro):
     return list(matched_supply_groups), list(matched_service_ids)
 
 
-def recalculate_apertura_costs(apertura):
+def recalculate_apertura_costs(apertura, preserve_total=True):
     supplies = CotizacionSuministro.objects.filter(id_registro=apertura.id_registro)
     services = CotizacionServicio.objects.filter(id_registro=apertura.id_registro)
 
@@ -3606,17 +4205,18 @@ def recalculate_apertura_costs(apertura):
                         otros_cost += item_cost
                         otros_sale += item_sale
 
-    total_orden = equipos_sale + materiales_sale + hh_sale + servicios_sale + otros_sale
+    venta_items = equipos_sale + materiales_sale + hh_sale + servicios_sale + otros_sale
     costs_sum = equipos_cost + materiales_cost + hh_cost + Decimal(str(apertura.orden_compra_entrega or 0)) + servicios_cost + otros_cost
-    uti_des = total_orden - costs_sum
 
     apertura.orden_compra_equipos = equipos_cost.quantize(Decimal('0.01'))
     apertura.orden_compra_materiales = materiales_cost.quantize(Decimal('0.01'))
     apertura.orden_compra_hh = hh_cost.quantize(Decimal('0.01'))
     apertura.orden_compra_costo_servicios = servicios_cost.quantize(Decimal('0.01'))
     apertura.orden_compra_otros = otros_cost.quantize(Decimal('0.01'))
-    apertura.total_orden = total_orden.quantize(Decimal('0.01'))
-    apertura.uti_des = uti_des.quantize(Decimal('0.01'))
+    if not preserve_total:
+        apertura.total_orden = venta_items.quantize(Decimal('0.01'))
+    base_total = Decimal(str(apertura.total_orden or 0)) if preserve_total else venta_items
+    apertura.uti_des = (base_total - costs_sum).quantize(Decimal('0.01'))
 
     # ── Recalcular Plazo de Entrega (Tiempo de Entrega) en base a los ítems activos ──
     cotizacion = apertura.id_registro
@@ -3684,12 +4284,12 @@ def subir_oc_apertura(request, id_apertura):
         return Response({"error": "No se recibió ningún archivo"}, status=400)
 
     try:
-        from django.conf import settings
+        from .oc_files import oc_save_dir
         
-        # Siempre lo guardamos en 'ocfiles' con el id_apertura de la base de datos
-        ruta_carpeta = os.path.join(settings.BASE_DIR, 'cotizaciones_api', 'ocfiles')
+        # Guardamos en la carpeta configurada (sigecom/ocfiles por defecto)
+        ruta_carpeta = oc_save_dir()
         if not os.path.exists(ruta_carpeta):
-            os.makedirs(ruta_carpeta)
+            os.makedirs(ruta_carpeta, exist_ok=True)
 
         ext = os.path.splitext(archivo.name)[1].lower()
         if not ext:
@@ -3706,46 +4306,26 @@ def subir_oc_apertura(request, id_apertura):
         url_descarga = f"/api/cotizaciones/ocfiles/ver/{id_apertura}/"
         
         apertura.orden_adjunta = url_descarga
-        apertura.fecha_orden = timezone.now()
-
-        # --- AUTOMATIZACION DE LECTURA Y VINCULACION ---
-        try:
-            texto_completo = extract_text_from_file(path_destino, ext)
-            texto_metadata = extract_text_from_file(path_destino, ext, max_pages=2)
-            
-            if texto_metadata:
-                # 1. Extraer número de orden
-                nro_orden = extract_order_number(texto_metadata)
-                if nro_orden:
-                    apertura.numero_orden = nro_orden
-                
-                # 2. Extraer total
-                total_ext = extract_total_amount(texto_metadata)
-                if total_ext:
-                    apertura.total_orden = Decimal(str(total_ext))
-                
-            if texto_completo and apertura.id_registro_id:
-                # 3. Extraer e identificar ítems
-                matched_supplies, matched_services = match_apertura_items(texto_completo, apertura.id_registro_id)
-                apertura.doc = ",".join(matched_supplies) if matched_supplies else ""
-                apertura.ti1 = ",".join(matched_services) if matched_services else ""
-                
-                # 4. Recalcular costos
-                recalculate_apertura_costs(apertura)
-        except Exception as ocr_err:
-            logger.error(f"Error procesando OCR/Lectura de OC automatizada: {ocr_err}", exc_info=True)
-        
+        sugerencias = apply_oc_pdf_suggestions(apertura, path_destino, ext)
+        recalculate_apertura_costs(apertura, preserve_total=True)
         apertura.save()
 
         # Serializamos y devolvemos la apertura actualizada
         serializer = CotizacionAperturaSerializer(apertura)
+
+        aplicadas = sugerencias.get("aplicadas") or []
+        if aplicadas:
+            msg = "PDF adjuntado. Se completaron campos vacíos desde el documento."
+        else:
+            msg = "PDF de la Orden de Compra adjuntado correctamente."
 
         return Response({
             "ok": True,
             "orden_adjunta": url_descarga,
             "tiene_archivo_fisico": True,
             "extension_archivo_fisico": ext,
-            "message": f"Orden de compra procesada y vinculada correctamente.",
+            "message": msg,
+            "sugerencias": sugerencias,
             "apertura": serializer.data
         })
     except Exception as e:
@@ -3760,50 +4340,21 @@ def reprocesar_oc_apertura(request, id_apertura):
         return Response({"error": "Apertura no encontrada"}, status=404)
 
     try:
-        from django.conf import settings
-        ruta_carpeta = os.path.join(settings.BASE_DIR, 'cotizaciones_api', 'ocfiles')
-        
-        extensiones = ['.pdf', '.xlsx', '.xls', '.docx', '.doc']
-        path_completo = None
-        ext_encontrada = None
-        id_apertura_str = str(int(id_apertura)).strip()
-        
-        for ext in extensiones:
-            path_test = os.path.join(ruta_carpeta, f"{id_apertura_str}{ext}")
-            if os.path.exists(path_test):
-                path_completo = path_test
-                ext_encontrada = ext
-                break
+        from .oc_files import resolve_oc_file
+        path_completo, ext_encontrada = resolve_oc_file(id_apertura)
 
         if not path_completo:
             return Response({"error": "No se encontró ningún archivo físico de Orden de Compra guardado para este registro."}, status=404)
 
-        apertura.fecha_orden = timezone.now()
-        texto_completo = extract_text_from_file(path_completo, ext_encontrada)
-        texto_metadata = extract_text_from_file(path_completo, ext_encontrada, max_pages=2)
-        
-        if texto_completo:
-            nro_orden = extract_order_number(texto_metadata)
-            if nro_orden:
-                apertura.numero_orden = nro_orden
-            
-            total_ext = extract_total_amount(texto_metadata)
-            if total_ext:
-                apertura.total_orden = Decimal(str(total_ext))
-
-            if apertura.id_registro_id:
-                matched_supplies, matched_services = match_apertura_items(texto_completo, apertura.id_registro_id)
-                apertura.doc = ",".join(matched_supplies) if matched_supplies else ""
-                apertura.ti1 = ",".join(matched_services) if matched_services else ""
-                
-                recalculate_apertura_costs(apertura)
-
+        sugerencias = apply_oc_pdf_suggestions(apertura, path_completo, ext_encontrada)
+        recalculate_apertura_costs(apertura, preserve_total=True)
         apertura.save()
         serializer = CotizacionAperturaSerializer(apertura)
 
         return Response({
             "ok": True,
-            "message": "Orden de Compra re-procesada y vinculada correctamente.",
+            "message": "Se actualizaron sugerencias del PDF en los campos vacíos. Las partidas no se modificaron.",
+            "sugerencias": sugerencias,
             "apertura": serializer.data
         })
     except Exception as e:
@@ -3814,28 +4365,13 @@ def reprocesar_oc_apertura(request, id_apertura):
 @permission_classes([AllowAny])
 @xframe_options_exempt
 def ver_oc_pdf(request, id_apertura):
-    import os
     from django.http import FileResponse
-    from django.conf import settings
+    from .oc_files import resolve_oc_file
     
-    # Sanitizar y convertir id_apertura a string
-    id_apertura_str = str(int(id_apertura)).strip()
-    
-    ruta_carpeta = os.path.join(settings.BASE_DIR, 'cotizaciones_api', 'ocfiles')
-    
-    # Extensiones a buscar
-    extensiones = ['.pdf', '.xlsx', '.xls', '.docx', '.doc']
-    path_completo = None
-    ext_encontrada = None
-    
-    for ext in extensiones:
-        path_test = os.path.join(ruta_carpeta, f"{id_apertura_str}{ext}")
-        if os.path.exists(path_test):
-            path_completo = path_test
-            ext_encontrada = ext
-            break
+    path_completo, ext_encontrada = resolve_oc_file(id_apertura)
+    id_apertura_str = str(int(id_apertura)).strip() if str(id_apertura).isdigit() else str(id_apertura).strip()
             
-    if not path_completo:
+    if not path_completo or not os.path.isfile(path_completo):
         return Response({"error": f"No se encontró archivo de orden para id_apertura '{id_apertura_str}' en ocfiles"}, status=404)
         
     try:
@@ -3896,6 +4432,8 @@ def guardar_cotizacion(request):
                 anno=hoy.year,
                 mes=hoy.month,
                 fecha=fecha_val,
+                id_estado_id=11,  # Oportunidad
+                estado_oportunidad=1,  # Pendiente
                 estado_envio=1,
                 saldo=Decimal("0.00"),
                 total_cotizacion=Decimal("0.00"),
@@ -3949,17 +4487,24 @@ def guardar_cotizacion(request):
         data["id_tipo"] = tipo_obj.pk if tipo_obj else None
         
         # 4. Resolve id_estado (FK)
-        est_val = data.get("id_estado") or data.get("estado_codigo") or "11"
-        est_obj = None
-        if est_val and str(est_val).strip() not in ["", "null", "undefined"]:
-            try:
-                if str(est_val).isdigit():
-                    est_obj = Estado.objects.filter(pk=int(est_val)).first()
-                else:
-                    est_obj = Estado.objects.filter(nombre__iexact=est_val).first()
-            except (ValueError, TypeError):
-                pass
-        data["id_estado"] = est_obj.pk if est_obj else None
+        # Alta inicial: siempre Oportunidad (11). Nunca Adjudicado (1).
+        # El frontend a veces manda estado_op=1 (Pendiente de oportunidad) y eso
+        # no debe confundirse con id_estado=1 (Adjudicado de cotización).
+        if es_creacion:
+            est_obj = Estado.objects.filter(pk=11).first() or Estado.objects.filter(nombre__iexact="Oportunidad").first()
+            data["id_estado"] = est_obj.pk if est_obj else 11
+        else:
+            est_val = data.get("id_estado") or data.get("estado_codigo") or data.get("estad") or "11"
+            est_obj = None
+            if est_val and str(est_val).strip() not in ["", "null", "undefined"]:
+                try:
+                    if str(est_val).isdigit():
+                        est_obj = Estado.objects.filter(pk=int(est_val)).first()
+                    else:
+                        est_obj = Estado.objects.filter(nombre__iexact=est_val).first()
+                except (ValueError, TypeError):
+                    pass
+            data["id_estado"] = est_obj.pk if est_obj else None
 
         cotit = data.get("cotit")
         if cotit == "V":
@@ -4053,11 +4598,12 @@ def guardar_cotizacion(request):
         data["emision_cotizacion"] = data.get("f_emi") if data.get("f_emi") else None
         data["visita_tecnica"] = data.get("f_visita") if data.get("f_visita") else None
 
-        estado_op = data.get("estado_op")
-        if estado_op is not None and str(estado_op).strip() != "":
-            data["estado_oportunidad"] = int(estado_op)
-        elif es_creacion:
-            data["estado_oportunidad"] = 1
+        if es_creacion:
+            data["estado_oportunidad"] = 1  # Pendiente (pipeline de oportunidad)
+        else:
+            estado_op = data.get("estado_op")
+            if estado_op is not None and str(estado_op).strip() != "":
+                data["estado_oportunidad"] = int(estado_op)
 
         if data.get("coment"):
             data["comentario"] = data.get("coment")
@@ -4127,6 +4673,10 @@ def guardar_cotizacion(request):
             cotizacion.año_apertura = hoy.year
             
         cotizacion.igv = cotizacion.igv or "N"
+
+        if es_creacion:
+            cotizacion.id_estado_id = 11
+            cotizacion.estado_oportunidad = 1
 
         if not cotizacion.codigo:
             cotizacion.codigo = calcular_codigo_dinamico(cotizacion)
@@ -4907,6 +5457,85 @@ def enviar_cotizacion_aprobacion(request, id_registro):
 
 
 
+def _money2(value):
+    try:
+        return Decimal(str(value if value is not None else 0)).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+    except (InvalidOperation, TypeError, ValueError):
+        return Decimal("0.00")
+
+
+def _split_descuento_shares(n, monto):
+    """1 OC → full amount; 2+ → equal split in cents, remainder on the last OC."""
+    total = _money2(monto)
+    if n <= 0:
+        return []
+    if total <= 0:
+        return [Decimal("0.00")] * n
+    if n == 1:
+        return [total]
+    cents = int((total * 100).to_integral_value(rounding=ROUND_HALF_UP))
+    base, rem = divmod(cents, n)
+    shares = []
+    for i in range(n):
+        extra = rem if i == n - 1 else 0
+        shares.append((Decimal(base + extra) / Decimal(100)).quantize(Decimal("0.01")))
+    return shares
+
+
+def repartir_descuento_aperturas(id_registro):
+    """
+    Persist the quote-level discount onto related OCs without copying the full
+    amount onto every row. The presupuesto UI always subtracts
+    Cotizacion.descuento_monto once; these per-OC fields are only a split snapshot.
+    """
+    if not id_registro:
+        return
+    cot = Cotizacion.objects.filter(id_registro=id_registro).first()
+    if not cot:
+        return
+    aperturas = list(
+        CotizacionApertura.objects.filter(id_registro=id_registro).order_by("id_apertura")
+    )
+    n = len(aperturas)
+    if n == 0:
+        return
+
+    aplica = int(cot.descuento_aplica or 0) == 1
+    monto = _money2(cot.descuento_monto) if aplica else Decimal("0.00")
+    des_t = (str(cot.descuento_afecto or "T")[:1] or "T").upper()
+    if des_t not in ("T", "M", "S"):
+        des_t = "T"
+
+    if aplica and monto > 0:
+        des_a = "1"
+        des_p = _money2(cot.descuento_porcentaje)
+        shares = _split_descuento_shares(n, monto)
+    else:
+        des_a = "0"
+        des_p = Decimal("0.00")
+        shares = [Decimal("0.00")] * n
+
+    for ap, share in zip(aperturas, shares):
+        current_m = _money2(ap.des_m)
+        current_p = _money2(ap.des_p)
+        current_a = str(ap.des_a or "0")[:1]
+        current_t = str(ap.des_t or "")[:1].upper()
+        if (
+            current_a == des_a
+            and current_t == des_t
+            and current_m == share
+            and current_p == des_p
+        ):
+            continue
+        ap.des_a = des_a
+        ap.des_t = des_t
+        ap.des_m = share
+        ap.des_p = des_p
+        ap.save(update_fields=["des_a", "des_t", "des_m", "des_p"])
+
+
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def descuento_cotizacion(request, num_reg):
@@ -5026,6 +5655,11 @@ def descuento_cotizacion(request, num_reg):
         "descuento_porcentaje",
         "descuento_monto",
     ])
+
+    try:
+        repartir_descuento_aperturas(cot.id_registro)
+    except Exception as e:
+        print(f"Error repartiendo descuento en aperturas: {str(e)}")
 
     try:
         u_obj = request.user if (request.user and request.user.is_authenticated) else None
@@ -5293,7 +5927,7 @@ def build_cotizacion_pdf_context(num_reg):
                 "cantidad": can,
                 "total": tot,
                 "total_servicio": tot * can,
-                "detalle": s.descripcion_servicio or "",
+                "detalle": quill_html_for_report(s.descripcion_servicio or ""),
                 "subtotal_pu_items": Decimal("0.00"),
                 "subtotal_tot_items": Decimal("0.00"),
                 "items": [],
@@ -5400,6 +6034,7 @@ def build_cotizacion_pdf_context(num_reg):
         condiciones = condicion_obj.descripcion
     elif cotizacion.condiciones_generales:
         condiciones = cotizacion.condiciones_generales
+    condiciones = quill_html_for_report(condiciones)
 
     return {
         "cabecera": cabecera,
@@ -5443,6 +6078,8 @@ def cotizacion_pdf_preview(request, num_reg):
     if 'X-Frame-Options' in response:
         del response['X-Frame-Options']
     response['X-Frame-Options'] = 'ALLOWALL'
+    response['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response['Pragma'] = 'no-cache'
     return response
 
 @csrf_exempt
@@ -5457,6 +6094,8 @@ def cotizacion_reporte_html(request, num_reg):
     if 'X-Frame-Options' in response:
         del response['X-Frame-Options']
     response['X-Frame-Options'] = 'ALLOWALL'
+    response['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response['Pragma'] = 'no-cache'
     return response
 
 from html.parser import HTMLParser
@@ -5467,93 +6106,112 @@ class HTMLToRichTextParser(HTMLParser):
         self.rt = rt_obj
         self.default_color = default_color
         self.default_size = default_size
-        
+
         self.bold_stack = 0
         self.italic_stack = 0
         self.underline_stack = 0
-        self.indent_level = 0
-        self.in_list = False
-        self.current_style_indent = 0
-        self.line_prefix_needed = False
+        self.list_stack = []
+        self.just_broke = True
+
+    def _ql_indent(self, attrs_dict):
+        cls = attrs_dict.get("class", "") or ""
+        if "ql-indent-" not in cls:
+            return 0
+        match = re.search(r"ql-indent-(\d+)", cls)
+        return int(match.group(1)) if match else 0
+
+    def _break(self):
+        self.rt.xml += "<w:r><w:br/></w:r>"
+        self.just_broke = True
+
+    def _add(self, text, **kwargs):
+        if text is None or text == "":
+            return
+        kwargs.setdefault("color", self.default_color)
+        kwargs.setdefault("size", self.default_size)
+        self.rt.add(text, **kwargs)
+        self.just_broke = False
 
     def handle_starttag(self, tag, attrs):
         attrs_dict = dict(attrs)
-        
-        if tag in ('strong', 'b'):
+
+        if tag in ("strong", "b"):
             self.bold_stack += 1
-        elif tag in ('em', 'i'):
+        elif tag in ("em", "i"):
             self.italic_stack += 1
-        elif tag in ('u',):
+        elif tag in ("u",):
             self.underline_stack += 1
-        elif tag in ('ul', 'ol'):
-            self.indent_level += 1
-            self.in_list = True
-        elif tag == 'li':
-            # Check for Quill indent classes
-            cls = attrs_dict.get('class', '')
-            li_indent = 0
-            if 'ql-indent-' in cls:
-                match = re.search(r'ql-indent-(\d+)', cls)
-                if match:
-                    li_indent = int(match.group(1))
-            
-            # Print indent prefix
-            level = self.indent_level + li_indent
-            prefix = ""
-            if level > 1:
-                prefix = "    " * (level - 1)
-            prefix += " • "
-            self.rt.add(prefix, color=self.default_color, size=self.default_size)
-            self.line_prefix_needed = False
-        elif tag == 'p':
-            cls = attrs_dict.get('class', '')
-            p_indent = 0
-            if 'ql-indent-' in cls:
-                match = re.search(r'ql-indent-(\d+)', cls)
-                if match:
-                    p_indent = int(match.group(1))
-            
-            style = attrs_dict.get('style', '')
-            if 'padding-left' in style or 'margin-left' in style:
-                match = re.search(r'(?:padding|margin)-left:\s*(\d+)', style)
+        elif tag in ("ul", "ol"):
+            if self.list_stack and not self.just_broke:
+                self._break()
+            self.list_stack.append({"tag": tag, "counters": [0] * 12})
+        elif tag == "li":
+            indent = self._ql_indent(attrs_dict)
+            depth = max(0, len(self.list_stack) - 1) + indent
+            if not self.just_broke:
+                self._break()
+            if self.list_stack:
+                ctx = self.list_stack[-1]
+                while len(ctx["counters"]) <= depth:
+                    ctx["counters"].append(0)
+                ctx["counters"][depth] += 1
+                for i in range(depth + 1, len(ctx["counters"])):
+                    ctx["counters"][i] = 0
+                index = ctx["counters"][depth]
+                marker = list_marker(ctx["tag"], depth, index).replace(" ", "\u00A0")
+            else:
+                marker = "•\u00A0"
+            prefix = ("\u00A0" * 4 * depth) + marker
+            self._add(
+                prefix,
+                bold=self.bold_stack > 0,
+                italic=self.italic_stack > 0,
+                underline=self.underline_stack > 0,
+            )
+        elif tag == "p":
+            if not self.just_broke:
+                self._break()
+            p_indent = self._ql_indent(attrs_dict)
+            style = attrs_dict.get("style", "")
+            if "padding-left" in style or "margin-left" in style:
+                match = re.search(r"(?:padding|margin)-left:\s*(\d+)", style)
                 if match:
                     p_indent += max(1, int(match.group(1)) // 30)
-            
             if p_indent > 0:
-                prefix = "    " * p_indent
-                self.rt.add(prefix, color=self.default_color, size=self.default_size)
-            self.line_prefix_needed = False
-        elif tag == 'br':
-            self.rt.add('\n')
+                self._add("\u00A0" * 4 * p_indent)
+        elif tag == "br":
+            self._break()
 
     def handle_endtag(self, tag):
-        if tag in ('strong', 'b'):
+        if tag in ("strong", "b"):
             self.bold_stack = max(0, self.bold_stack - 1)
-        elif tag in ('em', 'i'):
+        elif tag in ("em", "i"):
             self.italic_stack = max(0, self.italic_stack - 1)
-        elif tag in ('u',):
+        elif tag in ("u",):
             self.underline_stack = max(0, self.underline_stack - 1)
-        elif tag in ('ul', 'ol'):
-            self.indent_level = max(0, self.indent_level - 1)
-            if self.indent_level == 0:
-                self.in_list = False
-        elif tag == 'li':
-            self.rt.add('\n')
-        elif tag == 'p':
-            self.rt.add('\n')
+        elif tag in ("ul", "ol"):
+            if self.list_stack:
+                self.list_stack.pop()
+            if not self.just_broke:
+                self._break()
+        elif tag in ("li", "p"):
+            if not self.just_broke:
+                self._break()
 
     def handle_data(self, data):
-        clean_text = data.replace('\r', '').replace('\n', ' ')
+        clean_text = data.replace("\r", "").replace("\n", " ")
         if not clean_text:
             return
-            
-        self.rt.add(
+        if clean_text.strip() == "\xa0":
+            if not self.just_broke:
+                self._break()
+            return
+
+        self._add(
             clean_text,
             bold=self.bold_stack > 0,
             italic=self.italic_stack > 0,
             underline=self.underline_stack > 0,
-            color=self.default_color,
-            size=self.default_size
         )
 
 def descargar_cotizacion_word(request, num_reg):
@@ -5704,6 +6362,8 @@ def descargar_cotizacion_word(request, num_reg):
         
         # Renderizado único del documento
         doc.render(context)
+        apply_section_keep_together(doc.docx)
+        apply_rich_text_line_spacing(doc.docx)
 
         # Preparación de la respuesta de descarga
         buffer = io.BytesIO()
@@ -5829,7 +6489,7 @@ def crear_nueva_version_cotizacion(request, id_registro):
     try:
         with transaction.atomic():
             fase_actual = "BUSQUEDA_COTIZACION_BASE"
-            print(f"🔹 [{fase_actual}] Buscando cotización base ID: {id_registro}")
+            logger.info("[%s] Buscando cotizacion base ID: %s", fase_actual, id_registro)
             base = Cotizacion.objects.filter(id_registro=id_registro).first()
             if not base:
                 return Response({
@@ -5844,11 +6504,11 @@ def crear_nueva_version_cotizacion(request, id_registro):
                 }, status=status.HTTP_400_BAD_REQUEST)
 
             fase_actual = "GENERACION_CORRELATIVO"
-            print(f"🔹 [{fase_actual}] Generando versión correlativa para: {base.codigo}")
+            logger.info("[%s] Generando version correlativa para: %s", fase_actual, base.codigo)
             nuevo_codigo_version = siguiente_version(base.codigo)
 
             fase_actual = "LECTURA_TOKEN"
-            print("🔹 Extrayendo usuario desde el Token JWT")
+            logger.info("Extrayendo usuario desde el Token JWT")
             jwt_auth = JWTAuthentication()
             header = jwt_auth.get_header(request)
             raw_token = jwt_auth.get_raw_token(header)
@@ -5856,7 +6516,7 @@ def crear_nueva_version_cotizacion(request, id_registro):
             usuario_codigo = validated_token.get("user_id")
 
             fase_actual = "INSERTAR_CABECERA_COTIZACION"
-            print(f"🔹 [{fase_actual}] Clonando cabecera principal")
+            logger.info("[%s] Clonando cabecera principal", fase_actual)
             
             # Para la cabecera limpiamos la PK explícitamente usando diccionarios limpios
             datos_cabecera = {k: v for k, v in base.__dict__.items() if not k.startswith('_')}
@@ -5888,7 +6548,7 @@ def crear_nueva_version_cotizacion(request, id_registro):
             # 🔹 1. REPLICAR SUMINISTROS
             # =====================================================
             fase_actual = "INSERTAR_SUMINISTROS"
-            print(f"🔹 [{fase_actual}] Procesando ítems...")
+            logger.info("[%s] Procesando items...", fase_actual)
             suministros_origen = CotizacionSuministro.objects.filter(id_registro=base.id_registro)
             nuevos_suministros = []
 
@@ -5910,7 +6570,7 @@ def crear_nueva_version_cotizacion(request, id_registro):
             # 🔹 2. REPLICAR SERVICIOS
             # =====================================================
             fase_actual = "INSERTAR_SERVICIOS"
-            print(f"🔹 [{fase_actual}] Procesando mano de obra/servicios...")
+            logger.info("[%s] Procesando mano de obra/servicios...", fase_actual)
             servicios_origen = CotizacionServicio.objects.filter(id_registro=base.id_registro)
             nuevos_servicios = []
 
@@ -5931,7 +6591,7 @@ def crear_nueva_version_cotizacion(request, id_registro):
             # 🔹 3. REPLICAR ADJUNTOS (Corregido con el campo id_adjuntos)
             # =====================================================
             fase_actual = "INSERTAR_ADJUNTOS"
-            print(f"🔹 [{fase_actual}] Copiando referencias de archivos...")
+            logger.info("[%s] Copiando referencias de archivos...", fase_actual)
             adjuntos_origen = CotizacionAdjunto.objects.filter(id_registro=base.id_registro)
             nuevos_adjuntos = []
 
@@ -5954,7 +6614,7 @@ def crear_nueva_version_cotizacion(request, id_registro):
             # 🔹 4. REPLICAR MENSAJES
             # =====================================================
             fase_actual = "INSERTAR_MENSAJES"
-            print(f"🔹 [{fase_actual}] Duplicando historial de bitácora...")
+            logger.info("[%s] Duplicando historial de bitacora...", fase_actual)
             # Mensajes: usar el campo 'fecha' en vez de 'dat'
             mensajes_origen = CotizacionMensaje.objects.filter(id_registro=base.id_registro).order_by("fecha")
             nuevos_mensajes = []
@@ -5979,7 +6639,7 @@ def crear_nueva_version_cotizacion(request, id_registro):
             # 🔹 5. REPLICAR SEGUIMIENTO
             # =====================================================
             fase_actual = "INSERTAR_SEGUIMIENTO"
-            print(f"🔹 [{fase_actual}] Replicando hitos...")
+            logger.info("[%s] Replicando hitos...", fase_actual)
             # Seguimiento: usar el campo 'fecha' en vez de 'dat'
             seguimiento_origen = CotizacionSeguimiento.objects.filter(id_registro=base.id_registro).order_by("fecha")
             nuevos_seguimientos = []
@@ -6023,7 +6683,7 @@ def crear_nueva_version_cotizacion(request, id_registro):
         }, status=status.HTTP_201_CREATED)
 
     except IntegrityError as ie:
-        print(f"❌ ERR [IntegrityError] en Fase: {fase_actual} -> {str(ie)}")
+        logger.exception("ERR [IntegrityError] en Fase: %s", fase_actual)
         return Response({
             "ok": False,
             "error": "Error de restricción o duplicidad en la base de datos.",
@@ -6032,7 +6692,7 @@ def crear_nueva_version_cotizacion(request, id_registro):
         }, status=status.HTTP_400_BAD_REQUEST)
 
     except Exception as e:
-        print(f"❌ ERR [Exception] en Fase: {fase_actual} -> {str(e)}")
+        logger.exception("ERR [Exception] en Fase: %s", fase_actual)
         return Response({
             "ok": False,
             "error": "Error inesperado al procesar la clonación.",
@@ -6052,7 +6712,7 @@ def generar_copiar_cotizacion(request, id_registro):
     try:
         with transaction.atomic():
             fase_actual = "BUSQUEDA_COTIZACION_BASE"
-            print(f"🔹 [{fase_actual}] Buscando cotización base ID: {id_registro}")
+            logger.info("[%s] Buscando cotizacion base ID: %s", fase_actual, id_registro)
             base = Cotizacion.objects.filter(id_registro=id_registro).first()
             if not base:
                 return Response({
@@ -6061,7 +6721,7 @@ def generar_copiar_cotizacion(request, id_registro):
                 }, status=status.HTTP_404_NOT_FOUND)
 
             fase_actual = "LECTURA_TOKEN"
-            print("🔹 Extrayendo usuario desde el Token JWT")
+            logger.info("Extrayendo usuario desde el Token JWT")
             from rest_framework_simplejwt.authentication import JWTAuthentication
             jwt_auth = JWTAuthentication()
             header = jwt_auth.get_header(request)
@@ -6070,7 +6730,7 @@ def generar_copiar_cotizacion(request, id_registro):
             usuario_codigo = validated_token.get("user_id")
 
             fase_actual = "INSERTAR_CABECERA_COTIZACION"
-            print(f"🔹 [{fase_actual}] Clonando cabecera principal")
+            logger.info("[%s] Clonando cabecera principal", fase_actual)
             
             # Limpiamos PK y campos específicos
             datos_cabecera = {k: v for k, v in base.__dict__.items() if not k.startswith('_')}
@@ -6125,9 +6785,9 @@ def generar_copiar_cotizacion(request, id_registro):
                 codigo_generado = _calcular_nuevo_codigo(nueva_coti)
                 nueva_coti.codigo = codigo_generado
                 nueva_coti.save(update_fields=["codigo"])
-                print(f"🔹 Código generado para la copia: {codigo_generado}")
+                logger.info("Codigo generado para la copia: %s", codigo_generado)
             except Exception as e:
-                print(f"⚠️ No se pudo generar el código automático: {str(e)}")
+                logger.warning("No se pudo generar el codigo automatico: %s", e)
                 raise ValidationError(f"No se pudo generar el código automático. Verifique los datos: {str(e)}")
 
             # =====================================================
@@ -6242,7 +6902,7 @@ def generar_copiar_cotizacion(request, id_registro):
         }, status=status.HTTP_201_CREATED)
 
     except Exception as e:
-        print(f"❌ ERR [generar_copiar_cotizacion] Fase: {fase_actual} -> {str(e)}")
+        logger.exception("ERR [generar_copiar_cotizacion] Fase: %s", fase_actual)
         return Response({
             "ok": False,
             "error": "Error al procesar la copia.",
@@ -6395,10 +7055,19 @@ def pasar_a_apertura(request, id_registro):
                     mes=timezone.now().month,
                     envio=1, # Pendiente
                     prio='0', # Normal
+                    estado_orden=1,
                     total_orden=cotizacion.total_cotizacion or 0,
                     presupuesto=cotizacion.total_cotizacion or 0,
+                    doc=None,
+                    ti1=None,
                     responsables=""
                 )
+                recalculate_apertura_costs(apertura, preserve_total=True)
+                apertura.save()
+                try:
+                    repartir_descuento_aperturas(cotizacion.id_registro)
+                except Exception:
+                    pass
             
             # Crear la notificación de Adjudicado para el usuario comercial
             try:

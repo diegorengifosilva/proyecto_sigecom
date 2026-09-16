@@ -399,18 +399,29 @@
             --bg-totales: rgb(247, 249, 251);
         }
 
-        /* --- TÍTULOS DE SECCIÓN --- */
+        /* --- TÍTULOS DE SECCIÓN (igual que Word: encima de la tabla) --- */
         .subtit {
-            font-size: 12pt; /* Tamaño exacto de Word */
+            font-size: 12pt;
             font-weight: 700;
             color: #000000;
             border-left: 5px solid var(--primary-rgb);
             padding: 2px 0 2px 12px;
-            margin: 30px 0 15px 0;             
+            margin: 28px 0 14pt 0;
             text-transform: uppercase;
             display: block;
-            line-height: 1.1; /* Compacta el texto para que no use más espacio del necesario */
-            page-break-after: avoid;
+            line-height: 1.15;
+            text-align: left;
+            page-break-after: avoid !important;
+            break-after: avoid-page !important;
+        }
+
+        .bloque-seccion {
+            page-break-inside: auto;
+            break-inside: auto;
+        }
+
+        .bloque-seccion > .subtit {
+            margin-bottom: 14pt;
         }
 
         /* --- TABLA UNIFICADA (tabla-moderna) --- */
@@ -420,9 +431,14 @@
             margin-bottom: 20px;
             background-color: var(--bg-filas);
             color: var(--text-filas);
-            table-layout: auto; /* Permite que el contenido ayude al ajuste */
-            page-break-before: auto;
+            table-layout: auto;
+            page-break-before: avoid;
+            break-before: avoid-page;
             border-bottom: 0.5pt solid var(--border-tabla);
+        }
+
+        .tabla-moderna thead {
+            display: table-header-group;
         }
 
         /* Control de saltos de línea en filas */
@@ -479,6 +495,12 @@
         .tabla-moderna th p {
             margin: 0;
             padding: 0;
+        }
+
+        .tabla-moderna td.rich-text,
+        .tabla-moderna td.rich-text p,
+        .tabla-moderna td.rich-text li {
+            line-height: 1.15 !important;
         }
 
         /* 1. CABECERA */
@@ -539,10 +561,7 @@
         }
 
         .subtit-condiciones {
-            /* Eliminamos márgenes externos para que no afecten el padding del cuadro */
-            margin: 0 0 12px 0 !important; 
-            
-            /* Estilo visual coherente */
+            margin: 0 0 14pt 0 !important; 
             font-size: 12pt;
             font-weight: 700;
             color: #000000;
@@ -550,7 +569,10 @@
             padding: 2px 0 2px 12px;
             text-transform: uppercase;
             display: block;
-            line-height: 1.1;
+            line-height: 1.15;
+            text-align: left;
+            page-break-after: avoid !important;
+            break-after: avoid-page !important;
         }
 
         .texto-condiciones {
@@ -558,15 +580,61 @@
             font-size: 10pt;
             /* Contenido: RGB (68, 68, 68) */
             color: #444444; 
-            line-height: 1.5; /* Un poco más de aire para mejorar la lectura */
+            line-height: 1.15;
         }
 
         /* Ajuste preventivo para párrafos o listas que vengan del editor de texto */
         .texto-condiciones p, 
-        .texto-condiciones ul, 
+        .texto-condiciones ul,
+        .texto-condiciones ol,
         .texto-condiciones li {
-            margin-top: 5px;
-            margin-bottom: 5px;
+            margin-top: 2px;
+            margin-bottom: 2px;
+            line-height: 1.15;
+        }
+
+        .texto-condiciones ol,
+        .rich-text ol {
+            list-style-type: decimal;
+            margin: 6px 0 6px 18px;
+            padding-left: 1.4em;
+        }
+
+        .texto-condiciones ol ol,
+        .rich-text ol ol {
+            list-style-type: lower-alpha;
+        }
+
+        .texto-condiciones ol ol ol,
+        .rich-text ol ol ol {
+            list-style-type: lower-roman;
+        }
+
+        .texto-condiciones ol ol ol ol,
+        .rich-text ol ol ol ol {
+            list-style-type: decimal;
+        }
+
+        .texto-condiciones ul,
+        .rich-text ul {
+            list-style-type: disc;
+            margin: 6px 0 6px 18px;
+            padding-left: 1.4em;
+        }
+
+        .texto-condiciones ul ul,
+        .rich-text ul ul {
+            list-style-type: circle;
+        }
+
+        .texto-condiciones ul ul ul,
+        .rich-text ul ul ul {
+            list-style-type: square;
+        }
+
+        .texto-condiciones li,
+        .rich-text li {
+            display: list-item;
         }
 
         /* --- CLASES DE SOPORTE PARA EDITOR QUILL (Previsualización e Indentación) --- */
@@ -666,14 +734,15 @@
         /* ===== TEXTO ENRIQUECIDO SERVICIOS ===== */
         .rich-text {
             font-size: 10px;
-            line-height: 1.4;
+            line-height: 1.15;
             color: #444;
             text-align: left;
         }
 
         /* PÁRRAFOS */
         .rich-text p {
-            margin: 4px 0;
+            margin: 2px 0;
+            line-height: 1.15;
         }
 
         /* LISTAS */
@@ -684,7 +753,8 @@
         }
 
         .rich-text li {
-            margin-bottom: 3px;
+            margin-bottom: 2px;
+            line-height: 1.15;
         }
 
         /* NEGRITA Y CURSIVA */
@@ -1046,7 +1116,7 @@
 
         {% if suministros %}
             {% for grupo in suministros %}
-            <div class="grupo-detalle" style="page-break-inside: auto; margin-top: 20px;">
+            <div class="grupo-detalle bloque-seccion" style="margin-top: 20px;">
                 <p class="subtit">{{ grupo.seccion }}.- DETALLE SUMINISTRO: {{ grupo.titulo }}</p>
                 <table class="tabla-moderna">
                     <thead>
@@ -1117,7 +1187,7 @@
         {% if servicios %}
             <div class="seccion-servicios"> 
                 {% for grupo in servicios %}
-                    <div style="margin-top: 10px; page-break-inside: auto;">
+                    <div class="bloque-seccion" style="margin-top: 10px;">
                         <p class="subtit">{{ grupo.seccion }}.- DETALLE SERVICIO: {{ grupo.titulo }}</p>
                         <table class="tabla-moderna">
                             <thead>
@@ -1149,7 +1219,6 @@
                 <p class="subtit-condiciones">
                     {{ secciones.condiciones }}.- CONDICIONES GENERALES
                 </p>
-                
                 <div class="texto-condiciones">
                     {{ condiciones_generales.condiciones|safe }}
                 </div>

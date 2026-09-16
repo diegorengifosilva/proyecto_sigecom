@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
 import * as LucideIcons from 'lucide-react';
 import api from '@/services/api';
+import ReportIframe from '@/components/ReportIframe';
 import { toast } from '@/utils/toast';
 import DatePicker, { registerLocale } from "react-datepicker";
 import es from 'date-fns/locale/es';
@@ -11,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { useCotizacionSuministros } from '@/hook/useCotizacionSuministros';
 import { useCotizacionServicios } from '@/hook/useCotizacionServicios';
 import { useCotizacionAcciones } from '@/hook/useCotizacionAcciones';
+import DescuentosModal from '@/modal/Gestion/DescuentosModal';
 
 registerLocale('es', es);
 
@@ -18,6 +20,56 @@ const Icon = ({ name, className }) => {
   const iconName = name.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('');
   const LucideIcon = LucideIcons[iconName] || LucideIcons.HelpCircle;
   return <LucideIcon className={className} />;
+};
+
+const MONEY_EPS = 0.051;
+
+const roundMoney = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+
+const isQuoteDiscountActive = (q) => {
+  if (!q) return false;
+  const flag = q.descuento_aplica ?? q.des_a;
+  return (
+    flag === 1 ||
+    flag === true ||
+    flag === "1" ||
+    String(flag || "").toUpperCase() === "S"
+  );
+};
+
+const getQuoteDiscountMonto = (q) => {
+  if (!isQuoteDiscountActive(q)) return 0;
+  const m = Number(q?.descuento_monto ?? q?.des_m ?? 0);
+  return m > 0 ? roundMoney(m) : 0;
+};
+
+const splitDiscountShares = (n, monto) => {
+  const total = roundMoney(monto);
+  if (n <= 0) return [];
+  if (total <= 0) return Array(n).fill(0);
+  if (n === 1) return [total];
+  const cents = Math.round(total * 100);
+  const base = Math.floor(cents / n);
+  const rem = cents - base * n;
+  return Array.from({ length: n }, (_, i) => (base + (i === n - 1 ? rem : 0)) / 100);
+};
+
+const splitDiscountByUtility = (utilities, monto) => {
+  const n = utilities.length;
+  const total = roundMoney(monto);
+  if (n <= 0) return [];
+  if (total <= 0) return Array(n).fill(0);
+  if (n === 1) return [total];
+
+  const weights = utilities.map((u) => Math.max(0, Number(u) || 0));
+  const sumW = weights.reduce((acc, w) => acc + w, 0);
+  if (sumW <= 0) return splitDiscountShares(n, total);
+
+  const raw = weights.map((w) => (w / sumW) * total);
+  const shares = raw.map((v, i) => (i === n - 1 ? 0 : roundMoney(v)));
+  const assigned = shares.slice(0, -1).reduce((acc, v) => acc + v, 0);
+  shares[n - 1] = roundMoney(total - assigned);
+  return shares;
 };
 
 const REQUIRED_LABELS = [
@@ -66,6 +118,17 @@ const EMPTY_PLACEHOLDERS = [
   "0 días (servicios)",
   "0 días (validez)"
 ];
+
+const ESTADOS_OC = [
+  { id: 1, label: "ADJUDICADO", color: "bg-emerald-50 text-emerald-700 border-emerald-100" },
+  { id: 2, label: "PENDIENTE", color: "bg-amber-50 text-amber-700 border-amber-100" },
+  { id: 4, label: "ANULADO", color: "bg-red-50 text-red-700 border-red-100" },
+];
+
+const ocEstadoMeta = (estado) => {
+  if (estado === null || estado === undefined) return null;
+  return ESTADOS_OC.find((s) => s.id === Number(estado)) || null;
+};
 
 const CompactField = ({ label, children, className, required, isEmpty }) => {
   const labelClean = String(label || "").toLowerCase().trim();
@@ -156,6 +219,10 @@ export default function AperturasDetalle({ idRegistro }) {
   const [aperturas, setAperturas] = useState([]);
   const [formsState, setFormsState] = useState({});
   const [previewDoc, setPreviewDoc] = useState(null);
+  const [reportePdfOpen, setReportePdfOpen] = useState(false);
+  const [reporteLoading, setReporteLoading] = useState(false);
+
+  const cleanBaseURL = api.defaults?.baseURL ? (api.defaults.baseURL.endsWith('/') ? api.defaults.baseURL.slice(0, -1) : api.defaults.baseURL) : "";
   
   // Handle closing preview modal with Escape key
   useEffect(() => {
@@ -191,6 +258,40 @@ export default function AperturasDetalle({ idRegistro }) {
   const [deletedOcIds, setDeletedOcIds] = useState(new Set());
   const [isProcessingNewOc, setIsProcessingNewOc] = useState(false);
   const [uploadingOcId, setUploadingOcId] = useState(null);
+  const [pdfSuggestions, setPdfSuggestions] = useState({});
+  const [descuentoModalOpen, setDescuentoModalOpen] = useState(false);
+
+  const handleSaveDescuento = async (descuentoData) => {
+    try {
+      await api.post(`/cotizaciones/${activeIdRegistro}/descuento/`, descuentoData);
+      toast.success("Descuento actualizado correctamente");
+      const [quoteRes, apRes] = await Promise.all([
+        api.get(`cotizaciones/cotizacion_detalle/${activeIdRegistro}/`),
+        api.get(`cotizaciones/aperturas_por_registro/${activeIdRegistro}/`),
+      ]);
+      if (quoteRes.data) {
+        setQuoteDetails(quoteRes.data);
+      }
+      const list = Array.isArray(apRes.data) ? apRes.data : [];
+      if (list.length) {
+        const byId = Object.fromEntries(list.map((a) => [a.id_apertura, a]));
+        setAperturas((prev) => prev.map((a) => {
+          const fresh = byId[a.id_apertura];
+          if (!fresh) return a;
+          return {
+            ...a,
+            des_a: fresh.des_a,
+            des_t: fresh.des_t,
+            des_m: fresh.des_m,
+            des_p: fresh.des_p,
+          };
+        }));
+      }
+    } catch (err) {
+      console.error("Error guardando descuento:", err);
+      toast.error("No se pudo actualizar el descuento");
+    }
+  };
 
   const visibleAperturas = useMemo(() => {
     return aperturas.filter(ap => !deletedOcIds.has(ap.id_apertura));
@@ -206,14 +307,25 @@ export default function AperturasDetalle({ idRegistro }) {
   // State to manage expanded/collapsed OC cards
   const [ocExpanded, setOcExpanded] = useState({});
   const toggleOc = (id) => {
-    setOcExpanded(prev => ({ ...prev, [id]: !prev[id] }));
+    setOcExpanded(prev => {
+      const current = prev[id] !== false;
+      return { ...prev, [id]: !current };
+    });
   };
-  // Initialize all OCs as expanded when data loads
+  // Preserve expanded/collapsed state for existing OCs, initialize new OCs as expanded
   useEffect(() => {
     if (aperturas && aperturas.length) {
-      const init = {};
-      aperturas.forEach(ap => { init[ap.id_apertura] = true; });
-      setOcExpanded(init);
+      setOcExpanded(prev => {
+        const next = { ...prev };
+        let hasChanges = false;
+        aperturas.forEach(ap => {
+          if (next[ap.id_apertura] === undefined) {
+            next[ap.id_apertura] = true;
+            hasChanges = true;
+          }
+        });
+        return hasChanges ? next : prev;
+      });
     }
   }, [aperturas]);
 
@@ -378,61 +490,38 @@ export default function AperturasDetalle({ idRegistro }) {
     }
   }, [quoteDetails, activeIdRegistro, setCustomBreadcrumbs, setBreadcrumbOverride]);
 
-  const handleCrearNuevaOCConArchivo = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
+  const handleCrearNuevaOC = async () => {
     setIsProcessingNewOc(true);
-    const ocrToast = toast.info("Procesando archivo con OCR... por favor espere.", { autoClose: false });
-    const formData = new FormData();
-    formData.append('archivo', file);
-
     try {
       const token = localStorage.getItem("access_token");
       const res = await api.post(
-        `cotizaciones/aperturas_por_registro/${activeIdRegistro}/nueva_oc/`, 
-        formData, 
-        {
-          headers: { 
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'multipart/form-data'
-          }
-        }
+        `cotizaciones/aperturas_por_registro/${activeIdRegistro}/nueva_oc/`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
       );
-      
-      toast.dismiss(ocrToast);
-      toast.success("Nueva Orden de Compra procesada y añadida correctamente.");
-      
-      // The optimized backend view returns all apertures directly
-      const list = Array.isArray(res.data) ? res.data : [res.data];
-      
-      // Sync responsibles across all OCs in memory
+
+      const payload = res.data;
+      const list = Array.isArray(payload) ? payload : (payload.aperturas || []);
       const sharedResponsibles = list.find(a => a.responsables)?.responsables || "";
       const syncedList = list.map(a => ({ ...a, responsables: sharedResponsibles }));
-      
+
       setAperturas(syncedList);
-      
       const newForms = {};
       syncedList.forEach(ap => {
         newForms[ap.id_apertura] = initialFormState(ap);
       });
       setFormsState(newForms);
 
-      // Find the newly created OC card to expand it automatically
-      const newAp = syncedList.find(a => !aperturas.some(prev => prev.id_apertura === a.id_apertura));
-      if (newAp) {
-        setOcExpanded(prev => ({
-          ...prev,
-          [newAp.id_apertura]: true
-        }));
+      const newId = payload.id_apertura || syncedList.find(a => !aperturas.some(prev => prev.id_apertura === a.id_apertura))?.id_apertura;
+      if (newId) {
+        setOcExpanded(prev => ({ ...prev, [newId]: true }));
       }
+      toast.success("Orden de Compra creada. Todas las partidas quedaron marcadas; desmarque si la OC es parcial.");
     } catch (err) {
-      toast.dismiss(ocrToast);
-      console.error("Error al crear nueva OC con archivo:", err);
-      toast.error(err.response?.data?.error || "Ocurrió un error al intentar crear y procesar la nueva Orden de Compra.");
+      console.error("Error al crear nueva OC:", err);
+      toast.error(err.response?.data?.error || "No se pudo crear la Orden de Compra.");
     } finally {
       setIsProcessingNewOc(false);
-      event.target.value = '';
     }
   };
 
@@ -498,8 +587,9 @@ export default function AperturasDetalle({ idRegistro }) {
   };
 
   const quote = useMemo(() => {
-    return quoteDetails || visibleAperturas[0]?.id_registro || aperturas[0]?.id_registro || {};
-  }, [quoteDetails, visibleAperturas, aperturas]);
+    if (quoteDetails && typeof quoteDetails === 'object') return quoteDetails;
+    return {};
+  }, [quoteDetails]);
 
   useEffect(() => {
     const codeToShow = quote?.codigo || quote?.numero;
@@ -548,12 +638,12 @@ export default function AperturasDetalle({ idRegistro }) {
   };
 
   // Cargar suministros y servicios de la cotización
-  const { gruposSuministros, handleEliminarItem: handleEliminarItemSuministro } = useCotizacionSuministros(
+  const { gruposSuministros } = useCotizacionSuministros(
     quoteId,
     quote?.id_tipo === "V" || quote?.id_tipo_cotizacion === "V",
     quote?.tipo_venta
   );
-  const { gruposServicios, handleEliminarItemServicio } = useCotizacionServicios(quoteId);
+  const { gruposServicios } = useCotizacionServicios(quoteId);
 
   const sortedGruposSuministros = useMemo(() => {
     return Object.values(gruposSuministros || {}).sort((a, b) => (a.orden || 0) - (b.orden || 0));
@@ -650,29 +740,419 @@ export default function AperturasDetalle({ idRegistro }) {
     };
   }, [equiposGroups, materialesGroups, sortedGruposServicios]);
 
-  const isSuministroChecked = (docVal, groupCode) => {
+  const collectServicioTreeIds = (grupo) => {
+    const ids = [];
+    if (grupo?.id_servicio != null) ids.push(String(grupo.id_servicio));
+    (grupo?.subgrupos || []).forEach((sub) => {
+      if (sub.id_servicio != null) ids.push(String(sub.id_servicio));
+      if (sub.id != null) ids.push(String(sub.id));
+      (sub.items || []).forEach((it) => {
+        if (it.id_servicio != null) ids.push(String(it.id_servicio));
+      });
+    });
+    return ids;
+  };
+
+  const quoteSuministroIdSet = () => {
+    const ids = new Set();
+    sortedGruposSuministros.forEach((g) => {
+      if (g.id != null) ids.add(String(g.id));
+      if (g.id_suministro != null) ids.add(String(g.id_suministro));
+      (g.items || []).forEach((it) => {
+        if (it.id_suministro != null) ids.add(String(it.id_suministro));
+      });
+    });
+    return ids;
+  };
+
+  const quoteServicioIdSet = () => {
+    const ids = new Set();
+    sortedGruposServicios.forEach((g) => {
+      collectServicioTreeIds(g).forEach((id) => ids.add(id));
+    });
+    return ids;
+  };
+
+  const servicioPrefix = (grupo) => {
+    const fromSub = grupo?.subgrupos?.find((s) => s.codigo_servicio)?.codigo_servicio;
+    const fromItem = (grupo?.subgrupos || [])
+      .flatMap((s) => s.items || [])
+      .find((it) => it.codigo_servicio)?.codigo_servicio;
+    const raw = String(fromSub || fromItem || grupo?.codigo_servicio || '');
+    return raw.length >= 2 ? raw.slice(0, 2) : '';
+  };
+
+  const ordenSuLines = (ap) => {
+    const apObj = (ap && typeof ap === 'object' && ap.id_apertura) ? ap : null;
+    if (!apObj || !Array.isArray(apObj.suministros_orden_su)) return null;
+    return apObj.suministros_orden_su;
+  };
+
+  const prefixSu4 = (cog) => {
+    const s = String(cog ?? '').trim();
+    if (!s) return '';
+    return s.length >= 4 ? s.slice(0, 4) : s.padStart(4, '0');
+  };
+
+  const partidasOrdenSu = (su) => {
+    const rows = [...su].sort((a, b) => {
+      const c = String(a.cog || '').localeCompare(String(b.cog || ''), undefined, { numeric: true });
+      if (c) return c;
+      const n = Number(a.nig) - Number(b.nig);
+      if (n) return n;
+      return Number(a.num || 0) - Number(b.num || 0);
+    });
+    const partidas = [];
+    let cur = null;
+    rows.forEach((row) => {
+      if (Number(row.nig) === 0) {
+        cur = { header: row, items: [] };
+        partidas.push(cur);
+        return;
+      }
+      if (!cur) {
+        cur = { header: row, items: [] };
+        partidas.push(cur);
+      }
+      cur.items.push(row);
+    });
+    return partidas;
+  };
+
+  const partidaDeGrupoSu = (ap, grupo) => {
+    const su = ordenSuLines(ap);
+    if (!su) return null;
+    const code = String(grupo?.codigo_grupo ?? '');
+    const p4 = prefixSu4(code);
+    return partidasOrdenSu(su).find((p) => {
+      const hc = String(p.header?.cog ?? '');
+      return hc === code || prefixSu4(hc) === p4;
+    }) || null;
+  };
+
+  const grupoTieneOrdenSu = (ap, groupCode) => {
+    const grupo = sortedGruposSuministros.find((g) => String(g.codigo_grupo) === String(groupCode));
+    return Boolean(partidaDeGrupoSu(ap, grupo || { codigo_grupo: groupCode }));
+  };
+
+  const itemsDesdeOrdenSu = (ap, grupo) => {
+    const partida = partidaDeGrupoSu(ap, grupo);
+    if (!partida) return null;
+    const itemLines = (partida.items || []).filter((s) => Number(s.nig) > 0);
+    if (itemLines.length === 0) return [];
+    const items = grupo.items || [];
+
+    const used = new Set();
+    const mapped = [];
+    const norm = (c) => String(c || '').trim().toUpperCase();
+    itemLines.forEach((line) => {
+      const code = norm(line.cod);
+      const alt = items.find((it) => (
+        !used.has(String(it.id_suministro)) && norm(it.codigo_item) === code
+      ));
+      if (alt) {
+        used.add(String(alt.id_suministro));
+        mapped.push(alt);
+      }
+    });
+    let slots = itemLines.length - mapped.length;
+    items.forEach((it) => {
+      if (slots <= 0) return;
+      const id = String(it.id_suministro);
+      if (used.has(id)) return;
+      used.add(id);
+      mapped.push(it);
+      slots -= 1;
+    });
+    return mapped;
+  };
+
+  const ordenMoLines = (ap) => {
+    const apObj = (ap && typeof ap === 'object' && ap.id_apertura) ? ap : null;
+    if (!apObj || !Array.isArray(apObj.servicios_orden_mo)) return null;
+    return apObj.servicios_orden_mo;
+  };
+
+  const prefixDeCog = (cog) => {
+    const s = String(cog || '').trim();
+    return s.length >= 2 ? s.slice(0, 2) : s;
+  };
+
+  const grupoTieneOrdenMo = (ap, grupo) => {
+    const mo = ordenMoLines(ap);
+    if (!mo) return false;
+    const prefix = servicioPrefix(grupo);
+    if (!prefix) return false;
+    return mo.some((s) => prefixDeCog(s.cog) === prefix || String(s.prefix || '') === prefix);
+  };
+
+  const mapItemsDesdeLineas = (itemLines, items) => {
+    const used = new Set();
+    const mapped = [];
+    const norm = (c) => String(c || '').trim().toUpperCase();
+    itemLines.forEach((line) => {
+      const code = norm(line.cod);
+      const des = norm(line.des);
+      let alt = items.find((it) => (
+        !used.has(String(it.id_servicio)) &&
+        norm(it.codigo_item) === code &&
+        des && norm(it.descripcion_item) === des
+      ));
+      if (!alt) {
+        alt = items.find((it) => (
+          !used.has(String(it.id_servicio)) && norm(it.codigo_item) === code
+        ));
+      }
+      if (alt) {
+        used.add(String(alt.id_servicio));
+        mapped.push(alt);
+      }
+    });
+    let slots = itemLines.length - mapped.length;
+    items.forEach((it) => {
+      if (slots <= 0) return;
+      const id = String(it.id_servicio);
+      if (used.has(id)) return;
+      used.add(id);
+      mapped.push(it);
+      slots -= 1;
+    });
+    return mapped;
+  };
+
+  const servicioGrupoDesdeOrdenMo = (ap, grupo) => {
+    const mo = ordenMoLines(ap);
+    if (!mo) return null;
+    const prefix = servicioPrefix(grupo);
+    if (!prefix) return null;
+    const lines = mo.filter((s) => prefixDeCog(s.cog) === prefix || String(s.prefix || '') === prefix);
+    if (lines.length === 0) return null;
+
+    const itemLines = lines.filter((s) => Number(s.nig) === 2);
+    if (itemLines.length === 0) {
+      return { ...grupo, subgrupos: [] };
+    }
+
+    const movDeLinea = (s) => {
+      const mov = String(s.mov || '').replace(/^0+/, '') ? String(s.mov || '').padStart(2, '0') : '';
+      if (mov && mov !== '00') return mov.slice(-2);
+      const cog = String(s.cog || '');
+      if (cog.length >= 4) return cog.slice(2, 4);
+      return '';
+    };
+
+    const nextSubs = (grupo.subgrupos || []).map((sub) => {
+      const items = sub.items || [];
+      const mov = String(sub.tipoCodigo || '').slice(-2);
+      const subLines = itemLines.filter((s) => movDeLinea(s) === mov);
+      if (subLines.length === 0) return null;
+      const mapped = mapItemsDesdeLineas(subLines, items);
+      if (mapped.length === 0) return null;
+      return { ...sub, items: mapped };
+    }).filter(Boolean);
+
+    return { ...grupo, subgrupos: nextSubs };
+  };
+
+  const ownSuministroLinks = (ap) => {
+    const apObj = (ap && typeof ap === 'object' && ap.id_apertura) ? ap : null;
+    const raw = apObj && Array.isArray(apObj.suministros_apertura) ? apObj.suministros_apertura : null;
+    if (!raw || raw.length === 0) return null;
+    const quoteIds = quoteSuministroIdSet();
+    if (quoteIds.size === 0) return raw;
+    return raw.filter((s) => quoteIds.has(String(s.id_suministro)));
+  };
+
+  const ownServicioLinks = (ap) => {
+    const apObj = (ap && typeof ap === 'object' && ap.id_apertura) ? ap : null;
+    const raw = apObj && Array.isArray(apObj.servicios_apertura) ? apObj.servicios_apertura : null;
+    if (!raw || raw.length === 0) return null;
+    const quoteIds = quoteServicioIdSet();
+    if (quoteIds.size === 0) return raw;
+    return raw.filter((s) => quoteIds.has(String(s.id_servicio)));
+  };
+
+  const isSuministroChecked = (ap, f, groupCode) => {
+    const apObj = (ap && typeof ap === 'object' && ap.id_apertura) ? ap : null;
+    if (ordenSuLines(ap)) {
+      return grupoTieneOrdenSu(ap, groupCode);
+    }
+    const own = ownSuministroLinks(ap);
+    if (own) {
+      const code = String(groupCode);
+      const grupo = sortedGruposSuministros.find((g) => String(g.codigo_grupo) === code);
+      const headerId = grupo ? String(grupo.id || grupo.id_suministro || '') : '';
+      const itemIds = new Set((grupo?.items || []).map((it) => String(it.id_suministro)));
+      return own.some((s) => {
+        const id = String(s.id_suministro);
+        if (headerId && id === headerId) return true;
+        if (itemIds.has(id)) return true;
+        const itemGroupCode = s.codigo_grupo ?? s.id_suministro_detalle?.codigo_grupo;
+        return itemGroupCode != null && String(itemGroupCode) === code;
+      });
+    }
+    const docVal = apObj ? apObj.doc : (typeof ap === 'string' ? ap : f?.doc);
     if (docVal === null || docVal === undefined) return true;
-    const codes = docVal.split(',').map(s => s.trim()).filter(Boolean);
+    if (String(docVal).trim() === '') return false;
+    const codes = String(docVal).split(',').map(s => s.trim()).filter(Boolean);
     return codes.includes(String(groupCode));
   };
 
-  const isServicioChecked = (ti1Val, serviceId) => {
+  const itemsDeGrupoEnOc = (ap, grupo) => {
+    if (ordenSuLines(ap)) {
+      return itemsDesdeOrdenSu(ap, grupo) || [];
+    }
+
+    const own = ownSuministroLinks(ap);
+    if (!own) return grupo.items || [];
+
+    const items = grupo.items || [];
+    if (items.length === 0) return [];
+
+    const headerId = String(grupo.id || grupo.id_suministro || '');
+    const groupCode = String(grupo.codigo_grupo);
+    const itemById = new Map(items.map((it) => [String(it.id_suministro), it]));
+    const normCode = (c) => String(c || '').trim();
+
+    const itemLinks = own.filter((s) => {
+      const id = String(s.id_suministro);
+      if (headerId && id === headerId) return false;
+      if (Number(s.nivel) === 0) return false;
+      if (itemById.has(id)) return true;
+      const itemGroupCode = s.codigo_grupo ?? s.id_suministro_detalle?.codigo_grupo;
+      return itemGroupCode != null && String(itemGroupCode) === groupCode;
+    });
+
+    if (itemLinks.length === 0) return [];
+
+    const used = new Set();
+    const pending = [];
+    itemLinks.forEach((s) => {
+      const id = String(s.id_suministro);
+      if (itemById.has(id) && !used.has(id)) {
+        used.add(id);
+      } else {
+        pending.push(s);
+      }
+    });
+
+    pending.forEach((s) => {
+      const src = itemById.get(String(s.id_suministro));
+      const code = normCode(src?.codigo_item || s.codigo_item);
+      const alt = items.find((it) => (
+        !used.has(String(it.id_suministro)) && normCode(it.codigo_item) === code
+      ));
+      if (alt) used.add(String(alt.id_suministro));
+    });
+
+    let slots = itemLinks.length - used.size;
+    if (slots > 0) {
+      items.forEach((it) => {
+        if (slots <= 0) return;
+        const id = String(it.id_suministro);
+        if (used.has(id)) return;
+        used.add(id);
+        slots -= 1;
+      });
+    }
+
+    return items.filter((it) => used.has(String(it.id_suministro)));
+  };
+
+  const isServicioChecked = (ap, f, serviceId) => {
+    const apObj = (ap && typeof ap === 'object' && ap.id_apertura) ? ap : null;
+    const grupo = sortedGruposServicios.find((g) => String(g.id_servicio) === String(serviceId));
+    if (ordenMoLines(ap)) {
+      return Boolean(grupo && grupoTieneOrdenMo(ap, grupo));
+    }
+    const own = ownServicioLinks(ap);
+    if (own) {
+      const grupo = sortedGruposServicios.find((g) => String(g.id_servicio) === String(serviceId));
+      if (!grupo) return false;
+      const treeIds = new Set(collectServicioTreeIds(grupo));
+      const linkedIds = new Set(own.map((s) => String(s.id_servicio)));
+      const prefix = servicioPrefix(grupo);
+      const idMatch = [...treeIds].some((id) => linkedIds.has(id));
+      const prefixMatch = Boolean(prefix) && own.some((s) => String(s.codigo_servicio || '').startsWith(prefix));
+      if (!idMatch && !prefixMatch) return false;
+      if (linkedIds.has(String(grupo.id_servicio))) return true;
+      const grupoOc = servicioGrupoEnOc(ap, grupo);
+      return (grupoOc.subgrupos || []).some((sub) => (sub.items || []).length > 0);
+    }
+    const ti1Val = apObj ? apObj.ti1 : (typeof ap === 'string' ? ap : f?.ti1);
     if (ti1Val === null || ti1Val === undefined) return true;
-    const ids = ti1Val.split(',').map(s => s.trim()).filter(Boolean);
+    if (String(ti1Val).trim() === '') return false;
+    const ids = String(ti1Val).split(',').map(s => s.trim()).filter(Boolean);
     return ids.includes(String(serviceId));
   };
 
-  const recalculateCostsForForm = (f) => {
+  const servicioGrupoEnOc = (ap, grupo) => {
+    if (ordenMoLines(ap)) {
+      return servicioGrupoDesdeOrdenMo(ap, grupo) || { ...grupo, subgrupos: [] };
+    }
+
+    const own = ownServicioLinks(ap);
+    if (!own) return grupo;
+
+    const linkedIds = new Set(
+      own.map((s) => s.id_servicio).filter((id) => id != null).map(String)
+    );
+    if (linkedIds.has(String(grupo.id_servicio))) return grupo;
+
+    const prefix = servicioPrefix(grupo);
+    const treeIds = new Set(collectServicioTreeIds(grupo));
+    const groupLinks = own.filter((s) => {
+      if (s.id_servicio != null && treeIds.has(String(s.id_servicio))) return true;
+      if (prefix && String(s.codigo_servicio || '').startsWith(prefix)) return true;
+      return false;
+    });
+
+    const nextSubs = (grupo.subgrupos || []).map((sub) => {
+      const items = sub.items || [];
+      const subHeaderLinked = linkedIds.has(String(sub.id_servicio));
+      const anyItemLinked = items.some((it) => linkedIds.has(String(it.id_servicio)));
+      if (subHeaderLinked && !anyItemLinked && items.length > 0) return sub;
+
+      const itemById = new Map(items.map((it) => [String(it.id_servicio), it]));
+      const normCode = (c) => String(c || '').trim();
+      const used = new Set();
+      const pending = [];
+      groupLinks.forEach((s) => {
+        if (s.nivel != null && Number(s.nivel) !== 2) return;
+        const id = s.id_servicio != null ? String(s.id_servicio) : '';
+        if (id && itemById.has(id) && !used.has(id)) {
+          used.add(id);
+        } else if (id && itemById.has(id)) {
+          pending.push(s);
+        }
+      });
+      pending.forEach((s) => {
+        const src = itemById.get(String(s.id_servicio));
+        const code = normCode(src?.codigo_item || s.codigo_item);
+        const alt = items.find((it) => (
+          !used.has(String(it.id_servicio)) && normCode(it.codigo_item) === code
+        ));
+        if (alt) used.add(String(alt.id_servicio));
+      });
+      const nextItems = items.filter((it) => used.has(String(it.id_servicio)));
+      if (nextItems.length === 0) return null;
+      return { ...sub, items: nextItems };
+    }).filter(Boolean);
+
+    return { ...grupo, subgrupos: nextSubs };
+  };
+
+  const recalculateCostsForForm = (f, ap) => {
     let equiposCost = 0;
     let equiposSale = 0;
     let materialesCost = 0;
     let materialesSale = 0;
 
     sortedGruposSuministros.forEach(grupo => {
-      if (isSuministroChecked(f.doc, grupo.codigo_grupo)) {
+      if (isSuministroChecked(ap, f, grupo.codigo_grupo)) {
         const isMateriales = String(grupo.codigo_grupo).includes('MT') || grupo.id_tipo_gasto === 2;
         const qty = Number(grupo.cantidad || 1);
-        (grupo.items || []).forEach(item => {
+        itemsDeGrupoEnOc(ap, grupo).forEach(item => {
           const cost = Number(item.costo_total || 0) * qty;
           const sale = Number(item.venta_total || 0) * qty;
           if (isMateriales) {
@@ -694,9 +1174,10 @@ export default function AperturasDetalle({ idRegistro }) {
     let otrosSale = 0;
 
     sortedGruposServicios.forEach(grupo => {
-      if (isServicioChecked(f.ti1, grupo.id_servicio)) {
+      if (isServicioChecked(ap, f, grupo.id_servicio)) {
         const qty = Number(grupo.cantidad || 1);
-        (grupo.subgrupos || []).forEach(sub => {
+        const grupoOc = servicioGrupoEnOc(ap, grupo);
+        (grupoOc.subgrupos || []).forEach(sub => {
           const isMO = sub.tipoCodigo?.endsWith('04') || sub.id_tipo_gasto === 4 || sub.id_tipo_gasto === 3;
           const isGastos = sub.tipoCodigo?.endsWith('05') || sub.id_tipo_gasto === 5 || sub.id_tipo_gasto === 4;
           const isOtros = sub.tipoCodigo?.endsWith('06') || sub.id_tipo_gasto === 6 || sub.id_tipo_gasto === 5;
@@ -720,9 +1201,8 @@ export default function AperturasDetalle({ idRegistro }) {
       }
     });
 
-    const total_orden = equiposSale + materialesSale + hhSale + serviciosSale + otrosSale;
     const costsSum = equiposCost + materialesCost + hhCost + Number(f.orden_compra_entrega || 0) + serviciosCost + otrosCost;
-    const uti_des = total_orden - costsSum;
+    const keptTotal = Number(f.total_orden || 0);
 
     return {
       ...f,
@@ -731,86 +1211,104 @@ export default function AperturasDetalle({ idRegistro }) {
       orden_compra_hh: Number(hhCost.toFixed(2)),
       orden_compra_costo_servicios: Number(serviciosCost.toFixed(2)),
       orden_compra_otros: Number(otrosCost.toFixed(2)),
-      total_orden: Number(total_orden.toFixed(2)),
-      uti_des: Number(uti_des.toFixed(2))
+      presupuesto: Number(costsSum.toFixed(2)),
+      uti_des: Number((keptTotal - costsSum).toFixed(2))
     };
   };
 
-  const handleToggleSuministroGroup = (idApertura, groupCode) => {
-    let updatedFormRef = null;
-    setFormsState(prev => {
-      const current = prev[idApertura];
-      if (!current) return prev;
+  const handleToggleSuministroGroup = async (idApertura, groupCode) => {
+    const ap = aperturas.find(a => a.id_apertura === idApertura);
+    const f = formsState[idApertura];
+    const isChecked = isSuministroChecked(ap, f, groupCode);
+    const endpoint = isChecked ? 'desvincular_suministro' : 'vincular_suministro';
 
-      let currentChecked;
-      if (current.doc === null || current.doc === undefined) {
-        currentChecked = sortedGruposSuministros.map(g => String(g.codigo_grupo));
-      } else {
-        currentChecked = current.doc.split(',').map(s => s.trim()).filter(Boolean);
-      }
+    try {
+      const token = localStorage.getItem("access_token");
+      const res = await api.post(
+        `cotizaciones/apertura_detalle/${idApertura}/${endpoint}/`,
+        { codigo_grupo: groupCode },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
 
-      const strCode = String(groupCode);
-      let nextChecked;
-      if (currentChecked.includes(strCode)) {
-        nextChecked = currentChecked.filter(c => c !== strCode);
-      } else {
-        nextChecked = [...currentChecked, strCode];
-      }
-
-      const nextDoc = nextChecked.join(',');
-      const updatedForm = recalculateCostsForForm({
-        ...current,
-        doc: nextDoc
-      });
-
-      updatedFormRef = updatedForm;
-      return {
+      const updatedAp = res.data?.apertura || res.data;
+      setAperturas(prev => prev.map(a => a.id_apertura === idApertura ? updatedAp : a));
+      setFormsState(prev => ({
         ...prev,
-        [idApertura]: updatedForm
-      };
-    });
-
-    if (updatedFormRef) {
-      autoSaveForm(idApertura, updatedFormRef);
+        [idApertura]: initialFormState(updatedAp)
+      }));
+      toast.success(isChecked ? "Suministro desvinculado de esta OC." : "Suministro vinculado a esta OC.");
+    } catch (err) {
+      console.error("Error al actualizar vinculación de suministro:", err);
+      toast.error(err.response?.data?.error || "Error al actualizar vinculación de suministro.");
     }
   };
 
-  const handleToggleServicioGroup = (idApertura, serviceId) => {
-    let updatedFormRef = null;
-    setFormsState(prev => {
-      const current = prev[idApertura];
-      if (!current) return prev;
+  const handleToggleServicioGroup = async (idApertura, serviceId) => {
+    const ap = aperturas.find(a => a.id_apertura === idApertura);
+    const f = formsState[idApertura];
+    const isChecked = isServicioChecked(ap, f, serviceId);
+    const endpoint = isChecked ? 'desvincular_servicio' : 'vincular_servicio';
 
-      let currentChecked;
-      if (current.ti1 === null || current.ti1 === undefined) {
-        currentChecked = sortedGruposServicios.map(g => String(g.id_servicio));
-      } else {
-        currentChecked = current.ti1.split(',').map(s => s.trim()).filter(Boolean);
-      }
+    try {
+      const token = localStorage.getItem("access_token");
+      const res = await api.post(
+        `cotizaciones/apertura_detalle/${idApertura}/${endpoint}/`,
+        { id_servicio: serviceId },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
 
-      const strId = String(serviceId);
-      let nextChecked;
-      if (currentChecked.includes(strId)) {
-        nextChecked = currentChecked.filter(c => c !== strId);
-      } else {
-        nextChecked = [...currentChecked, strId];
-      }
-
-      const nextTi1 = nextChecked.join(',');
-      const updatedForm = recalculateCostsForForm({
-        ...current,
-        ti1: nextTi1
-      });
-
-      updatedFormRef = updatedForm;
-      return {
+      const updatedAp = res.data?.apertura || res.data;
+      setAperturas(prev => prev.map(a => a.id_apertura === idApertura ? updatedAp : a));
+      setFormsState(prev => ({
         ...prev,
-        [idApertura]: updatedForm
-      };
-    });
+        [idApertura]: initialFormState(updatedAp)
+      }));
+      toast.success(isChecked ? "Servicio desvinculado de esta OC." : "Servicio vinculado a esta OC.");
+    } catch (err) {
+      console.error("Error al actualizar vinculación de servicio:", err);
+      toast.error(err.response?.data?.error || "Error al actualizar vinculación de servicio.");
+    }
+  };
 
-    if (updatedFormRef) {
-      autoSaveForm(idApertura, updatedFormRef);
+  const applyAperturaUpdate = (idApertura, updatedAp) => {
+    setAperturas(prev => prev.map(a => a.id_apertura === idApertura ? updatedAp : a));
+    setFormsState(prev => ({
+      ...prev,
+      [idApertura]: initialFormState(updatedAp)
+    }));
+  };
+
+  const handleUnlinkSuministroItem = async (idApertura, idSuministro) => {
+    try {
+      const token = localStorage.getItem("access_token");
+      const res = await api.post(
+        `cotizaciones/apertura_detalle/${idApertura}/desvincular_suministro/`,
+        { id_suministro: idSuministro },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const updatedAp = res.data?.apertura || res.data;
+      applyAperturaUpdate(idApertura, updatedAp);
+      toast.success("Ítem desvinculado de esta OC.");
+    } catch (err) {
+      console.error("Error al desvincular suministro:", err);
+      toast.error(err.response?.data?.error || "Error al desvincular el ítem.");
+    }
+  };
+
+  const handleUnlinkServicioItem = async (idApertura, idServicio) => {
+    try {
+      const token = localStorage.getItem("access_token");
+      const res = await api.post(
+        `cotizaciones/apertura_detalle/${idApertura}/desvincular_servicio/`,
+        { id_servicio: idServicio },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const updatedAp = res.data?.apertura || res.data;
+      applyAperturaUpdate(idApertura, updatedAp);
+      toast.success("Ítem desvinculado de esta OC.");
+    } catch (err) {
+      console.error("Error al desvincular servicio:", err);
+      toast.error(err.response?.data?.error || "Error al desvincular el ítem.");
     }
   };
 
@@ -820,7 +1318,7 @@ export default function AperturasDetalle({ idRegistro }) {
     if (!file) return;
 
     setUploadingOcId(idApertura);
-    const uploadToast = toast.info("Subiendo y procesando Orden de Compra (OCR)...", { autoClose: false });
+    const uploadToast = toast.info("Adjuntando PDF de la Orden de Compra...", { autoClose: false });
     const formData = new FormData();
     formData.append('archivo', file);
 
@@ -838,7 +1336,6 @@ export default function AperturasDetalle({ idRegistro }) {
       if (res.data.ok && res.data.apertura) {
         const updatedAp = res.data.apertura;
         
-        // Sync responsibles from memory to the updated aperture
         const sharedResponsibles = visibleAperturas.find(a => a.responsables)?.responsables || aperturas.find(a => a.responsables)?.responsables || "";
         if (sharedResponsibles) {
           updatedAp.responsables = sharedResponsibles;
@@ -849,7 +1346,18 @@ export default function AperturasDetalle({ idRegistro }) {
           [idApertura]: initialFormState(updatedAp)
         }));
         setAperturas(prev => prev.map(a => a.id_apertura === idApertura ? updatedAp : a));
-        toast.success(res.data.message || "Orden de Compra procesada y vinculada correctamente.");
+
+        const sug = res.data.sugerencias || {};
+        if ((sug.pendientes || []).length > 0) {
+          setPdfSuggestions(prev => ({ ...prev, [idApertura]: sug }));
+        } else {
+          setPdfSuggestions(prev => {
+            const next = { ...prev };
+            delete next[idApertura];
+            return next;
+          });
+        }
+        toast.success(res.data.message || "PDF adjuntado. Las partidas no se modificaron.");
       } else if (res.data.ok) {
         setFormsState(prev => ({
           ...prev,
@@ -880,7 +1388,7 @@ export default function AperturasDetalle({ idRegistro }) {
 
   const handleReprocesarOc = async (idApertura) => {
     setUploadingOcId(idApertura);
-    const procToast = toast.info("Re-procesando y actualizando lectura de OC (OCR)...", { autoClose: false });
+    const procToast = toast.info("Leyendo sugerencias del PDF...", { autoClose: false });
     try {
       const token = localStorage.getItem("access_token");
       const res = await api.post(`cotizaciones/apertura_detalle/${idApertura}/reprocesar_oc/`, {}, {
@@ -894,7 +1402,17 @@ export default function AperturasDetalle({ idRegistro }) {
           [idApertura]: initialFormState(updatedAp)
         }));
         setAperturas(prev => prev.map(a => a.id_apertura === idApertura ? updatedAp : a));
-        toast.success(res.data.message || "Orden de compra re-procesada y vinculada correctamente.");
+        const sug = res.data.sugerencias || {};
+        if ((sug.pendientes || []).length > 0) {
+          setPdfSuggestions(prev => ({ ...prev, [idApertura]: sug }));
+        } else {
+          setPdfSuggestions(prev => {
+            const next = { ...prev };
+            delete next[idApertura];
+            return next;
+          });
+        }
+        toast.success(res.data.message || "Se leyeron sugerencias del PDF. Las partidas no se modificaron.");
       }
     } catch (err) {
       toast.dismiss(procToast);
@@ -905,22 +1423,59 @@ export default function AperturasDetalle({ idRegistro }) {
     }
   };
 
+  const ocHasPdf = (form) => Boolean(form?.tiene_archivo_fisico || String(form?.orden_adjunta || "").trim());
+
+  const handleEstadoOrdenChange = (idApertura, value) => {
+    const f = formsState[idApertura];
+    if ((value === 2 || value === 3) && !ocHasPdf(f)) {
+      toast.error("Adjunte el PDF de la Orden de Compra para marcarla como Aprobada o Facturada.");
+      return;
+    }
+    handleChange(idApertura, "estado_orden", value);
+  };
+
+  const applyPdfSuggestions = (idApertura, sug) => {
+    const s = sug?.sugeridas || {};
+    const current = formsState[idApertura];
+    if (!current) return;
+    const updated = { ...current };
+    if (s.numero_orden) updated.numero_orden = s.numero_orden;
+    if (s.total_orden != null) updated.total_orden = Number(s.total_orden);
+    if (s.fecha_orden) updated.fecha_orden = new Date(`${s.fecha_orden}T00:00:00`);
+    setFormsState(prev => ({ ...prev, [idApertura]: updated }));
+    autoSaveForm(idApertura, updated);
+    setPdfSuggestions(prev => {
+      const next = { ...prev };
+      delete next[idApertura];
+      return next;
+    });
+    toast.success("Se aplicaron las sugerencias del PDF.");
+  };
+
   const handleVerOrden = (idApertura, tieneFisico, urlAdjunta) => {
     let url = "";
     let name = "";
     let extension = "";
+    const f = formsState[idApertura] || {};
+    const apiBase = (api.defaults.baseURL || "/api/").replace(/\/+$/, "");
+    const apiViewer = `${apiBase}/cotizaciones/ocfiles/ver/${idApertura}/`;
 
-    if (tieneFisico) {
-      url = `${api.defaults.baseURL}/cotizaciones/ocfiles/ver/${idApertura}/`;
-      name = `${idApertura}`;
-      const f = formsState[idApertura];
-      extension = f?.extension_archivo_fisico || '.pdf';
-      name += extension;
+    const adj = String(urlAdjunta || "").trim();
+    const looksLikeStoredFile =
+      Boolean(tieneFisico) ||
+      adj.includes("ocfiles/ver") ||
+      /^\d+$/.test(adj);
+
+    if (looksLikeStoredFile) {
+      url = apiViewer;
+      extension = (f.extension_archivo_fisico || ".pdf").toLowerCase();
+      if (!extension.startsWith(".")) extension = `.${extension}`;
+      name = `${idApertura}${extension}`;
     } else if (urlAdjunta) {
       if (urlAdjunta.startsWith('http://') || urlAdjunta.startsWith('https://')) {
         url = urlAdjunta;
       } else {
-        const rootURL = api.defaults.baseURL.replace(/\/api\/?$/, '');
+        const rootURL = apiBase.replace(/\/api\/?$/, '');
         const relativePath = urlAdjunta.startsWith('/') ? urlAdjunta : `/${urlAdjunta}`;
         url = `${rootURL}${relativePath}`;
       }
@@ -934,7 +1489,7 @@ export default function AperturasDetalle({ idRegistro }) {
 
     if (url) {
       const cleanUrl = url.replace(/([^:]\/)\/+/g, "$1");
-      setPreviewDoc({ url: cleanUrl, name, extension });
+      setPreviewDoc({ url: cleanUrl, name, extension: extension || ".pdf" });
     } else {
       toast.error("No hay ningún documento adjunto para visualizar.");
     }
@@ -996,6 +1551,8 @@ export default function AperturasDetalle({ idRegistro }) {
         }
       } catch (err) {
         console.error("Error al auto-guardar apertura:", err);
+        const msg = err.response?.data?.error;
+        if (msg) toast.error(msg);
       }
     }, 800);
   };
@@ -1073,14 +1630,21 @@ export default function AperturasDetalle({ idRegistro }) {
   const filteredUsuarios = useMemo(() => {
     let list = usuariosActivos;
     if (filterAssignedOnly) {
-      list = list.filter(u => assignedEmails.includes(u.correo?.toLowerCase()));
+      list = list.filter(u => {
+        const email = (u.correo || (u.usuario ? `${u.usuario}@vc-corporation.com` : '')).trim().toLowerCase();
+        return email && assignedEmails.includes(email);
+      });
     }
     const query = searchUserQuery.trim().toLowerCase();
     if (!query) return list;
-    list = list.filter(u => 
-      (u.nombre_completo || '').toLowerCase().includes(query) ||
-      (u.correo || '').toLowerCase().includes(query)
-    );
+    list = list.filter(u => {
+      const email = (u.correo || (u.usuario ? `${u.usuario}@vc-corporation.com` : '')).trim().toLowerCase();
+      return (
+        (u.nombre_completo || '').toLowerCase().includes(query) ||
+        email.includes(query) ||
+        (u.usuario || '').toLowerCase().includes(query)
+      );
+    });
     list = list.sort((a, b) => (a.nombre_completo || '').localeCompare(b.nombre_completo || ''));
     return list;
   }, [usuariosActivos, searchUserQuery, filterAssignedOnly, assignedEmails]);
@@ -1220,33 +1784,92 @@ export default function AperturasDetalle({ idRegistro }) {
   }, [aperturas, formsState, deletedOcIds]);
 
   const totals = useMemo(() => {
-    let totalOrden = 0;
+    const rowsMeta = [];
+    let storedTotalOrden = 0;
     let costEquipos = 0;
     let costMateriales = 0;
     let costHH = 0;
     let costEntrega = 0;
     let costServicios = 0;
     let costOtros = 0;
-    let totalCost = 0;
 
-    visibleAperturas.forEach(ap => {
+    visibleAperturas.forEach((ap) => {
       const f = formsState[ap.id_apertura];
-      if (f) {
-        totalOrden += Number(f.total_orden || 0);
-        costEquipos += Number(f.orden_compra_equipos || 0);
-        costMateriales += Number(f.orden_compra_materiales || 0);
-        costHH += Number(f.orden_compra_hh || 0);
-        costEntrega += Number(f.orden_compra_entrega || 0);
-        costServicios += Number(f.orden_compra_costo_servicios || 0);
-        costOtros += Number(f.orden_compra_otros || 0);
-      }
+      if (!f) return;
+      const equipos = Number(f.orden_compra_equipos || 0);
+      const materiales = Number(f.orden_compra_materiales || 0);
+      const hh = Number(f.orden_compra_hh || 0);
+      const entrega = Number(f.orden_compra_entrega || 0);
+      const servicios = Number(f.orden_compra_costo_servicios || 0);
+      const otros = Number(f.orden_compra_otros || 0);
+      const storedImporte = Number(f.total_orden || 0);
+      const costSum = equipos + materiales + hh + entrega + servicios + otros;
+      storedTotalOrden += storedImporte;
+      costEquipos += equipos;
+      costMateriales += materiales;
+      costHH += hh;
+      costEntrega += entrega;
+      costServicios += servicios;
+      costOtros += otros;
+      rowsMeta.push({
+        id: ap.id_apertura,
+        storedImporte,
+        storedUtility: storedImporte - costSum,
+      });
     });
 
-    totalCost = costEquipos + costMateriales + costHH + costEntrega + costServicios + costOtros;
-    const utility = totalOrden - totalCost;
+    const totalCost = costEquipos + costMateriales + costHH + costEntrega + costServicios + costOtros;
+    const discountMonto = getQuoteDiscountMonto(quote);
+    const discountActive = discountMonto > 0;
+    const quoteNet = Number(quote?.total_cotizacion || 0);
+    const quoteSaldo = Number(quote?.saldo || 0);
+
+    // If stored OC totals already equal the NET quote, the full discount was
+    // absorbed (typically into the last OC). Restore GROSS first, then apply
+    // the quote discount onto each row's utility (importe follows).
+    let addBack = 0;
+    if (discountActive) {
+      const matchesNet = quoteNet > 0 && Math.abs(storedTotalOrden - quoteNet) <= MONEY_EPS;
+      const expectedGross = roundMoney(quoteNet + discountMonto);
+      const matchesGrossByNet = Math.abs(storedTotalOrden - expectedGross) <= MONEY_EPS;
+      const matchesGrossBySaldo = quoteSaldo > 0 && Math.abs(storedTotalOrden - quoteSaldo) <= MONEY_EPS;
+      if (matchesNet && !matchesGrossByNet && !matchesGrossBySaldo) {
+        addBack = discountMonto;
+      }
+    }
+
+    const shares = discountActive
+      ? splitDiscountByUtility(
+          rowsMeta.map((row, idx) => {
+            const extra = idx === rowsMeta.length - 1 ? addBack : 0;
+            return roundMoney(row.storedUtility + extra);
+          }),
+          discountMonto
+        )
+      : [];
+    const rowDisplay = {};
+    rowsMeta.forEach((row, idx) => {
+      const extra = idx === rowsMeta.length - 1 ? addBack : 0;
+      const importeGross = roundMoney(row.storedImporte + extra);
+      const utilityGross = roundMoney(row.storedUtility + extra);
+      const share = Number(shares[idx] || 0);
+      rowDisplay[row.id] = {
+        importeGross,
+        utilityGross,
+        discountShare: share,
+        utility: roundMoney(utilityGross - share),
+        importe: roundMoney(importeGross - share),
+      };
+    });
+
+    const grossTotalOrden = roundMoney(storedTotalOrden + addBack);
+    const grossUtility = roundMoney(grossTotalOrden - totalCost);
+    const netTotalOrden = roundMoney(grossTotalOrden - (discountActive ? discountMonto : 0));
+    const netUtility = roundMoney(grossUtility - (discountActive ? discountMonto : 0));
 
     return {
-      totalOrden,
+      grossTotalOrden,
+      totalOrden: netTotalOrden,
       costEquipos,
       costMateriales,
       costHH,
@@ -1254,9 +1877,14 @@ export default function AperturasDetalle({ idRegistro }) {
       costServicios,
       costOtros,
       totalCost,
-      utility
+      grossUtility,
+      utility: netUtility,
+      discountActive,
+      discountMonto,
+      discountPorcentaje: Number(quote?.descuento_porcentaje || quote?.des_p || 0),
+      rowDisplay,
     };
-  }, [visibleAperturas, formsState]);
+  }, [visibleAperturas, formsState, quote]);
 
   if (loading) {
     return (
@@ -1294,6 +1922,21 @@ export default function AperturasDetalle({ idRegistro }) {
                   </h1>
                 </div>
               </div>
+            </div>
+
+            {/* BOTÓN REPORTE DIRECTO A PDF/WORD */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setReporteLoading(true);
+                  setReportePdfOpen(true);
+                }}
+                className="flex items-center px-4 py-2 bg-sky-50/80 border border-sky-200 rounded-xl text-[10px] font-black text-sky-700 hover:bg-sky-100 hover:border-sky-300 hover:shadow-sm transition-all h-[42px] uppercase group cursor-pointer"
+                title="Ver y descargar Reporte PDF / Word"
+              >
+                <Icon name="file-text" className="h-3.5 w-3.5 mr-2 text-sky-600 group-hover:scale-110 transition-transform" />
+                <span>Reporte</span>
+              </button>
             </div>
           </div>
         </div>
@@ -1412,102 +2055,152 @@ export default function AperturasDetalle({ idRegistro }) {
               </div>
               Desglose Presupuestal por Orden de Compra
             </h3>
-            <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
-              {visibleAperturas.length} Registros Activos
-            </span>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setDescuentoModalOpen(true)}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all cursor-pointer shadow-sm active:scale-95",
+                  totals.discountActive && totals.discountMonto > 0
+                    ? "bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-300"
+                    : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
+                )}
+                title="El descuento se aplica a la utilidad de cada OC. El importe baja en la misma cantidad."
+              >
+                <Icon name="percent" className="h-3.5 w-3.5 text-amber-600" />
+                <span>
+                  {totals.discountActive && totals.discountMonto > 0
+                    ? `Descuento: ${currencySymbol} ${Number(totals.discountMonto).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    : "Descuento"}
+                </span>
+              </button>
+
+              <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full">
+                {visibleAperturas.length} Registros Activos
+              </span>
+            </div>
           </div>
 
-          <div className="overflow-x-auto overflow-y-hidden border border-slate-100 rounded-xl bg-white">
-            <table className="min-w-[850px] md:min-w-full table-fixed divide-y divide-slate-100 text-center text-xs">
-              <thead className="bg-slate-50/70 text-[9px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100">
+          <div className="overflow-x-auto overflow-y-hidden border border-slate-200/80 rounded-xl bg-white shadow-xs">
+            <table className="min-w-[850px] md:min-w-full table-fixed divide-y divide-slate-200 text-center text-xs">
+              <thead className="bg-slate-100/90 text-[10px] font-black text-slate-700 uppercase tracking-wider border-b-2 border-slate-300">
                 <tr>
-                  <th className="w-[16%] py-3.5 text-left pl-4 font-extrabold text-slate-700">No. Orden</th>
-                  <th className="w-[12%] py-3.5 font-semibold">Emisión</th>
-                  <th className="w-[14%] py-3.5 font-bold text-indigo-950">Suministros</th>
-                  <th className="w-[12%] py-3.5 font-semibold">H.H. Propios</th>
-                  <th className="w-[12%] py-3.5 font-semibold">Costo Serv.</th>
-                  <th className="w-[10%] py-3.5 font-semibold">Otros</th>
-                  <th className="w-[12%] py-3.5 font-semibold">Margen Neto</th>
-                  <th className="w-[12%] py-3.5 text-right pr-4 font-extrabold text-slate-700">Importe</th>
+                  <th className="w-[14%] py-3 text-left pl-4 font-black text-slate-800 tracking-wider">No. Orden</th>
+                  <th className="w-[12%] py-3 font-black text-indigo-950 tracking-wider">Emisión</th>
+                  <th className="w-[14%] py-3 font-black text-indigo-950 tracking-wider">Suministros</th>
+                  <th className="w-[12%] py-3 font-extrabold text-slate-800 tracking-wider">H.H. Propios</th>
+                  <th className="w-[12%] py-3 font-extrabold text-slate-800 tracking-wider">Costo Serv.</th>
+                  <th className="w-[10%] py-3 font-extrabold text-slate-800 tracking-wider">Otros</th>
+                  <th className="w-[14%] py-3 font-black text-slate-800 tracking-wider">Utilidad</th>
+                  <th className="w-[12%] py-3 text-right pr-4 font-black text-slate-800 tracking-wider">Importe</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 text-[11px] text-slate-600 font-medium">
-                {visibleAperturas.map(ap => {
+              <tbody className="divide-y divide-slate-100 text-[11px] text-slate-700 font-medium">
+                {visibleAperturas.map((ap, idx) => {
                   const f = formsState[ap.id_apertura];
                   if (!f) return null;
 
-                  const costSum = 
-                    Number(f.orden_compra_equipos) +
-                    Number(f.orden_compra_materiales) +
-                    Number(f.orden_compra_hh) +
-                    Number(f.orden_compra_entrega) +
-                    Number(f.orden_compra_costo_servicios) +
-                    Number(f.orden_compra_otros);
-                  const utility = Number(f.total_orden) - costSum;
+                  const display = totals.rowDisplay?.[ap.id_apertura];
+                  const costSum =
+                    Number(f.orden_compra_equipos || 0) +
+                    Number(f.orden_compra_materiales || 0) +
+                    Number(f.orden_compra_hh || 0) +
+                    Number(f.orden_compra_entrega || 0) +
+                    Number(f.orden_compra_costo_servicios || 0) +
+                    Number(f.orden_compra_otros || 0);
+                  const utility = display?.utility ?? (Number(f.total_orden || 0) - costSum);
+                  const importe = display?.importe ?? Number(f.total_orden || 0);
 
                   const totalSuministrosRow = Number(f.orden_compra_equipos || 0) + Number(f.orden_compra_materiales || 0);
 
                   const renderAmount = (val) => {
                     const num = Number(val) || 0;
                     if (num === 0) return <span className="text-slate-300 font-normal">—</span>;
-                    return <span className="text-slate-700 font-semibold">{currencySymbol} {num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>;
+                    return <span className="text-slate-800 font-bold tabular-nums">{currencySymbol} {num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>;
                   };
 
                   return (
-                    <tr key={ap.id_apertura} className="hover:bg-slate-50/50 transition-colors h-11 group">
-                      <td className="text-left pl-4 text-slate-900 font-bold tracking-tight">
+                    <tr key={ap.id_apertura} className="hover:bg-indigo-50/40 transition-colors h-11 group border-b border-slate-100 odd:bg-white even:bg-slate-50/30">
+                      <td className="text-left pl-4 text-slate-900 font-black tracking-tight text-[11.5px]">
                         <div className="flex items-center gap-2">
-                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
+                          <span className="w-2 h-2 rounded-full bg-indigo-600 shrink-0" />
                           <span className="truncate" title={f.numero_orden}>{f.numero_orden || 'S/N'}</span>
                         </div>
                       </td>
-                      <td className="text-slate-500 font-normal">
+                      <td className="text-slate-600 font-bold text-[11px]">
                         {f.fecha_orden 
                           ? (f.fecha_orden instanceof Date 
                               ? f.fecha_orden.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })
                               : new Date(f.fecha_orden).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' }))
                           : '—'}
                       </td>
-                      <td className="bg-indigo-50/10 font-semibold">{renderAmount(totalSuministrosRow)}</td>
+                      <td className="bg-indigo-50/15 font-extrabold">{renderAmount(totalSuministrosRow)}</td>
                       <td>{renderAmount(f.orden_compra_hh)}</td>
                       <td>{renderAmount(f.orden_compra_costo_servicios)}</td>
                       <td>{renderAmount(f.orden_compra_otros)}</td>
                       <td>
                         <span className={cn(
-                          "inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold tracking-tight border",
-                          utility >= 0 
-                            ? "bg-emerald-50 text-emerald-700 border-emerald-100" 
-                            : "bg-red-50 text-red-700 border-red-100"
+                          "inline-flex items-center px-2.5 py-0.5 rounded-md text-[10.5px] font-black tracking-tight border shadow-2xs",
+                          utility >= 0
+                            ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                            : "bg-rose-50 text-rose-800 border-rose-200"
                         )}>
                           {currencySymbol} {Number(utility).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </td>
-                      <td className="text-right pr-4 text-slate-950 font-extrabold text-[11.5px]">
-                        {currencySymbol} {Number(f.total_orden || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      <td className="text-right pr-4 text-slate-950 font-black text-[12px] tabular-nums">
+                        {currencySymbol} {Number(importe || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
                     </tr>
                   );
                 })}
+
+                {/* FILA DE DESCUENTO (SI EXISTE DESCUENTO ACTIVO > 0) */}
+                {totals.discountActive && totals.discountMonto > 0 && (
+                  <tr className="bg-amber-50/80 border-y border-amber-300/80 text-amber-950 font-bold shadow-2xs">
+                    <td colSpan={6} className="text-left pl-4 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-amber-200/90 text-amber-950 text-[9.5px] font-black uppercase tracking-wider border border-amber-300">
+                          <Icon name="percent" className="h-3 w-3 text-amber-800" />
+                          Descuento
+                        </span>
+                        {(totals.discountPorcentaje > 0) && (
+                          <span className="text-[11px] font-black text-amber-900">
+                            {Number(totals.discountPorcentaje).toFixed(2)}%
+                          </span>
+                        )}
+                        <span className="text-[10.5px] font-bold text-amber-800/80 uppercase tracking-tight">
+                          sobre la utilidad
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-2.5 text-center font-black text-rose-600 text-xs tabular-nums">
+                      −{currencySymbol} {Number(totals.discountMonto).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </td>
+                    <td className="py-2.5 pr-4" />
+                  </tr>
+                )}
                 
-                <tr className="bg-slate-50/80 font-black text-slate-900 border-t border-slate-200 text-[11px] h-12 shadow-[inset_0_1px_0_rgba(0,0,0,0.05)]">
-                  <td colSpan={2} className="text-right text-[10px] text-slate-500 font-extrabold tracking-wider pr-2">
+                <tr className="bg-slate-100/95 font-black text-slate-900 border-t-2 border-slate-300 text-[11px] h-12 shadow-[inset_0_1px_0_rgba(0,0,0,0.05)]">
+                  <td colSpan={2} className="text-right text-[10.5px] text-slate-700 font-black tracking-wider uppercase pr-2">
                     RESUMEN CONSOLIDADO :
                   </td>
-                  <td className="text-indigo-950 font-bold bg-indigo-50/30">
+                  <td className="text-indigo-950 font-black bg-indigo-50/30 text-xs tabular-nums">
                     {currencySymbol} {Number((totals.costEquipos || 0) + (totals.costMateriales || 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
-                  <td>{currencySymbol} {Number(totals.costHH || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                  <td>{currencySymbol} {Number(totals.costServicios || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                  <td>{currencySymbol} {Number(totals.costOtros || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                  <td className="font-black text-slate-900 text-xs tabular-nums">{currencySymbol} {Number(totals.costHH || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                  <td className="font-black text-slate-900 text-xs tabular-nums">{currencySymbol} {Number(totals.costServicios || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                  <td className="font-black text-slate-900 text-xs tabular-nums">{currencySymbol} {Number(totals.costOtros || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   <td>
                     <span className={cn(
-                      "inline-flex items-center px-2.5 py-1 rounded-lg text-[10.5px] font-black shadow-sm text-white",
-                      (totals.utility || 0) >= 0 ? "bg-emerald-600" : "bg-red-600"
+                      "inline-flex items-center px-3 py-1 rounded-lg text-xs font-black shadow-xs text-white",
+                      (totals.utility || 0) >= 0 ? "bg-emerald-600" : "bg-rose-600"
                     )}>
                       {currencySymbol} {Number(totals.utility || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </td>
-                  <td className="text-right pr-4 text-indigo-700 font-black text-xs">
+                  <td className="text-right pr-4 text-indigo-700 font-black text-[13px] tabular-nums">
                     {currencySymbol} {Number(totals.totalOrden || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
                 </tr>
@@ -1526,17 +2219,10 @@ export default function AperturasDetalle({ idRegistro }) {
               Órdenes de Compra Vinculadas ({visibleAperturas.length})
             </h2>
             
-            <input 
-              type="file" 
-              id="new-oc-file-input"
-              className="hidden" 
-              accept=".pdf"
-              onChange={handleCrearNuevaOCConArchivo} 
-            />
             <button
-              onClick={() => document.getElementById('new-oc-file-input').click()}
+              onClick={handleCrearNuevaOC}
               disabled={isProcessingNewOc}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200 text-[10px] font-black text-emerald-700 uppercase tracking-wider rounded-xl transition-all cursor-pointer active:scale-95 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200 text-[10px] font-black text-emerald-700 uppercase tracking-wider rounded-xl transition-all cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isProcessingNewOc ? (
                 <>
@@ -1559,32 +2245,27 @@ export default function AperturasDetalle({ idRegistro }) {
             const isCardDirty = isFormDirty(f, ap);
             const isExpanded = ocExpanded[ap.id_apertura] !== false;
             
-            const stateBadgeStyle = f.estado_orden === 1 ? "bg-emerald-50 text-emerald-700 border-emerald-100" :
-                                    f.estado_orden === 4 ? "bg-red-50 text-red-700 border-red-100" :
-                                    "bg-amber-50 text-amber-700 border-amber-100";
+            const estadoMeta = ocEstadoMeta(f.estado_orden);
+            const stateBadgeStyle = estadoMeta ? estadoMeta.color : "";
+            const currentEstadoOrdenNombre = estadoMeta ? estadoMeta.label : "";
+            const hasPdf = ocHasPdf(f);
 
             const priorityBadgeStyle = f.prio === '1' ? "bg-amber-50 text-amber-800 border-amber-100" :
                                        f.prio === '2' ? "bg-red-50 text-red-800 border-red-100" :
                                        "bg-slate-50 text-slate-600 border-slate-200";
 
-            const currentEstadoOrdenNombre = f.estado_orden === 1 ? "ADJUDICADO" :
-                                             f.estado_orden === 4 ? "ANULADO" : "PENDIENTE";
-
             const currentPrioridadNombre = f.prio === '1' ? "URGENTE" :
                                            f.prio === '2' ? "CRÍTICA" : "NORMAL";
 
-            const hasCheckedSupplies = f.doc === null || f.doc === undefined || f.doc.split(',').map(s => s.trim()).filter(Boolean).length > 0;
-            const hasCheckedServices = f.ti1 === null || f.ti1 === undefined || f.ti1.split(',').map(s => s.trim()).filter(Boolean).length > 0;
-            
-            const showSupplies = hasCheckedSupplies || (!hasCheckedSupplies && !hasCheckedServices);
-            const showServices = hasCheckedServices || (!hasCheckedSupplies && !hasCheckedServices);
+            const showSupplies = true;
+            const showServices = true;
 
             return (
               <div key={ap.id_apertura} className="relative overflow-hidden bg-white border border-slate-200 shadow-sm rounded-2xl p-5 space-y-5 transition-all duration-300">
                 {uploadingOcId === ap.id_apertura && (
                   <div className="absolute inset-0 bg-white/70 backdrop-blur-sm flex flex-col items-center justify-center gap-2 z-10 animate-in fade-in duration-200">
                     <div className="w-8 h-8 border-3 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin" />
-                    <span className="text-[9px] font-black uppercase tracking-wider text-indigo-700">Procesando OCR...</span>
+                    <span className="text-[9px] font-black uppercase tracking-wider text-indigo-700">Adjuntando PDF...</span>
                   </div>
                 )}
                 
@@ -1594,19 +2275,39 @@ export default function AperturasDetalle({ idRegistro }) {
                     <button 
                       type="button"
                       onClick={() => toggleOc(ap.id_apertura)}
-                      className="p-1 hover:bg-slate-100 rounded-lg transition-colors text-slate-500"
+                      className="p-1 hover:bg-slate-100 rounded-lg transition-colors text-slate-500 cursor-pointer"
+                      title={isExpanded ? "Ocultar detalle" : "Desplegar detalle"}
                     >
                       <Icon name={isExpanded ? "chevron-down" : "chevron-right"} className="h-4 w-4 transition-transform" />
                     </button>
                     
-                    <span className="text-xs font-black text-slate-900 uppercase tracking-wide flex items-center gap-1.5">
+                    <span 
+                      onClick={() => toggleOc(ap.id_apertura)}
+                      className="text-xs font-black text-slate-900 uppercase tracking-wide flex items-center gap-1.5 cursor-pointer hover:text-indigo-600 transition-colors"
+                      title={isExpanded ? "Ocultar detalle" : "Desplegar detalle"}
+                    >
                       OC: {f.numero_orden || <span className="text-slate-400 italic font-normal">Sin Número ({index + 1})</span>}
                     </span>
                     
-                    <div className={cn("flex items-center px-2 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-wider border shadow-sm", stateBadgeStyle)}>
-                      <Icon name="refresh-cw" className="h-2 w-2 mr-1 animate-spin-slow" />
-                      {currentEstadoOrdenNombre}
+                    {estadoMeta && (
+                      <div className={cn("flex items-center px-2 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-wider border", stateBadgeStyle)}>
+                        <Icon name="refresh-cw" className="h-2 w-2 mr-1" />
+                        {currentEstadoOrdenNombre}
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[9px] font-black tracking-wider border bg-emerald-50 text-emerald-800 border-emerald-200/80 shadow-2xs">
+                      <span className="text-[8px] font-bold text-emerald-600 uppercase tracking-tight">Total:</span>
+                      <span className="font-extrabold text-emerald-950">
+                        {currencySymbol} {Number(f.total_orden || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
                     </div>
+
+                    {!hasPdf && (
+                      <div className="flex items-center px-2 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-wider border bg-slate-50 text-slate-500 border-slate-200">
+                        Sin PDF
+                      </div>
+                    )}
                   </div>
 
                   {/* MENÚ DE ACCIONES FLUIDO */}
@@ -1659,6 +2360,38 @@ export default function AperturasDetalle({ idRegistro }) {
                     </button>
                   </div>
                 </div>
+
+                {pdfSuggestions[ap.id_apertura]?.sugeridas && (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2">
+                    <p className="text-[10px] font-bold text-indigo-800 uppercase tracking-wide">
+                      El PDF sugiere
+                      {pdfSuggestions[ap.id_apertura].sugeridas.numero_orden ? ` Nº ${pdfSuggestions[ap.id_apertura].sugeridas.numero_orden}` : ""}
+                      {pdfSuggestions[ap.id_apertura].sugeridas.total_orden != null ? ` · Total ${Number(pdfSuggestions[ap.id_apertura].sugeridas.total_orden).toLocaleString("en-US", { minimumFractionDigits: 2 })}` : ""}
+                      {pdfSuggestions[ap.id_apertura].sugeridas.fecha_orden ? ` · Fecha ${pdfSuggestions[ap.id_apertura].sugeridas.fecha_orden}` : ""}
+                      . Los campos actuales son distintos.
+                    </p>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => applyPdfSuggestions(ap.id_apertura, pdfSuggestions[ap.id_apertura])}
+                        className="px-2.5 py-1 bg-indigo-600 text-white text-[9px] font-black uppercase rounded-lg"
+                      >
+                        Aplicar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPdfSuggestions(prev => {
+                          const next = { ...prev };
+                          delete next[ap.id_apertura];
+                          return next;
+                        })}
+                        className="px-2 py-1 text-[9px] font-black uppercase text-indigo-500"
+                      >
+                        Ignorar
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* CONTENIDO DESPLEGABLE CON ANIMACIÓN */}
                 {isExpanded && (
@@ -1740,7 +2473,7 @@ export default function AperturasDetalle({ idRegistro }) {
                             className="w-full bg-white border border-slate-200 rounded-xl pl-6 pr-3 py-1.5 text-[11px] font-black focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all text-indigo-600 shadow-sm"
                             placeholder="0.00"
                           />
-                          <span className="absolute left-3 text-[11px] font-black text-indigo-600 pointer-events-none">$</span>
+                          <span className="absolute left-3 text-[11px] font-black text-indigo-600 pointer-events-none">{currencySymbol.replace(/\s/g, '')}</span>
                         </div>
                       </div>
 
@@ -1809,15 +2542,18 @@ export default function AperturasDetalle({ idRegistro }) {
 
                       {/* Estado */}
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Estado de Cobro</label>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Estado de la OC</label>
                         <select
-                          value={f.estado_orden || 1}
-                          onChange={(e) => handleChange(ap.id_apertura, 'estado_orden', parseInt(e.target.value, 10))}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-[11px] font-bold focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all cursor-pointer text-slate-700 shadow-sm"
+                          value={f.estado_orden ?? 1}
+                          onChange={(e) => handleEstadoOrdenChange(ap.id_apertura, parseInt(e.target.value, 10))}
+                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-[11px] font-bold focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all cursor-pointer text-slate-700"
                         >
-                          <option value={1}>ADJUDICADO</option>
-                          <option value={2}>PENDIENTE</option>
-                          <option value={4}>ANULADO</option>
+                          {ESTADOS_OC.map((opt) => (
+                            <option key={opt.id} value={opt.id}>{opt.label}</option>
+                          ))}
+                          {!ESTADOS_OC.some(s => s.id === Number(f.estado_orden)) && f.estado_orden != null && (
+                            <option value={f.estado_orden}>ESTADO ({f.estado_orden})</option>
+                          )}
                         </select>
                       </div>
                     </div>
@@ -1826,14 +2562,14 @@ export default function AperturasDetalle({ idRegistro }) {
                     <div className="border border-slate-100 rounded-xl p-4 space-y-4">
                       {showSupplies && (
                         <>
-                          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                            <div className="flex items-center gap-3">
-                              <span className="text-[10px] font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                          <div className="flex items-center justify-between gap-3 pb-2.5 border-b border-slate-150 min-w-0">
+                            <div className="flex items-center gap-2.5 min-w-0 flex-wrap sm:flex-nowrap">
+                              <span className="text-[10px] font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5 shrink-0">
                                 <Icon name="package" className="h-3.5 w-3.5 text-indigo-500" />
                                 Suministros Vinculados a esta Partida
                               </span>
                               {(() => {
-                                const excludedSuministros = sortedGruposSuministros.filter(g => !isSuministroChecked(f.doc, g.codigo_grupo));
+                                const excludedSuministros = sortedGruposSuministros.filter(g => !isSuministroChecked(ap, f, g.codigo_grupo));
                                 if (excludedSuministros.length === 0) return null;
                                 return (
                                   <select
@@ -1843,7 +2579,7 @@ export default function AperturasDetalle({ idRegistro }) {
                                         handleToggleSuministroGroup(ap.id_apertura, e.target.value);
                                       }
                                     }}
-                                    className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200 text-emerald-700 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer shadow-sm outline-none"
+                                    className="max-w-[200px] sm:max-w-[260px] truncate px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100/90 border border-emerald-300/80 text-emerald-800 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer shadow-2xs outline-none shrink-0"
                                   >
                                     <option value="" disabled>+ Vincular Suministro</option>
                                     {excludedSuministros.map(g => (
@@ -1855,14 +2591,29 @@ export default function AperturasDetalle({ idRegistro }) {
                                 );
                               })()}
                             </div>
-                            <span className="text-[10px] font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded border border-slate-100">
-                              Costo: {formatMoney(quoteTotals.equiposCost + quoteTotals.materialesCost)} | Venta: {formatMoney(quoteTotals.equiposSale + quoteTotals.materialesSale)}
-                            </span>
+                            <div className="shrink-0 ml-auto">
+                              <span className="text-[10px] font-extrabold text-slate-700 bg-slate-100/80 px-2.5 py-1 rounded-lg border border-slate-200/80 inline-flex items-center gap-1 shadow-2xs">
+                                <span>Total:</span>
+                                <span className="text-emerald-700 font-black">
+                                  {(() => {
+                                    const checked = sortedGruposSuministros.filter(g => isSuministroChecked(ap, f, g.codigo_grupo));
+                                    let sale = 0;
+                                    checked.forEach((grupo) => {
+                                      const qty = Number(grupo.cantidad || 1);
+                                      itemsDeGrupoEnOc(ap, grupo).forEach((item) => {
+                                        sale += Number(item.venta_total || 0) * qty;
+                                      });
+                                    });
+                                    return formatMoney(sale);
+                                  })()}
+                                </span>
+                              </span>
+                            </div>
                           </div>
 
                           <div className="space-y-3">
                             {(() => {
-                              const checkedGruposSuministros = sortedGruposSuministros.filter(g => isSuministroChecked(f.doc, g.codigo_grupo));
+                              const checkedGruposSuministros = sortedGruposSuministros.filter(g => isSuministroChecked(ap, f, g.codigo_grupo));
                               if (checkedGruposSuministros.length === 0) {
                                 return (
                                   <div className="text-center py-5 border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
@@ -1873,8 +2624,9 @@ export default function AperturasDetalle({ idRegistro }) {
                               return checkedGruposSuministros.map((grupo) => {
                                 const isChecked = true;
                                 const isExpanded = gruposExpandidos[grupo.codigo_grupo] !== false;
-                                const totalGrupo = (grupo.items || []).reduce((acc, curr) => acc + (Number(curr.venta_total) || 0), 0) * (grupo.cantidad || 1);
-                                const costGrupo = (grupo.items || []).reduce((acc, curr) => acc + (Number(curr.costo_total) || 0), 0) * (grupo.cantidad || 1);
+                                const itemsOc = itemsDeGrupoEnOc(ap, grupo);
+                                const totalGrupo = itemsOc.reduce((acc, curr) => acc + (Number(curr.venta_total) || 0), 0) * (grupo.cantidad || 1);
+                                const costGrupo = itemsOc.reduce((acc, curr) => acc + (Number(curr.costo_total) || 0), 0) * (grupo.cantidad || 1);
 
                                 return (
                                   <div 
@@ -1897,8 +2649,8 @@ export default function AperturasDetalle({ idRegistro }) {
                                           <span className={cn("text-[10px] font-black uppercase tracking-wide", isChecked ? "text-slate-800" : "text-slate-500")}>
                                             {grupo.nombre_grupo}
                                           </span>
-                                          <span className="text-[8px] bg-slate-100 text-slate-600 font-black px-1.5 py-0.5 rounded">
-                                            {grupo.items?.length || 0} Items
+                                          <span className="text-[10px] bg-slate-200/90 text-slate-800 font-black px-2.5 py-0.5 rounded-full border border-slate-300/80 shadow-2xs select-none">
+                                            {itemsOc.length} Ítems
                                           </span>
                                           {!isChecked && (
                                             <span className="text-[8px] font-bold bg-slate-100 text-slate-500 border border-slate-200 px-1.5 py-0.5 rounded uppercase tracking-wider">
@@ -1909,12 +2661,8 @@ export default function AperturasDetalle({ idRegistro }) {
                                       </div>
                                       <div className="flex items-center gap-3">
                                         <span className="text-[9.5px] text-slate-500 font-bold">
-                                          Costo: <strong className="text-slate-700">{formatMoney(costGrupo)}</strong>
+                                          Total: <strong className="text-slate-700">{formatMoney(totalGrupo)}</strong>
                                         </span>
-                                        <span className="text-[9.5px] text-slate-500 font-bold">
-                                          Venta: <strong className="text-slate-700">{formatMoney(totalGrupo)}</strong>
-                                        </span>
-                                        <span className="text-[9px] text-slate-400 font-bold">Cant: <strong className="text-slate-700">{grupo.cantidad}</strong></span>
                                         <button
                                           type="button"
                                           onClick={(e) => {
@@ -1932,35 +2680,35 @@ export default function AperturasDetalle({ idRegistro }) {
                                       </div>
                                     </div>
 
-                                    {isExpanded && (
+                                    {isExpanded && itemsOc.length > 0 && (
                                       <div className="overflow-x-auto overflow-y-hidden border-t border-slate-100">
-                                        <table className="min-w-[800px] md:min-w-full divide-y divide-slate-100 text-[10px]">
-                                          <thead className="bg-slate-50/30 text-slate-500 font-bold uppercase tracking-wider text-[8px] text-center">
+                                        <table className="min-w-[800px] md:min-w-full divide-y divide-slate-150 text-[10.5px]">
+                                          <thead className="bg-slate-200/70 text-slate-900 font-black uppercase tracking-wider text-[9.5px] text-center border-b-2 border-slate-300">
                                             <tr>
-                                              <th className="py-2 w-[12%]">Código</th>
-                                              <th className="py-2 text-left px-3 w-[40%]">Descripción</th>
-                                              <th className="py-2 w-[15%]">Marca/Proveedor</th>
-                                              <th className="py-2 w-[8%]">Cant.</th>
-                                              <th className="py-2 w-[10%] text-right">P. Unit.</th>
-                                              <th className="py-2 w-[10%] text-right pr-4">Total</th>
-                                              <th className="py-2 w-[5%]"></th>
+                                              <th className="py-2.5 w-[12%]">Código</th>
+                                              <th className="py-2.5 text-left px-3 w-[40%]">Descripción</th>
+                                              <th className="py-2.5 w-[15%]">Marca / Proveedor</th>
+                                              <th className="py-2.5 w-[8%]">Cant.</th>
+                                              <th className="py-2.5 w-[10%] text-right">P. Unit.</th>
+                                              <th className="py-2.5 w-[10%] text-right pr-4">Total</th>
+                                              <th className="py-2.5 w-[5%]"></th>
                                             </tr>
                                           </thead>
-                                          <tbody className="divide-y divide-slate-50 text-slate-700 uppercase font-semibold text-center">
-                                            {(grupo.items || []).map((item, idx) => (
-                                              <tr key={item.id_suministro || idx} className="hover:bg-slate-50/30 h-9">
-                                                <td className="font-bold text-slate-900 text-[11px] truncate max-w-[120px]">{item.codigo_item || '-'}</td>
-                                                <td className="text-left px-3 text-slate-800 font-medium normal-case">{item.descripcion || '-'}</td>
-                                                <td className="text-slate-500 font-medium">{item.marca_nombre || item.proveedor || '-'}</td>
-                                                <td className="text-slate-800 font-bold">{item.cantidad || 0}</td>
-                                                <td className="text-right text-slate-600">{formatMoney(item.precio_venta)}</td>
-                                                <td className="text-right pr-4 text-slate-900 font-bold">{formatMoney(item.venta_total)}</td>
+                                          <tbody className="divide-y divide-slate-100 text-slate-800 uppercase font-semibold text-center">
+                                            {itemsOc.map((item, idx) => (
+                                              <tr key={item.id_suministro || idx} className="hover:bg-indigo-50/40 transition-colors duration-150 h-10 border-b border-slate-100/70">
+                                                <td className="font-extrabold text-slate-900 text-[10.5px] truncate max-w-[120px]">{item.codigo_item || '-'}</td>
+                                                <td className="text-left px-3 text-slate-800 font-medium normal-case leading-snug text-[10.5px]">{item.descripcion || '-'}</td>
+                                                <td className="text-slate-600 font-medium text-[10px]">{item.marca_nombre || item.proveedor || '-'}</td>
+                                                <td className="text-slate-900 font-extrabold">{item.cantidad || 0}</td>
+                                                <td className="text-right text-slate-700 font-semibold">{formatMoney(item.precio_venta)}</td>
+                                                <td className="text-right pr-4 text-slate-950 font-black">{formatMoney(item.venta_total)}</td>
                                                 <td className="py-1">
                                                   <button
                                                     type="button"
-                                                    onClick={() => handleEliminarItemSuministro(item.id_suministro, grupo.codigo_grupo)}
-                                                    className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded transition-colors cursor-pointer"
-                                                    title="Eliminar Ítem"
+                                                    onClick={() => handleUnlinkSuministroItem(ap.id_apertura, item.id_suministro)}
+                                                    className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
+                                                    title="Desvincular Ítem de esta OC"
                                                   >
                                                     <Icon name="trash-2" className="h-3.5 w-3.5" />
                                                   </button>
@@ -1982,14 +2730,14 @@ export default function AperturasDetalle({ idRegistro }) {
                       {/* Servicios */}
                       {showServices && (
                         <div className={cn("space-y-3", showSupplies && "pt-4 border-t border-slate-100")}>
-                          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                            <div className="flex items-center gap-3">
-                              <span className="text-[10px] font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                          <div className="flex items-center justify-between gap-3 pb-2.5 border-b border-slate-150 min-w-0">
+                            <div className="flex items-center gap-2.5 min-w-0 flex-wrap sm:flex-nowrap">
+                              <span className="text-[10px] font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5 shrink-0">
                                 <Icon name="wrench" className="h-3.5 w-3.5 text-indigo-500" />
                                 Servicios Vinculados a esta Partida
                               </span>
                               {(() => {
-                                const excludedServicios = sortedGruposServicios.filter(g => !isServicioChecked(f.ti1, g.id_servicio));
+                                const excludedServicios = sortedGruposServicios.filter(g => !isServicioChecked(ap, f, g.id_servicio));
                                 if (excludedServicios.length === 0) return null;
                                 return (
                                   <select
@@ -1999,7 +2747,7 @@ export default function AperturasDetalle({ idRegistro }) {
                                         handleToggleServicioGroup(ap.id_apertura, e.target.value);
                                       }
                                     }}
-                                    className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200 text-emerald-700 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer shadow-sm outline-none"
+                                    className="max-w-[200px] sm:max-w-[260px] truncate px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100/90 border border-emerald-300/80 text-emerald-800 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer shadow-2xs outline-none shrink-0"
                                   >
                                     <option value="" disabled>+ Vincular Servicio</option>
                                     {excludedServicios.map(g => (
@@ -2011,13 +2759,34 @@ export default function AperturasDetalle({ idRegistro }) {
                                 );
                               })()}
                             </div>
-                            <span className="text-[10px] font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded border border-slate-100">
-                              Costo: {formatMoney(quoteTotals.hhCost + quoteTotals.serviciosCost + quoteTotals.otrosCost)} | Venta: {formatMoney(quoteTotals.hhSale + quoteTotals.serviciosSale + quoteTotals.otrosSale)}
-                            </span>
+                            <div className="shrink-0 ml-auto">
+                              <span className="text-[10px] font-extrabold text-slate-700 bg-slate-100/80 px-2.5 py-1 rounded-lg border border-slate-200/80 inline-flex items-center gap-1 shadow-2xs">
+                                <span>Total:</span>
+                                <span className="text-emerald-700 font-black">
+                                  {(() => {
+                                    const checked = sortedGruposServicios.filter(g => isServicioChecked(ap, f, g.id_servicio));
+                                    let sale = 0;
+                                    checked.forEach((grupo) => {
+                                      const qty = Number(grupo.cantidad || 1);
+                                      const grupoOc = servicioGrupoEnOc(ap, grupo);
+                                      (grupoOc.subgrupos || []).forEach((sub) => {
+                                        (sub.items || []).forEach((item) => {
+                                          sale += Number(item.cotizado_total || 0) * qty;
+                                        });
+                                      });
+                                    });
+                                    return formatMoney(sale);
+                                  })()}
+                                </span>
+                              </span>
+                            </div>
                           </div>
 
                           {(() => {
-                            const checkedGruposServicios = sortedGruposServicios.filter(g => isServicioChecked(f.ti1, g.id_servicio));
+                            const checkedGruposServicios = sortedGruposServicios
+                              .filter(g => isServicioChecked(ap, f, g.id_servicio))
+                              .map(g => servicioGrupoEnOc(ap, g))
+                              .filter(g => (g.subgrupos || []).some(sub => (sub.items || []).length > 0));
                             if (checkedGruposServicios.length === 0) {
                               return (
                                 <div className="text-center py-5 border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
@@ -2071,8 +2840,8 @@ export default function AperturasDetalle({ idRegistro }) {
                                             <span className={cn("text-[10px] font-black uppercase tracking-wide", isChecked ? "text-slate-800" : "text-slate-500")}>
                                               {grupo.tituloGeneral || 'GRUPO SERVICIOS'}
                                             </span>
-                                            <span className="text-[8px] bg-slate-100 text-slate-600 font-black px-1.5 py-0.5 rounded">
-                                              {grupo.subgrupos?.reduce((acc, curr) => acc + (curr.items?.length || 0), 0) || 0} Items
+                                            <span className="text-[10px] bg-slate-200/90 text-slate-800 font-black px-2.5 py-0.5 rounded-full border border-slate-300/80 shadow-2xs select-none">
+                                              {grupo.subgrupos?.reduce((acc, curr) => acc + (curr.items?.length || 0), 0) || 0} Ítems
                                             </span>
                                             {!isChecked && (
                                               <span className="text-[8px] font-bold bg-slate-100 text-slate-500 border border-slate-200 px-1.5 py-0.5 rounded uppercase tracking-wider">
@@ -2083,12 +2852,8 @@ export default function AperturasDetalle({ idRegistro }) {
                                         </div>
                                         <div className="flex items-center gap-3">
                                           <span className="text-[9.5px] text-slate-500 font-bold">
-                                            Costo: <strong className="text-slate-700">{formatMoney(srvCost)}</strong>
+                                            Total: <strong className="text-slate-700">{formatMoney(srvSale)}</strong>
                                           </span>
-                                          <span className="text-[9.5px] text-slate-500 font-bold">
-                                            Venta: <strong className="text-slate-700">{formatMoney(srvSale)}</strong>
-                                          </span>
-                                          <span className="text-[9px] text-slate-400 font-bold">Cant: <strong className="text-slate-700">{grupo.cantidad || 1}</strong></span>
                                           <button
                                             type="button"
                                             onClick={(e) => {
@@ -2134,17 +2899,14 @@ export default function AperturasDetalle({ idRegistro }) {
                                                     <span className="text-[9.5px] font-black text-slate-700 tracking-wider uppercase">
                                                       {subgrupo.tipoNombre || subgrupo.titulo || (subgrupo.tipoCodigo?.endsWith('04') ? "MANO DE OBRA" : subgrupo.tipoCodigo?.endsWith('05') ? "GASTOS DE SERVICIOS" : "OTROS")}
                                                     </span>
-                                                    <span className="text-[8px] font-bold text-slate-400 bg-white border border-slate-200 px-1.5 rounded-full">
-                                                      {subgrupo.items.length}
+                                                    <span className="text-[10px] font-black text-slate-800 bg-slate-200/90 border border-slate-300/80 px-2 py-0.5 rounded-full shadow-2xs select-none">
+                                                      {subgrupo.items.length} Ítems
                                                     </span>
                                                   </div>
 
                                                   <div className="flex items-center gap-3">
                                                     <span className="text-[9px] text-slate-500 font-bold">
-                                                      Costo: <strong className="text-slate-700">{formatMoney(subCost)}</strong>
-                                                    </span>
-                                                    <span className="text-[9px] text-slate-500 font-bold">
-                                                      Venta: <strong className="text-indigo-700">{formatMoney(subSale)}</strong>
+                                                      Total: <strong className="text-indigo-700">{formatMoney(subSale)}</strong>
                                                     </span>
                                                   </div>
                                                 </div>
@@ -2157,28 +2919,28 @@ export default function AperturasDetalle({ idRegistro }) {
                                                   if (isMO) {
                                                     return (
                                                       <div className="overflow-x-auto overflow-y-hidden border-t border-slate-100">
-                                                        <table className="min-w-[800px] md:min-w-full divide-y divide-slate-100 text-[10px]">
-                                                          <thead className="bg-slate-50/30 text-slate-500 font-bold uppercase tracking-wider text-[8px] text-center">
+                                                        <table className="min-w-[800px] md:min-w-full divide-y divide-slate-150 text-[10.5px]">
+                                                          <thead className="bg-slate-200/70 text-slate-900 font-black uppercase tracking-wider text-[9.5px] text-center border-b-2 border-slate-300">
                                                             <tr>
-                                                              <th className="py-2 w-[12%]">Cód. Personal</th>
-                                                              <th className="py-2 text-left px-3 w-[28%]">Descripción / Tarea</th>
-                                                              <th className="py-2 w-[7%]">Cant. (H)</th>
-                                                              <th className="py-2 w-[10%]">Días / Horas</th>
-                                                              <th className="py-2 w-[10%] text-right">Costo H/D</th>
-                                                              <th className="py-2 w-[11%] text-right">Costo Total</th>
-                                                              <th className="py-2 w-[8%]">Util. %</th>
-                                                              <th className="py-2 w-[11%] text-right">
+                                                              <th className="py-2.5 w-[12%]">Cód. Personal</th>
+                                                              <th className="py-2.5 text-left px-3 w-[28%]">Descripción / Tarea</th>
+                                                              <th className="py-2.5 w-[7%]">Cant. (H)</th>
+                                                              <th className="py-2.5 w-[10%]">Días / Horas</th>
+                                                              <th className="py-2.5 w-[10%] text-right">Costo H/D</th>
+                                                              <th className="py-2.5 w-[11%] text-right">Costo Total</th>
+                                                              <th className="py-2.5 w-[8%]">Util. %</th>
+                                                              <th className="py-2.5 w-[11%] text-right">
                                                                 <div className="flex flex-col items-end leading-none pr-1">
                                                                   <span>Cotizado</span>
                                                                   <span>Total</span>
                                                                 </div>
                                                               </th>
-                                                              <th className="py-2 w-[3%]"></th>
+                                                              <th className="py-2.5 w-[3%]"></th>
                                                             </tr>
                                                           </thead>
-                                                          <tbody className="divide-y divide-slate-50 text-slate-700 uppercase font-semibold text-center">
+                                                          <tbody className="divide-y divide-slate-100 text-slate-800 uppercase font-semibold text-center">
                                                             {subgrupo.items.map((item, idx) => (
-                                                              <tr key={item.id_servicio || idx} className="hover:bg-slate-55/30 h-9">
+                                                              <tr key={item.id_servicio || idx} className="hover:bg-indigo-50/40 transition-colors duration-150 h-10 border-b border-slate-100/70">
                                                                 <td className="py-1.5 px-3 text-center">
                                                                   {(() => {
                                                                     const parts = (item.codigo_item || '').split('-');
@@ -2193,27 +2955,27 @@ export default function AperturasDetalle({ idRegistro }) {
                                                                     return <span className="text-[11px] font-bold text-slate-900 uppercase">{item.codigo_item || '-'}</span>;
                                                                   })()}
                                                                 </td>
-                                                                <td className="text-left px-3 py-1.5 text-slate-800 font-medium normal-case whitespace-normal break-words leading-tight text-[10px]">{item.descripcion_item || '-'}</td>
-                                                                <td className="text-slate-800 font-bold">{item.cantidad_hombres || 0}</td>
+                                                                <td className="text-left px-3 py-1.5 text-slate-800 font-medium normal-case whitespace-normal break-words leading-snug text-[10.5px]">{item.descripcion_item || '-'}</td>
+                                                                <td className="text-slate-900 font-extrabold">{item.cantidad_hombres || 0}</td>
                                                                 <td className="py-1">
                                                                   <div className="flex flex-col items-center justify-center gap-0.5 whitespace-nowrap select-none">
-                                                                    <span className="text-[10px] font-semibold text-slate-700">
+                                                                    <span className="text-[10.5px] font-bold text-slate-800">
                                                                       {item.cantidad_dias || 0} {Number(item.cantidad_dias || 0) === 1 ? 'día' : 'días'}
                                                                     </span>
-                                                                    <span className="text-[8.5px] font-black text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded-full border border-indigo-100">
+                                                                    <span className="text-[9px] font-black text-indigo-800 bg-indigo-50/90 px-2 py-0.5 rounded-full border border-indigo-150">
                                                                       {item.horas || 0} {Number(item.horas || 0) === 1 ? 'hora' : 'horas'}
                                                                     </span>
                                                                   </div>
                                                                 </td>
-                                                                <td className="text-right text-slate-600">{formatMoney(item.costo_hombre_dia)}</td>
-                                                                <td className="text-right text-slate-600 font-medium">{formatMoney(item.costo_total)}</td>
-                                                                <td className="text-teal-600 font-bold">{item.porcentaje || 0}%</td>
-                                                                <td className="text-right text-slate-900 font-bold">{formatMoney(item.cotizado_total)}</td>
+                                                                <td className="text-right text-slate-700 font-semibold">{formatMoney(item.costo_hombre_dia)}</td>
+                                                                <td className="text-right text-slate-700 font-semibold">{formatMoney(item.costo_total)}</td>
+                                                                <td className="text-emerald-700 font-extrabold text-[10px]">{item.porcentaje || 0}%</td>
+                                                                <td className="text-right text-slate-950 font-black">{formatMoney(item.cotizado_total)}</td>
                                                                 <td className="py-1">
                                                                   <button
                                                                     type="button"
-                                                                    onClick={() => handleEliminarItemServicio(item.id_servicio)}
-                                                                    className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded transition-colors cursor-pointer"
+                                                                    onClick={() => handleUnlinkServicioItem(ap.id_apertura, item.id_servicio)}
+                                                                    className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
                                                                     title="Eliminar Ítem"
                                                                   >
                                                                     <Icon name="trash-2" className="h-3.5 w-3.5" />
@@ -2229,21 +2991,21 @@ export default function AperturasDetalle({ idRegistro }) {
                                                 if (isGastos) {
                                                   return (
                                                     <div className="overflow-x-auto overflow-y-hidden border-t border-slate-100">
-                                                      <table className="min-w-[800px] md:min-w-full divide-y divide-slate-100 text-[10px]">
-                                                        <thead className="bg-slate-50/30 text-slate-500 font-bold uppercase tracking-wider text-[8px] text-center">
+                                                      <table className="min-w-[800px] md:min-w-full divide-y divide-slate-150 text-[10.5px]">
+                                                        <thead className="bg-slate-200/70 text-slate-900 font-black uppercase tracking-wider text-[9.5px] text-center border-b-2 border-slate-300">
                                                           <tr>
-                                                            <th className="py-2 w-[12%]">Tipo Gasto</th>
-                                                            <th className="py-2 text-left px-3 w-[45%]">Concepto</th>
-                                                            <th className="py-2 w-[8%]">Cant. (H)</th>
-                                                            <th className="py-2 w-[8%]">Días</th>
-                                                            <th className="py-2 w-[12%] text-right">Precio Unit.</th>
-                                                            <th className="py-2 w-[12%] text-right pr-4">Total</th>
-                                                            <th className="py-2 w-[3%]"></th>
+                                                            <th className="py-2.5 w-[12%]">Tipo Gasto</th>
+                                                            <th className="py-2.5 text-left px-3 w-[45%]">Concepto</th>
+                                                            <th className="py-2.5 w-[8%]">Cant. (H)</th>
+                                                            <th className="py-2.5 w-[8%]">Días</th>
+                                                            <th className="py-2.5 w-[12%] text-right">Precio Unit.</th>
+                                                            <th className="py-2.5 w-[12%] text-right pr-4">Total</th>
+                                                            <th className="py-2.5 w-[3%]"></th>
                                                           </tr>
                                                         </thead>
-                                                        <tbody className="divide-y divide-slate-50 text-slate-700 uppercase font-semibold text-center">
+                                                        <tbody className="divide-y divide-slate-100 text-slate-800 uppercase font-semibold text-center">
                                                           {subgrupo.items.map((item, idx) => (
-                                                            <tr key={item.id_servicio || idx} className="hover:bg-slate-55/30 h-9">
+                                                            <tr key={item.id_servicio || idx} className="hover:bg-indigo-50/40 transition-colors duration-150 h-10 border-b border-slate-100/70">
                                                               <td className="py-1.5 px-3 text-center">
                                                                 {(() => {
                                                                   const parts = (item.codigo_item || '').split('-');
@@ -2258,16 +3020,16 @@ export default function AperturasDetalle({ idRegistro }) {
                                                                   return <span className="text-[11px] font-bold text-slate-900 uppercase">{item.codigo_item || '-'}</span>;
                                                                 })()}
                                                               </td>
-                                                              <td className="text-left px-3 py-1.5 text-slate-800 font-medium normal-case whitespace-normal break-words leading-tight text-[10px]">{item.descripcion_item || '-'}</td>
-                                                              <td className="text-slate-800 font-bold">{item.cantidad_hombres || 0}</td>
-                                                              <td className="text-slate-600 font-semibold">{item.cantidad_dias || 0} {Number(item.cantidad_dias || 0) === 1 ? 'día' : 'días'}</td>
-                                                              <td className="text-right text-slate-600">{formatMoney(item.costo_hombre_dia)}</td>
-                                                              <td className="text-right pr-4 text-slate-900 font-bold">{formatMoney(item.cotizado_total)}</td>
+                                                              <td className="text-left px-3 py-1.5 text-slate-800 font-medium normal-case whitespace-normal break-words leading-snug text-[10.5px]">{item.descripcion_item || '-'}</td>
+                                                              <td className="text-slate-900 font-extrabold">{item.cantidad_hombres || 0}</td>
+                                                              <td className="text-slate-800 font-bold">{item.cantidad_dias || 0} {Number(item.cantidad_dias || 0) === 1 ? 'día' : 'días'}</td>
+                                                              <td className="text-right text-slate-700 font-semibold">{formatMoney(item.costo_hombre_dia)}</td>
+                                                              <td className="text-right pr-4 text-slate-950 font-black">{formatMoney(item.cotizado_total)}</td>
                                                               <td className="py-1">
                                                                 <button
                                                                   type="button"
-                                                                  onClick={() => handleEliminarItemServicio(item.id_servicio)}
-                                                                  className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded transition-colors cursor-pointer"
+                                                                  onClick={() => handleUnlinkServicioItem(ap.id_apertura, item.id_servicio)}
+                                                                  className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
                                                                   title="Eliminar Ítem"
                                                                 >
                                                                   <Icon name="trash-2" className="h-3.5 w-3.5" />
@@ -2284,22 +3046,22 @@ export default function AperturasDetalle({ idRegistro }) {
                                                 // fallback to Otros
                                                 return (
                                                   <div className="overflow-x-auto overflow-y-hidden border-t border-slate-100">
-                                                    <table className="min-w-[800px] md:min-w-full divide-y divide-slate-100 text-[10px]">
-                                                      <thead className="bg-slate-50/30 text-slate-500 font-bold uppercase tracking-wider text-[8px] text-center">
+                                                    <table className="min-w-[800px] md:min-w-full divide-y divide-slate-150 text-[10.5px]">
+                                                      <thead className="bg-slate-200/70 text-slate-900 font-black uppercase tracking-wider text-[9.5px] text-center border-b-2 border-slate-300">
                                                         <tr>
-                                                          <th className="py-2 w-[12%]">Cód. Gasto</th>
-                                                          <th className="py-2 text-left px-3 w-[35%]">Concepto</th>
-                                                          <th className="py-2 w-[8%]">Cantidad</th>
-                                                          <th className="py-2 w-[11%] text-right">Costo Unit.</th>
-                                                          <th className="py-2 w-[12%] text-right">Costo Total</th>
-                                                          <th className="py-2 w-[8%]">Util. %</th>
-                                                          <th className="py-2 w-[11%] text-right pr-4">Venta Total</th>
-                                                          <th className="py-2 w-[3%]"></th>
+                                                          <th className="py-2.5 w-[12%]">Cód. Gasto</th>
+                                                          <th className="py-2.5 text-left px-3 w-[35%]">Concepto</th>
+                                                          <th className="py-2.5 w-[8%]">Cantidad</th>
+                                                          <th className="py-2.5 w-[11%] text-right">Costo Unit.</th>
+                                                          <th className="py-2.5 w-[12%] text-right">Costo Total</th>
+                                                          <th className="py-2.5 w-[8%]">Util. %</th>
+                                                          <th className="py-2.5 w-[11%] text-right pr-4">Venta Total</th>
+                                                          <th className="py-2.5 w-[3%]"></th>
                                                         </tr>
                                                       </thead>
-                                                      <tbody className="divide-y divide-slate-50 text-slate-700 uppercase font-semibold text-center">
+                                                      <tbody className="divide-y divide-slate-100 text-slate-800 uppercase font-semibold text-center">
                                                         {subgrupo.items.map((item, idx) => (
-                                                          <tr key={item.id_servicio || idx} className="hover:bg-slate-55/30 h-9">
+                                                          <tr key={item.id_servicio || idx} className="hover:bg-indigo-50/40 transition-colors duration-150 h-10 border-b border-slate-100/70">
                                                             <td className="py-1.5 px-3 text-center">
                                                               {(() => {
                                                                 const parts = (item.codigo_item || '').split('-');
@@ -2314,17 +3076,17 @@ export default function AperturasDetalle({ idRegistro }) {
                                                                 return <span className="text-[11px] font-bold text-slate-900 uppercase">{item.codigo_item || '-'}</span>;
                                                               })()}
                                                             </td>
-                                                            <td className="text-left px-3 py-1.5 text-slate-800 font-medium normal-case whitespace-normal break-words leading-tight text-[10px]">{item.descripcion_item || '-'}</td>
-                                                            <td className="text-slate-800 font-bold">{item.cantidad_hombres || 0}</td>
-                                                            <td className="text-right text-slate-600">{formatMoney(item.costo_hombre_dia)}</td>
-                                                            <td className="text-right text-slate-600 font-medium">{formatMoney(item.costo_total)}</td>
-                                                            <td className="text-teal-600 font-bold">{item.porcentaje || 0}%</td>
-                                                            <td className="text-right pr-4 text-slate-900 font-bold">{formatMoney(item.cotizado_total)}</td>
+                                                            <td className="text-left px-3 py-1.5 text-slate-800 font-medium normal-case whitespace-normal break-words leading-snug text-[10.5px]">{item.descripcion_item || '-'}</td>
+                                                            <td className="text-slate-900 font-extrabold">{item.cantidad_hombres || 0}</td>
+                                                            <td className="text-right text-slate-700 font-semibold">{formatMoney(item.costo_hombre_dia)}</td>
+                                                            <td className="text-right text-slate-700 font-semibold">{formatMoney(item.costo_total)}</td>
+                                                            <td className="text-emerald-700 font-extrabold text-[10px]">{item.porcentaje || 0}%</td>
+                                                            <td className="text-right pr-4 text-slate-950 font-black">{formatMoney(item.cotizado_total)}</td>
                                                             <td className="py-1">
                                                               <button
                                                                 type="button"
-                                                                onClick={() => handleEliminarItemServicio(item.id_servicio)}
-                                                                className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded transition-colors cursor-pointer"
+                                                                onClick={() => handleUnlinkServicioItem(ap.id_apertura, item.id_servicio)}
+                                                                className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
                                                                 title="Eliminar Ítem"
                                                               >
                                                                 <Icon name="trash-2" className="h-3.5 w-3.5" />
@@ -2411,25 +3173,12 @@ export default function AperturasDetalle({ idRegistro }) {
 
       {/* 30% SIDEBAR - Sticky/Meta Panel */}
       <div className="w-full xl:w-4/12 space-y-6">
-        {/* BOTONES */}
-        <div className="flex items-center gap-2.5 bg-white border border-gray-200 shadow-sm rounded-2xl p-4">
-          <button
-            onClick={() => setShowAsignarPanel(!showAsignarPanel)}
-            className={cn(
-              "flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black transition-all h-[42px] uppercase group border",
-              showAsignarPanel 
-                ? "bg-indigo-600 border-indigo-700 text-white hover:bg-indigo-700 shadow-md" 
-                : "bg-indigo-50/50 border-indigo-200 text-indigo-700 hover:bg-indigo-100/50 hover:border-indigo-300 hover:shadow-md"
-            )}
-          >
-            <Icon name="users" className={cn("h-3.5 w-3.5 transition-transform group-hover:scale-110", showAsignarPanel ? "text-white" : "text-indigo-600")} />
-            Asignar
-          </button>
-
+        {/* BOTÓN ELIMINAR */}
+        <div className="bg-white border border-gray-200 shadow-sm rounded-2xl p-3">
           <button
             onClick={handleConfirmarEliminacionRegistro}
             disabled={eliminarCotizacion.isPending}
-            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-red-50/50 border border-red-200 rounded-xl text-[10px] font-black text-red-700 hover:bg-red-100/50 hover:border-red-300 hover:shadow-md transition-all h-[42px] uppercase group disabled:opacity-50"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-50/50 border border-red-200 rounded-xl text-[10px] font-black text-red-700 hover:bg-red-100/50 hover:border-red-300 hover:shadow-md transition-all h-[42px] uppercase group disabled:opacity-50"
           >
             {eliminarCotizacion.isPending ? (
               <div className="h-3.5 w-3.5 mr-2 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
@@ -2439,139 +3188,6 @@ export default function AperturasDetalle({ idRegistro }) {
             Eliminar
           </button>
         </div>
-
-        {/* PANEL ASIGNACION INLINE */}
-        {showAsignarPanel && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 space-y-4 font-sans animate-in slide-in-from-top-4 duration-300">
-            <div className="flex justify-between items-center border-b pb-2 border-gray-150">
-              <h4 className="text-[10px] font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                <Icon name="users" className="h-3.5 w-3.5 text-indigo-500" />
-                Asignación de Personal
-              </h4>
-              <button 
-                type="button"
-                onClick={() => setShowAsignarPanel(false)} 
-                className="w-5 h-5 rounded-lg flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-              >
-                <Icon name="x" className="h-3.5 w-3.5" />
-              </button>
-            </div>
-            
-            {/* Buscador inteligente */}
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="BUSCAR COLABORADOR..."
-                value={searchUserQuery}
-                onChange={(e) => setSearchUserQuery(e.target.value)}
-                className="w-full bg-slate-55/65 border border-transparent rounded-xl pl-8 pr-8 py-2 text-[10px] font-bold focus:bg-white focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-slate-900 shadow-inner placeholder:text-slate-350"
-              />
-              <Icon name="search" className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-              {searchUserQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchUserQuery("")}
-                  className="p-1 hover:bg-slate-100 rounded-full text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 transition-colors"
-                >
-                  <Icon name="x" className="h-3 w-3" />
-                </button>
-              )}
-            </div>
-
-            {/* Filtros de visualización */}
-            <div className="flex items-center gap-1.5 pb-1">
-              <button
-                type="button"
-                onClick={() => setFilterAssignedOnly(false)}
-                className={cn(
-                  "text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg transition-colors border",
-                  !filterAssignedOnly 
-                    ? "bg-slate-950 border-slate-950 text-white shadow-sm" 
-                    : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100"
-                )}
-              >
-                Todos ({usuariosActivos.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterAssignedOnly(true)}
-                className={cn(
-                  "text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg transition-colors border",
-                  filterAssignedOnly 
-                    ? "bg-indigo-600 border-indigo-700 text-white shadow-sm" 
-                    : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100"
-                )}
-              >
-                Asignados ({assignedEmails.length})
-              </button>
-            </div>
-
-            {/* Listado de colaboradores */}
-            <div className="max-h-[260px] overflow-y-auto space-y-1.5 custom-scrollbar pr-1">
-              {filteredUsuarios.length === 0 ? (
-                <div className="text-center py-6 text-[9.5px] font-bold text-gray-400 uppercase tracking-widest">
-                  Sin resultados
-                </div>
-              ) : (
-                filteredUsuarios.map((usuario) => {
-                  const isAssigned = assignedEmails.includes(usuario.correo?.toLowerCase());
-                  return (
-                    <div
-                      key={usuario.id_usuario}
-                      onClick={() => toggleResponsable(usuario.correo)}
-                      className={cn(
-                        "w-full flex items-center justify-between p-2 rounded-xl border transition-all duration-200 select-none cursor-pointer group",
-                        isAssigned 
-                          ? "bg-indigo-50/40 border-indigo-100 hover:bg-indigo-50/70" 
-                          : "bg-transparent border-transparent hover:bg-slate-50"
-                      )}
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        {/* Avatar con Iniciales y Color Gradient */}
-                        <div className={cn(
-                          "w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold transition-all duration-300 shadow-sm border",
-                          isAssigned 
-                            ? `bg-gradient-to-tr ${getAvatarColor(usuario.nombre_completo)} text-white border-transparent`
-                            : "bg-slate-50 text-slate-500 border-slate-200/60 group-hover:border-indigo-250 group-hover:bg-white"
-                        )}>
-                          {getInitials(usuario.nombre_completo)}
-                        </div>
-                        
-                        <div className="min-w-0">
-                          <p className={cn(
-                            "text-[10.5px] uppercase tracking-tight truncate leading-none transition-colors", 
-                            isAssigned ? "font-black text-indigo-900" : "font-bold text-slate-600 group-hover:text-slate-800"
-                          )}>
-                            {usuario.nombre_completo}
-                          </p>
-                          <p className={cn(
-                            "text-[8px] truncate mt-0.5 lowercase leading-none",
-                            isAssigned ? "text-indigo-450" : "text-slate-400"
-                          )}>
-                            {usuario.correo || "sin correo"}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Indicador Checkbox Moderno */}
-                      <div className="shrink-0 ml-2">
-                        {isAssigned ? (
-                          <div className="w-5 h-5 rounded-full bg-indigo-650 text-white flex items-center justify-center shadow-sm shadow-indigo-150 animate-in zoom-in duration-200">
-                            <Icon name="check" className="h-3 w-3" />
-                          </div>
-                        ) : (
-                          <div className="w-5 h-5 rounded-full border-2 border-slate-200 text-slate-350 flex items-center justify-center group-hover:border-indigo-400 group-hover:bg-indigo-50/40 transition-all duration-200">
-                            <Icon name="plus" className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        )}
 
         {/* CARD DATOS COTIZACION */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden font-sans">
@@ -2709,6 +3325,131 @@ export default function AperturasDetalle({ idRegistro }) {
           </div>
         </div>
 
+        {/* PANEL ASIGNACION DE PERSONAL (FIJO) */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 space-y-4 font-sans">
+          <div className="flex justify-between items-center border-b pb-2 border-gray-150">
+            <h4 className="text-[10px] font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+              <Icon name="users" className="h-3.5 w-3.5 text-indigo-500" />
+              Asignación de Personal
+            </h4>
+          </div>
+            
+            {/* Buscador inteligente */}
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="BUSCAR COLABORADOR..."
+                value={searchUserQuery}
+                onChange={(e) => setSearchUserQuery(e.target.value)}
+                className="w-full bg-slate-55/65 border border-transparent rounded-xl pl-8 pr-8 py-2 text-[10px] font-bold focus:bg-white focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-slate-900 shadow-inner placeholder:text-slate-350"
+              />
+              <Icon name="search" className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              {searchUserQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchUserQuery("")}
+                  className="p-1 hover:bg-slate-100 rounded-full text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 transition-colors"
+                >
+                  <Icon name="x" className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+
+            {/* Filtros de visualización */}
+            <div className="flex items-center gap-1.5 pb-1">
+              <button
+                type="button"
+                onClick={() => setFilterAssignedOnly(false)}
+                className={cn(
+                  "text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg transition-colors border",
+                  !filterAssignedOnly 
+                    ? "bg-slate-950 border-slate-950 text-white shadow-sm" 
+                    : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100"
+                )}
+              >
+                Todos ({usuariosActivos.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterAssignedOnly(true)}
+                className={cn(
+                  "text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg transition-colors border",
+                  filterAssignedOnly 
+                    ? "bg-indigo-600 border-indigo-700 text-white shadow-sm" 
+                    : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100"
+                )}
+              >
+                Asignados ({assignedEmails.length})
+              </button>
+            </div>
+
+            {/* Listado de colaboradores */}
+            <div className="max-h-[260px] overflow-y-auto space-y-1.5 custom-scrollbar pr-1">
+              {filteredUsuarios.length === 0 ? (
+                <div className="text-center py-6 text-[9.5px] font-bold text-gray-400 uppercase tracking-widest">
+                  Sin resultados
+                </div>
+              ) : (
+                filteredUsuarios.map((usuario) => {
+                  const userEmail = (usuario.correo || (usuario.usuario ? `${usuario.usuario}@vc-corporation.com` : '')).trim();
+                  const isAssigned = userEmail ? assignedEmails.includes(userEmail.toLowerCase()) : false;
+                  return (
+                    <div
+                      key={usuario.id_usuario}
+                      onClick={() => userEmail && toggleResponsable(userEmail)}
+                      className={cn(
+                        "w-full flex items-center justify-between p-2 rounded-xl border transition-all duration-200 select-none cursor-pointer group",
+                        isAssigned 
+                          ? "bg-indigo-50/40 border-indigo-100 hover:bg-indigo-50/70" 
+                          : "bg-transparent border-transparent hover:bg-slate-50"
+                      )}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        {/* Avatar con Iniciales y Color Gradient */}
+                        <div className={cn(
+                          "w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold transition-all duration-300 shadow-sm border",
+                          isAssigned 
+                            ? `bg-gradient-to-tr ${getAvatarColor(usuario.nombre_completo)} text-white border-transparent`
+                            : "bg-slate-50 text-slate-500 border-slate-200/60 group-hover:border-indigo-250 group-hover:bg-white"
+                        )}>
+                          {getInitials(usuario.nombre_completo)}
+                        </div>
+                        
+                        <div className="min-w-0">
+                          <p className={cn(
+                            "text-[10.5px] uppercase tracking-tight truncate leading-none transition-colors", 
+                            isAssigned ? "font-black text-indigo-900" : "font-bold text-slate-600 group-hover:text-slate-800"
+                          )}>
+                            {usuario.nombre_completo}
+                          </p>
+                          <p className={cn(
+                            "text-[8px] truncate mt-0.5 lowercase leading-none",
+                            isAssigned ? "text-indigo-450" : "text-slate-400"
+                          )}>
+                            {userEmail || "sin correo"}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Indicador Checkbox Moderno */}
+                      <div className="shrink-0 ml-2">
+                        {isAssigned ? (
+                          <div className="w-5 h-5 rounded-full bg-indigo-650 text-white flex items-center justify-center shadow-sm shadow-indigo-150 animate-in zoom-in duration-200">
+                            <Icon name="check" className="h-3 w-3" />
+                          </div>
+                        ) : (
+                          <div className="w-5 h-5 rounded-full border-2 border-slate-200 text-slate-350 flex items-center justify-center group-hover:border-indigo-400 group-hover:bg-indigo-50/40 transition-all duration-200">
+                            <Icon name="plus" className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+          
       {/* Modal de Previsualización de Documento */}
       {previewDoc && createPortal(
         <div className="fixed inset-0 bg-slate-900/20 z-50 flex items-center justify-center p-4">
@@ -2764,7 +3505,7 @@ export default function AperturasDetalle({ idRegistro }) {
             >
               {previewDoc.url ? (
                 previewDoc.extension === '.pdf' ? (
-                  <iframe 
+                  <ReportIframe 
                     src={previewDoc.url} 
                     className="w-full h-full bg-white rounded-xl border border-slate-200 shadow-sm" 
                     title="Previsualización PDF" 
@@ -2822,6 +3563,106 @@ export default function AperturasDetalle({ idRegistro }) {
           </div>
         </div>,
         document.body
+      )}
+
+      {/* REPORTE PDF PREVIEW & WORD DOWNLOAD MODAL */}
+      {reportePdfOpen && createPortal(
+        <div 
+          onClick={() => setReportePdfOpen(false)}
+          className="fixed inset-0 bg-slate-900/40 z-[9999] flex items-center justify-center p-4 transition-all"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl flex flex-col overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150 transition-all duration-300"
+            style={{ height: '88vh' }}
+          >
+            {/* Cabecera del Modal */}
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+              <div>
+                <h3 className="text-[13px] font-black text-slate-900 uppercase tracking-widest">
+                  Previsualización de Propuesta Económica
+                </h3>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => window.open(`${cleanBaseURL}/cotizaciones/${activeIdRegistro}/pdf/`, '_blank')}
+                  className="flex items-center px-3.5 py-2 bg-emerald-50 border border-emerald-200 rounded-xl text-[10px] font-black text-emerald-700 hover:bg-emerald-100 hover:border-emerald-300 hover:shadow-sm transition-all uppercase group cursor-pointer"
+                >
+                  <Icon name="file-text" className="h-3.5 w-3.5 mr-1.5 text-emerald-600 group-hover:scale-110 transition-transform" />
+                  Descargar PDF
+                </button>
+
+                <button
+                  onClick={() => window.open(`${cleanBaseURL}/cotizaciones/cotizacion/word/${activeIdRegistro}/`, '_blank')}
+                  className="flex items-center px-3.5 py-2 bg-blue-50 border border-blue-200 rounded-xl text-[10px] font-black text-blue-700 hover:bg-blue-100 hover:border-blue-300 hover:shadow-sm transition-all uppercase group cursor-pointer"
+                >
+                  <LucideIcons.FileDown className="h-3.5 w-3.5 mr-1.5 text-blue-600 group-hover:scale-110 transition-transform" />
+                  Descargar Word
+                </button>
+
+                <button 
+                  onClick={() => setReportePdfOpen(false)}
+                  className="p-2 hover:bg-slate-200 rounded-xl transition-all text-slate-400 hover:text-slate-600 bg-slate-100 ml-2 cursor-pointer"
+                >
+                  <LucideIcons.X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* CUERPO: iframe con la previsualización HTML/PDF */}
+            <div 
+              className="flex-1 bg-slate-50 p-4 overflow-hidden relative flex items-center justify-center"
+              onMouseEnter={(e) => {
+                const iframe = e.currentTarget.querySelector('iframe');
+                if (iframe) {
+                  try {
+                    iframe.focus();
+                    iframe.contentWindow?.focus();
+                  } catch (err) {
+                    console.error("Error focusing iframe on hover:", err);
+                  }
+                }
+              }}
+            >
+              {reporteLoading && (
+                <div className="absolute inset-0 bg-white flex flex-col items-center justify-center z-10">
+                  <div className="h-8 w-8 border-4 border-teal-600 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-4">Preparando reporte...</span>
+                </div>
+              )}
+              <iframe 
+                src={`${cleanBaseURL}/cotizaciones/${activeIdRegistro}/pdf-preview/`}
+                className="w-full h-full bg-white rounded-xl border border-slate-200 shadow-sm"
+                title="Previsualización de Cotización PDF"
+                scrolling="auto"
+                style={{ overflow: 'auto' }}
+                onLoad={(e) => {
+                  setReporteLoading(false);
+                  const iframe = e.target;
+                  setTimeout(() => {
+                    try {
+                      iframe.focus();
+                      iframe.contentWindow?.focus();
+                    } catch (err) {
+                      console.error("Error focusing iframe on load:", err);
+                    }
+                  }, 50);
+                }}
+              />
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* MODAL DE DESCUENTOS */}
+      {descuentoModalOpen && (
+        <DescuentosModal
+          open={descuentoModalOpen}
+          onClose={() => setDescuentoModalOpen(false)}
+          onGuardar={handleSaveDescuento}
+          num_reg={activeIdRegistro}
+        />
       )}
 
       {/* Closing sidebar and main wrapper */}

@@ -7,14 +7,6 @@ class SolicitudOrdenCompra(models.Model):
     num = models.IntegerField(null=True, blank=True)
     fecha = models.DateTimeField(null=True, blank=True)
     id_area = models.ForeignKey('users.Area', on_delete=models.PROTECT, db_column='id_area', null=True, blank=True)
-    id_apertura = models.ForeignKey(
-        'cotizaciones_api.CotizacionApertura', 
-        on_delete=models.SET_NULL, 
-        db_column='id_apertura', 
-        null=True, 
-        blank=True,
-        related_name='solicitudes_compra'
-    )
     codigo = models.CharField(max_length=100, null=True, blank=True)
     id_solicitante = models.ForeignKey('users.Usuario', on_delete=models.PROTECT, db_column='id_solicitante', null=True, blank=True)
     referencia = models.CharField(max_length=500, null=True, blank=True)
@@ -55,14 +47,6 @@ class SolicitudPasajes(models.Model):
     num = models.IntegerField(null=True, blank=True)
     fecha = models.DateTimeField(null=True, blank=True)
     id_area = models.ForeignKey('users.Area', on_delete=models.PROTECT, db_column='id_area', null=True, blank=True)
-    id_apertura = models.ForeignKey(
-        'cotizaciones_api.CotizacionApertura', 
-        on_delete=models.SET_NULL, 
-        db_column='id_apertura', 
-        null=True, 
-        blank=True,
-        related_name='solicitudes_pasajes'
-    )
     codigo = models.CharField(max_length=100, null=True, blank=True)
     id_solicitante = models.ForeignKey('users.Usuario', on_delete=models.PROTECT, db_column='id_solicitante', null=True, blank=True)
     modo = models.IntegerField(null=True, blank=True)

@@ -5,6 +5,39 @@ import { useSensors, useSensor, PointerSensor } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 import XLSX from 'xlsx-js-style';
 
+const isTempServicioId = (id) => typeof id === 'string' && String(id).startsWith('temp_');
+const isVirtualServicioId = (id) => typeof id === 'string' && String(id).startsWith('virtual_');
+const isNumericServicioId = (id) => id != null && /^\d+$/.test(String(id));
+
+const TIPO_SUBGRUPO_SERVICIO = [
+  { type: "04", name: "MANO DE OBRA", gasto: 3 },
+  { type: "05", name: "GASTOS SERVICIO", gasto: 4 },
+  { type: "06", name: "OTROS", gasto: 5 },
+];
+
+const tipoCodigoSubgrupo = (sg) => {
+  const raw = String(sg?.tipoCodigo || sg?.codigo_servicio || "");
+  if (raw.endsWith("06")) return "06";
+  if (raw.endsWith("05")) return "05";
+  if (raw.endsWith("04")) return "04";
+  return "04";
+};
+
+const nextCodigoGrupoServicio = (grupos) => {
+  const existentes = Object.values(grupos || {})
+    .map((g) => {
+      const code = g.subgrupos?.[0]?.codigo_servicio || g.codigo_servicio;
+      if (code && String(code).length >= 2) {
+        const n = parseInt(String(code).slice(0, 2), 10);
+        return Number.isFinite(n) ? n : null;
+      }
+      return null;
+    })
+    .filter((n) => n !== null);
+  const maxCode = existentes.length > 0 ? Math.max(...existentes) : 0;
+  return String(maxCode + 1).padStart(2, "0");
+};
+
 export const useCotizacionServicios = (numReg, onAddLog) => {
   const [gruposServicios, setGruposServicios] = useState({});
   const [originalGruposServicios, setOriginalGruposServicios] = useState({});
@@ -56,30 +89,36 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
             tipoCodigo: existing.tipoCodigo || tInfo.type,
             tipoNombre: existing.tipoNombre || tInfo.name,
             codigo_servicio: existing.codigo_servicio || `${groupCode}${tInfo.type}1`,
-            items: (existing.items || []).map(it => ({
-              id_servicio: it.id_servicio,
-              id_registro: it.id_registro,
-              id_tipo_gasto: it.id_tipo_gasto || tInfo.gasto,
-              id_area: it.id_area || 1,
-              area_nombre: it.area_nombre || "",
-              gasto_nombre: it.gasto_nombre || "",
-              codigo_servicio: it.codigo_servicio || "",
-              nombre_servicio: it.nombre_servicio || "",
-              nivel: it.nivel || 2,
-              codigo_item: it.codigo_item || "",
-              descripcion_item: it.descripcion_item || "",
-              horas: Number(it.horas || 0),
-              cantidad_hombres: Number(it.cantidad_hombres || 0),
-              costo_hombre_dia: Number(it.costo_hombre_dia || 0),
-              cantidad_dias: Number(it.cantidad_dias || 0),
-              costo_total: Number(it.costo_total || 0),
-              porcentaje: Number(it.porcentaje || 0),
-              utilidad: Number(it.utilidad || 0),
-              cotizado_hombre_dia: Number(it.cotizado_hombre_dia || 0),
-              cotizado_total: Number(it.cotizado_total || 0),
-              descripcion_servicio: it.descripcion_servicio || "",
-              orden: it.orden || 0
-            }))
+            items: (existing.items || []).map(it => {
+              const costoDia = Number(it.costo_hombre_dia || 0);
+              const pct = Number(it.porcentaje || 0);
+              const isGasto05 = tInfo.type === "05";
+              const unitUtil = isGasto05 ? 0 : (pct > 0 ? Number((costoDia * (pct / 100)).toFixed(2)) : Number(it.utilidad || 0));
+              return {
+                id_servicio: it.id_servicio,
+                id_registro: it.id_registro,
+                id_tipo_gasto: it.id_tipo_gasto || tInfo.gasto,
+                id_area: it.id_area || 1,
+                area_nombre: it.area_nombre || "",
+                gasto_nombre: it.gasto_nombre || "",
+                codigo_servicio: it.codigo_servicio || "",
+                nombre_servicio: it.nombre_servicio || "",
+                nivel: it.nivel || 2,
+                codigo_item: it.codigo_item || "",
+                descripcion_item: it.descripcion_item || "",
+                horas: Number(it.horas || 0),
+                cantidad_hombres: Number(it.cantidad_hombres || 0),
+                costo_hombre_dia: costoDia,
+                cantidad_dias: Number(it.cantidad_dias || 0),
+                costo_total: Number(it.costo_total || 0),
+                porcentaje: isGasto05 ? 0 : pct,
+                utilidad: unitUtil,
+                cotizado_hombre_dia: Number(it.cotizado_hombre_dia || 0),
+                cotizado_total: Number(it.cotizado_total || 0),
+                descripcion_servicio: it.descripcion_servicio || "",
+                orden: it.orden || 0
+              };
+            })
           };
         } else {
           const tempSubId = `temp_missing_sub_${tInfo.type}_${srv.id_servicio}_${Math.random().toString(36).substr(2, 9)}`;
@@ -117,8 +156,8 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
       setOriginalGruposServicios(JSON.parse(JSON.stringify(mapped)));
       setDeletedServicioIds([]);
     } catch (error) {
-      console.error("Error cargando servicios:", error);
-      toast.error("Error al sincronizar servicios");
+      console.error("Error al cargar servicios:", error);
+      toast.error("Error al cargar la lista de servicios");
     } finally {
       setLoading(false);
     }
@@ -128,35 +167,29 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
     fetchServicios();
   }, [fetchServicios]);
 
-  // Agregar / Editar Grupo de Servicios (Nivel 0)
-  const handleAgregarGrupoServicio = async (form) => {
+  // Agregar / Editar Grupo de Servicios (Nivel 0 + 3 Subgrupos Nivel 1 + Items Nivel 2)
+  const handleAgregarGrupoServicio = async (form, isEdit = false, currentEditingId = null) => {
     try {
-      const isEdit = Boolean(form._key && gruposServicios[form._key]);
-      
       setGruposServicios(prev => {
         const next = { ...prev };
-        if (isEdit) {
-          const idReal = form._key;
-          const srvExistente = next[idReal];
-          if (srvExistente) {
-            next[idReal] = {
-              ...srvExistente,
+
+        if (isEdit && currentEditingId) {
+          const existing = next[currentEditingId];
+          if (existing) {
+            next[currentEditingId] = {
+              ...existing,
               tituloGeneral: form.nombre.toUpperCase(),
               cantidad: Number(form.cantidad || 1),
-              detalle: form.detalle || "",
+              detalle: form.detalle || ""
             };
           }
         } else {
+          // Generar nuevo código de grupo (01, 02, ...)
           const existentes = Object.values(prev)
             .map(g => {
-              const code = g.codigo_servicio;
-              if (code && !isNaN(code)) {
-                return parseInt(code, 10);
-              }
-              const firstSg = g.subgrupos?.[0];
-              const sgCode = firstSg?.codigo_servicio;
-              if (sgCode && sgCode.length >= 2) {
-                return parseInt(sgCode.slice(0, 2), 10);
+              const code = g.subgrupos?.[0]?.codigo_servicio || g.codigo_servicio;
+              if (code && code.length >= 2) {
+                return parseInt(code.slice(0, 2), 10);
               }
               return null;
             })
@@ -176,15 +209,33 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
           if (Array.isArray(form.items)) {
             form.items.forEach((item, index) => {
               const cantidad = Number(item.cantidad_hombres || 0);
-              const dias = item.categoria === "06" ? 1 : Number(item.cantidad_dias || 0);
+              const isCat06 = item.categoria === "06";
+              const isCat05 = item.categoria === "05";
+              const isCat04 = item.categoria === "04";
+              const dias = isCat06 ? 1 : Number(item.cantidad_dias || 0);
               const horas = Number(item.horas || 8);
               const costoDia = Number(item.costo_hombre_dia || 0);
-              
-              const costoTotal = cantidad * costoDia * dias;
               const porcentajeUtilidad = Number(item.porcentaje || 0);
-              const utilidad = costoTotal * (porcentajeUtilidad / 100);
-              const cotizadoTotal = Number(item.cotizado_total || 0);
-              const cotizadoDia = Number(item.cotizado_hombre_dia || 0);
+              
+              let costoTotal = 0;
+              let utilidad = 0;
+              let cotizadoDia = 0;
+              let cotizadoTotal = 0;
+
+              if (isCat05) {
+                cotizadoDia = Number(item.cotizado_hombre_dia || item.costo_hombre_dia || 0);
+                const totalUnits = cantidad * (dias > 0 ? dias : 1);
+                costoTotal = Number((totalUnits * cotizadoDia).toFixed(2));
+                cotizadoTotal = costoTotal;
+                utilidad = 0;
+              } else {
+                const totalUnits = cantidad * (isCat04 ? (dias > 0 ? dias : 1) : 1);
+                costoTotal = Number((totalUnits * costoDia).toFixed(2));
+                const utilidadUnit = Number((costoDia * (porcentajeUtilidad / 100)).toFixed(2));
+                utilidad = utilidadUnit;
+                cotizadoDia = Number((costoDia + utilidadUnit).toFixed(2));
+                cotizadoTotal = Number((totalUnits * cotizadoDia).toFixed(2));
+              }
 
               const payload = {
                 id_servicio: `temp_srv_item_${Date.now()}_${index}_${Math.random().toString(36).substr(2, 9)}`,
@@ -194,26 +245,25 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
                 descripcion_item: (item.descripcion_item || "SERVICIO").toUpperCase(),
                 horas: horas,
                 cantidad_hombres: cantidad,
-                costo_hombre_dia: costoDia,
+                costo_hombre_dia: isCat05 ? cotizadoDia : costoDia,
                 cantidad_dias: dias,
                 costo_total: costoTotal,
-                porcentaje: porcentajeUtilidad,
+                porcentaje: isCat05 ? 0 : porcentajeUtilidad,
                 utilidad: utilidad,
-                cotizado_hombre_dia: cotizadoDia,
                 cotizado_total: cotizadoTotal,
                 id_area: 1, // Default area
                 orden: index + 1
               };
 
-              if (item.categoria === "04") {
+              if (isCat04) {
                 payload.codigo_servicio = `${nuevoCodigo}042`;
                 payload.id_tipo_gasto = 3;
                 sub1Items.push(payload);
-              } else if (item.categoria === "05") {
+              } else if (isCat05) {
                 payload.codigo_servicio = `${nuevoCodigo}052`;
                 payload.id_tipo_gasto = 4;
                 sub2Items.push(payload);
-              } else if (item.categoria === "06") {
+              } else if (isCat06) {
                 payload.codigo_servicio = `${nuevoCodigo}062`;
                 payload.id_tipo_gasto = 5;
                 sub3Items.push(payload);
@@ -221,9 +271,9 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
             });
           }
 
-          const sub1Title = (form.categoryTitles?.["04"] || "").toUpperCase();
-          const sub2Title = (form.categoryTitles?.["05"] || "").toUpperCase();
-          const sub3Title = (form.categoryTitles?.["06"] || "").toUpperCase();
+          const sub1Title = (form.categoryTitles?.["04"] || "MANO DE OBRA").toUpperCase();
+          const sub2Title = (form.categoryTitles?.["05"] || "GASTOS SERVICIO").toUpperCase();
+          const sub3Title = (form.categoryTitles?.["06"] || "OTROS").toUpperCase();
 
           next[tempGroupId] = {
             id_servicio: tempGroupId,
@@ -240,22 +290,14 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
         }
         return next;
       });
-
-      toast.add(isEdit ? "Servicio actualizado correctamente" : `Servicio "${form.nombre.toUpperCase()}" creado`, isEdit ? "SERVICIO ACTUALIZADO" : "SERVICIO GUARDADO");
-      
-      if (onAddLog) {
-        onAddLog(isEdit ? `Servicios: Se editó el servicio '${form.nombre.toUpperCase()}'` : `Servicios: Se agregó el servicio '${form.nombre.toUpperCase()}'`);
-      }
-
       return true;
     } catch (error) {
       console.error("Error al guardar grupo de servicios:", error);
-      toast.error("Error al procesar grupo de servicios");
       return false;
     }
   };
 
-  // Agregar / Editar Item (Nivel 2) dentro de un subgrupo
+  // Agregar / Editar Ítem (Nivel 2)
   const handleAgregarItemServicio = async (form, parentServicioId, parentSubgrupoId, activeAreaId) => {
     try {
       const isEdit = Boolean(form.id_servicio);
@@ -275,15 +317,33 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
 
         // Calcular montos y utilidades
         const cantidad = Number(form.cantidad_hombres || 0);
-        const dias = Number(form.cantidad_dias || 0);
+        const isCat06 = subg.tipoCodigo?.endsWith("06");
+        const isCat05 = subg.tipoCodigo?.endsWith("05");
+        const isCat04 = subg.tipoCodigo?.endsWith("04");
+        const dias = isCat06 ? 1 : Number(form.cantidad_dias || 0);
         const costoDia = Number(form.costo_hombre_dia || 0);
         const horas = Number(form.horas || 0);
-        
-        const costoTotal = cantidad * costoDia * dias;
         const porcentajeUtilidad = Number(form.porcentaje || 0);
-        const utilidad = costoTotal * (porcentajeUtilidad / 100);
-        const cotizadoTotal = costoTotal + utilidad;
-        const cotizadoDia = cantidad > 0 && dias > 0 ? (cotizadoTotal / (cantidad * dias)) : 0;
+        
+        let costoTotal = 0;
+        let utilidad = 0;
+        let cotizadoDia = 0;
+        let cotizadoTotal = 0;
+
+        if (isCat05) {
+          cotizadoDia = Number(form.cotizado_hombre_dia || form.costo_hombre_dia || 0);
+          const totalUnits = cantidad * (dias > 0 ? dias : 1);
+          costoTotal = Number((totalUnits * cotizadoDia).toFixed(2));
+          cotizadoTotal = costoTotal;
+          utilidad = 0;
+        } else {
+          const totalUnits = cantidad * (isCat04 ? (dias > 0 ? dias : 1) : 1);
+          costoTotal = Number((totalUnits * costoDia).toFixed(2));
+          const utilidadUnit = Number((costoDia * (porcentajeUtilidad / 100)).toFixed(2));
+          utilidad = utilidadUnit;
+          cotizadoDia = Number((costoDia + utilidadUnit).toFixed(2));
+          cotizadoTotal = Number((totalUnits * cotizadoDia).toFixed(2));
+        }
 
         const payload = {
           id_registro: numReg,
@@ -292,10 +352,10 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
           descripcion_item: (form.descripcion_item || "SERVICIO").toUpperCase(),
           horas: horas,
           cantidad_hombres: cantidad,
-          costo_hombre_dia: costoDia,
+          costo_hombre_dia: isCat05 ? cotizadoDia : costoDia,
           cantidad_dias: dias,
           costo_total: costoTotal,
-          porcentaje: porcentajeUtilidad,
+          porcentaje: isCat05 ? 0 : porcentajeUtilidad,
           utilidad: utilidad,
           cotizado_hombre_dia: cotizadoDia,
           cotizado_total: cotizadoTotal,
@@ -330,22 +390,22 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
         }
 
         return next;
-    });
+      });
 
-    toast.add(isEdit ? `Ítem "${form.descripcion_item.toUpperCase()}" actualizado` : `Ítem "${form.descripcion_item.toUpperCase()}" añadido`, isEdit ? "ÍTEM ACTUALIZADO" : "ÍTEM AGREGADO");
-    
-    if (onAddLog && subgrupo) {
-      const nom_padre = servicio?.tituloGeneral || "";
-      const tipo_nombre = subgrupo?.tipoNombre || "";
-      const codigo_item = (form.codigo_item || "S/C").toUpperCase();
-      const descripcion_item = (form.descripcion_item || "SERVICIO").toUpperCase();
-      onAddLog(isEdit ? `Servicios: Se editó el ítem '${codigo_item} - ${descripcion_item}' a ${nom_padre} - ${tipo_nombre}` : `Servicios: Se agregó el ítem '${codigo_item} - ${descripcion_item}' a ${nom_padre} - ${tipo_nombre}`);
-    }
+      toast.add(isEdit ? `Ítem "${form.descripcion_item.toUpperCase()}" actualizado` : `Ítem "${form.descripcion_item.toUpperCase()}" añadido`, isEdit ? "ÍTEM ACTUALIZADO" : "ÍTEM AGREGADO");
+      
+      if (onAddLog && subgrupo) {
+        const nom_padre = servicio?.tituloGeneral || "";
+        const tipo_nombre = subgrupo?.tipoNombre || "";
+        const codigo_item = (form.codigo_item || "S/C").toUpperCase();
+        const descripcion_item = (form.descripcion_item || "SERVICIO").toUpperCase();
+        onAddLog(isEdit ? `Servicios: Se editó el ítem '${codigo_item} - ${descripcion_item}' a ${nom_padre} - ${tipo_nombre}` : `Servicios: Se agregó el ítem '${codigo_item} - ${descripcion_item}' a ${nom_padre} - ${tipo_nombre}`);
+      }
 
-    return true;
+      return true;
     } catch (error) {
-      console.error("Error al guardar ítem de servicio:", error);
-      toast.error("Error al guardar ítem de servicio");
+      console.error("Error al procesar ítem de servicio:", error);
+      toast.error("Error al procesar ítem");
       return false;
     }
   };
@@ -362,6 +422,12 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
     const toDelete = [];
     if (typeof idServicio !== 'string' || !idServicio.startsWith('temp_')) {
       toDelete.push(idServicio);
+      api.delete(`cotizaciones/lista_servicios/${numReg}/`, { params: { id_servicio: idServicio } })
+        .catch(err => {
+          if (err.response?.status !== 404) {
+            console.error("Error al eliminar servicio en backend:", err);
+          }
+        });
     }
 
     if (toDelete.length > 0) {
@@ -369,6 +435,13 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
     }
 
     setGruposServicios(prev => {
+      const next = { ...prev };
+      delete next[idServicio];
+      return next;
+    });
+
+    setOriginalGruposServicios(prev => {
+      if (!prev) return prev;
       const next = { ...prev };
       delete next[idServicio];
       return next;
@@ -409,11 +482,31 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
         return false;
       }
     }
+
     if (typeof idItem !== 'string' || !idItem.startsWith('temp_')) {
       setDeletedServicioIds(prev => [...prev, idItem]);
+      api.delete(`cotizaciones/lista_servicios/${numReg}/`, { params: { id_servicio: idItem } })
+        .catch(err => {
+          if (err.response?.status !== 404) {
+            console.error("Error al eliminar ítem de servicio en backend:", err);
+          }
+        });
     }
 
     setGruposServicios(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      Object.values(next).forEach(grupo => {
+        if (grupo.subgrupos) {
+          grupo.subgrupos.forEach(subgrupo => {
+            subgrupo.items = (subgrupo.items || []).filter(it => it.id_servicio !== idItem);
+          });
+        }
+      });
+      return next;
+    });
+
+    setOriginalGruposServicios(prev => {
+      if (!prev) return prev;
       const next = JSON.parse(JSON.stringify(prev));
       Object.values(next).forEach(grupo => {
         if (grupo.subgrupos) {
@@ -441,58 +534,101 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
     return true;
   };
 
-  // Duplicar Grupo de Servicios (Nivel 0 y cascada)
-  const handleDuplicarServicio = async (idServicioOriginal) => {
-    const grupo = gruposServicios[idServicioOriginal];
-    if (!grupo) return false;
+  const handleEliminarItemsServicioBulk = async (itemIds = []) => {
+    if (!Array.isArray(itemIds) || itemIds.length === 0) return false;
+    const itemIdsSet = new Set(itemIds);
+
+    const realIdsToDelete = itemIds.filter(id => typeof id !== 'string' || !id.startsWith('temp_'));
+    if (realIdsToDelete.length > 0) {
+      setDeletedServicioIds(prev => [...prev, ...realIdsToDelete]);
+      realIdsToDelete.forEach(id => {
+        api.delete(`cotizaciones/lista_servicios/${numReg}/`, { params: { id_servicio: id } })
+          .catch(err => {
+            if (err.response?.status !== 404) {
+              console.error("Error al eliminar ítem de servicio bulk en backend:", err);
+            }
+          });
+      });
+    }
 
     setGruposServicios(prev => {
-      const next = { ...prev };
-      const existentes = Object.values(prev)
-        .map(g => {
-          const firstSg = g.subgrupos?.[0];
-          const code = firstSg ? firstSg.tipoCodigo?.slice(0, 2) : null;
-          return code ? parseInt(code, 10) : null;
-        })
-        .filter(n => n !== null && !isNaN(n));
-      const maxCode = existentes.length > 0 ? Math.max(...existentes) : 0;
-      const nuevoCodigo = String(maxCode + 1).padStart(2, '0');
+      const next = JSON.parse(JSON.stringify(prev));
+      Object.values(next).forEach(grupo => {
+        if (grupo.subgrupos) {
+          grupo.subgrupos.forEach(subgrupo => {
+            if (subgrupo.items) {
+              subgrupo.items = subgrupo.items.filter(it => !itemIdsSet.has(it.id_servicio));
+            }
+          });
+        }
+      });
+      return next;
+    });
 
+    setOriginalGruposServicios(prev => {
+      if (!prev) return prev;
+      const next = JSON.parse(JSON.stringify(prev));
+      Object.values(next).forEach(grupo => {
+        if (grupo.subgrupos) {
+          grupo.subgrupos.forEach(subgrupo => {
+            if (subgrupo.items) {
+              subgrupo.items = subgrupo.items.filter(it => !itemIdsSet.has(it.id_servicio));
+            }
+          });
+        }
+      });
+      return next;
+    });
+
+    return true;
+  };
+
+  // Duplicar Grupo de Servicios (Nivel 0 y cascada)
+  const handleDuplicarServicio = (idServicioOriginal) => {
+    setGruposServicios(prev => {
+      const grupo = prev[idServicioOriginal];
+      if (!grupo) return prev;
+
+      const nuevoCodigo = nextCodigoGrupoServicio(prev);
       const tempGroupId = `temp_srv_group_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const byType = {};
+      (grupo.subgrupos || []).forEach((sg) => {
+        byType[tipoCodigoSubgrupo(sg)] = sg;
+      });
 
-      const newSubgroups = (grupo.subgrupos || []).map((sg, sgIdx) => {
+      const newSubgroups = TIPO_SUBGRUPO_SERVICIO.map((tInfo, sgIdx) => {
+        const sg = byType[tInfo.type];
         const tempSubId = `temp_srv_sub_${Date.now()}_${sgIdx}_${Math.random().toString(36).substr(2, 9)}`;
-        const subCode = `${nuevoCodigo}${sg.tipoCodigo?.slice(2, 4) || '04'}`;
-
-        const newItems = (sg.items || []).map((item, itIdx) => {
-          const tempItemId = `temp_srv_item_${Date.now()}_${sgIdx}_${itIdx}_${Math.random().toString(36).substr(2, 9)}`;
-          const itemCode = `${subCode}${String(itIdx + 1).padStart(2, '0')}`;
-          return {
-            ...item,
-            id_servicio: tempItemId,
-            id_registro: numReg,
-            codigo_servicio: itemCode
-          };
-        });
+        const newItems = (sg?.items || []).map((item, itIdx) => ({
+          ...item,
+          id_servicio: `temp_srv_item_${Date.now()}_${sgIdx}_${itIdx}_${Math.random().toString(36).substr(2, 9)}`,
+          id_registro: numReg,
+          nivel: 2,
+          codigo_servicio: `${nuevoCodigo}${tInfo.type}2`,
+          id_tipo_gasto: item.id_tipo_gasto || tInfo.gasto,
+        }));
 
         return {
           id_servicio: tempSubId,
-          titulo: sg.titulo,
-          tipoCodigo: subCode,
-          tipoNombre: sg.tipoNombre,
-          items: newItems
+          titulo: sg?.titulo || tInfo.name,
+          tipoCodigo: tInfo.type,
+          tipoNombre: sg?.tipoNombre || tInfo.name,
+          codigo_servicio: `${nuevoCodigo}${tInfo.type}1`,
+          items: newItems,
         };
       });
 
-      next[tempGroupId] = {
-        id_servicio: tempGroupId,
-        tituloGeneral: `${grupo.tituloGeneral} - COPIA`,
-        cantidad: grupo.cantidad,
-        detalle: grupo.detalle,
-        orden: Math.max(...Object.values(prev).map(g => g.orden || 0), 0) + 1,
-        subgrupos: newSubgroups
+      return {
+        ...prev,
+        [tempGroupId]: {
+          id_servicio: tempGroupId,
+          tituloGeneral: `${grupo.tituloGeneral || "SERVICIO"} - COPIA`,
+          cantidad: grupo.cantidad || 1,
+          detalle: grupo.detalle || "",
+          orden: Math.max(...Object.values(prev).map(g => g.orden || 0), 0) + 1,
+          subgrupos: newSubgroups,
+        },
       };
-      return next;
     });
 
     toast.add("Grupo de servicios duplicado", "GRUPO DUPLICADO");
@@ -527,6 +663,7 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
   const saveServicios = async () => {
     if (deletedServicioIds.length > 0) {
       for (const id of deletedServicioIds) {
+        if (!isNumericServicioId(id)) continue;
         try {
           await api.delete(`cotizaciones/lista_servicios/${numReg}/`, { params: { id_servicio: id } });
         } catch (err) {
@@ -582,7 +719,7 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
     let hasUpdate = false;
 
     for (const gp of Object.values(gruposServicios)) {
-      const isGroupTemp = typeof gp.id_servicio === 'string' && gp.id_servicio.startsWith('temp_');
+      const isGroupTemp = isTempServicioId(gp.id_servicio);
       if (isGroupTemp) {
         hasAdd = true;
       }
@@ -591,16 +728,16 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
         hasUpdate = true;
       }
       for (const sg of (gp.subgrupos || [])) {
-        const isSubgroupTemp = typeof sg.id_servicio === 'string' && sg.id_servicio.startsWith('temp_');
+        const isSubgroupTemp = isTempServicioId(sg.id_servicio);
         if (isSubgroupTemp) {
           hasAdd = true;
         }
         const origSg = origGp?.subgrupos?.find(s => s.id_servicio === sg.id_servicio);
-        if (!isSubgroupTemp && hasSubgroupChanged(sg, origSg)) {
+        if (!isSubgroupTemp && !isVirtualServicioId(sg.id_servicio) && hasSubgroupChanged(sg, origSg)) {
           hasUpdate = true;
         }
         for (const item of (sg.items || [])) {
-          const isItemTemp = typeof item.id_servicio === 'string' && item.id_servicio.startsWith('temp_');
+          const isItemTemp = isTempServicioId(item.id_servicio);
           if (isItemTemp) {
             hasAdd = true;
           } else {
@@ -617,7 +754,7 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
     const savePromises = [];
 
     for (const gp of Object.values(gruposServicios)) {
-      const isGroupTemp = typeof gp.id_servicio === 'string' && gp.id_servicio.startsWith('temp_');
+      const isGroupTemp = isTempServicioId(gp.id_servicio);
       const origGp = originalGruposServicios[gp.id_servicio];
       let realGroupId = gp.id_servicio;
 
@@ -652,9 +789,9 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
         realGroupId = resGroup.data.id_servicio;
         tempIdToRealIdMap.set(gp.id_servicio, realGroupId);
 
-        const sub1 = gp.subgrupos?.find(sg => sg.tipoCodigo === "04");
-        const sub2 = gp.subgrupos?.find(sg => sg.tipoCodigo === "05");
-        const sub3 = gp.subgrupos?.find(sg => sg.tipoCodigo === "06");
+        const sub1 = gp.subgrupos?.find(sg => tipoCodigoSubgrupo(sg) === "04");
+        const sub2 = gp.subgrupos?.find(sg => tipoCodigoSubgrupo(sg) === "05");
+        const sub3 = gp.subgrupos?.find(sg => tipoCodigoSubgrupo(sg) === "06");
 
         const subgruposPayloads = [
           { nivel: 1, codigo_servicio: `${nuevoCodigo}041`, nombre_servicio: (sub1?.titulo || "MANO DE OBRA").toUpperCase(), id_tipo_gasto: 3, id_registro: numReg },
@@ -665,7 +802,7 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
         for (const subPayload of subgruposPayloads) {
           const resSub = await api.post(`cotizaciones/lista_servicios/${numReg}/`, subPayload);
           const realSubId = resSub.data.id_servicio;
-          const tempSub = gp.subgrupos?.find(sg => sg.tipoCodigo === subPayload.codigo_servicio.slice(2, 4));
+          const tempSub = gp.subgrupos?.find(sg => tipoCodigoSubgrupo(sg) === subPayload.codigo_servicio.slice(2, 4));
           if (tempSub) {
             tempIdToRealIdMap.set(tempSub.id_servicio, realSubId);
             const itemPromises = (tempSub.items || []).map(async (item) => {
@@ -717,10 +854,12 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
         }
 
         for (const sg of (gp.subgrupos || [])) {
-          const subCode = `${groupCode}${sg.tipoCodigo || "04"}1`;
+          const typeCode = tipoCodigoSubgrupo(sg);
+          const subCode = `${groupCode}${typeCode}1`;
           const origSg = origGp?.subgrupos?.find(s => s.id_servicio === sg.id_servicio);
 
-          const isSubgroupTemp = typeof sg.id_servicio === 'string' && sg.id_servicio.startsWith('temp_');
+          const isSubgroupTemp = isTempServicioId(sg.id_servicio);
+          const isVirtualSubgroup = isVirtualServicioId(sg.id_servicio);
 
           if (isSubgroupTemp) {
             if ((sg.items || []).length > 0) {
@@ -728,13 +867,17 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
                 nivel: 1,
                 codigo_servicio: subCode,
                 nombre_servicio: sg.titulo,
-                id_tipo_gasto: sg.tipoCodigo?.endsWith("04") ? 3 : sg.tipoCodigo?.endsWith("05") ? 4 : 5,
+                id_tipo_gasto: typeCode === "04" ? 3 : typeCode === "05" ? 4 : 5,
                 id_registro: numReg
               };
-              savePromises.push(api.post(`cotizaciones/lista_servicios/${numReg}/`, payloadSub));
+              savePromises.push(
+                api.post(`cotizaciones/lista_servicios/${numReg}/`, payloadSub).then((res) => {
+                  const realSubId = res.data?.id_servicio;
+                  if (realSubId != null) tempIdToRealIdMap.set(sg.id_servicio, realSubId);
+                })
+              );
             }
-          } else {
-            if (hasSubgroupChanged(sg, origSg)) {
+          } else if (!isVirtualSubgroup && hasSubgroupChanged(sg, origSg)) {
               const payloadSub = {
                 id_servicio: sg.id_servicio,
                 id_registro: numReg,
@@ -743,12 +886,11 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
                 codigo_servicio: subCode
               };
               savePromises.push(api.put(`cotizaciones/lista_servicios/${numReg}/`, payloadSub));
-            }
           }
 
           for (const item of (sg.items || [])) {
-            const isItemTemp = typeof item.id_servicio === 'string' && item.id_servicio.startsWith('temp_');
-            const itemCode = `${groupCode}${sg.tipoCodigo || "04"}2`;
+            const isItemTemp = isTempServicioId(item.id_servicio);
+            const itemCode = `${groupCode}${tipoCodigoSubgrupo(sg)}2`;
 
             if (isItemTemp) {
               const payloadItem = {
@@ -773,7 +915,7 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
                 tempIdToRealIdMap.set(item.id_servicio, res.data.id_servicio);
               });
               savePromises.push(postPromise);
-            } else {
+            } else if (isNumericServicioId(item.id_servicio)) {
               const origItem = origSg?.items?.find(it => it.id_servicio === item.id_servicio);
               if (hasItemChanged(item, origItem)) {
                 const payloadItem = {
@@ -813,9 +955,9 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
 
     sorted.forEach((grupo) => {
       const realGroupId = tempIdToRealIdMap.get(grupo.id_servicio) || grupo.id_servicio;
-      if (realGroupId) {
+      if (isNumericServicioId(realGroupId)) {
         reorderItems.push({
-          id_servicio: realGroupId,
+          id_servicio: Number(realGroupId),
           orden: counter++
         });
       }
@@ -823,9 +965,9 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
       if (grupo.subgrupos && Array.isArray(grupo.subgrupos)) {
         grupo.subgrupos.forEach((subgrupo) => {
           const realSubId = tempIdToRealIdMap.get(subgrupo.id_servicio) || subgrupo.id_servicio;
-          if (realSubId) {
+          if (isNumericServicioId(realSubId)) {
             reorderItems.push({
-              id_servicio: realSubId,
+              id_servicio: Number(realSubId),
               orden: counter++
             });
           }
@@ -833,9 +975,9 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
           if (subgrupo.items && Array.isArray(subgrupo.items)) {
             subgrupo.items.forEach((item) => {
               const realItemId = tempIdToRealIdMap.get(item.id_servicio) || item.id_servicio;
-              if (realItemId) {
+              if (isNumericServicioId(realItemId)) {
                 reorderItems.push({
-                  id_servicio: realItemId,
+                  id_servicio: Number(realItemId),
                   orden: counter++
                 });
               }
@@ -1245,6 +1387,7 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
     handleAgregarItemServicio,
     handleEliminarGrupoServicio,
     handleEliminarItemServicio,
+    handleEliminarItemsServicioBulk,
     handleDuplicarServicio,
     sensors,
     handleDragEnd,

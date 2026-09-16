@@ -13,7 +13,8 @@ export default function ResumenDashboard({
   alertas = [], 
   viewScope = "global",
   resumenData,
-  loading
+  loading,
+  loadingTendencias
 }) {
   const filtros = { anio: anno, mes };
 
@@ -51,7 +52,7 @@ export default function ResumenDashboard({
           viewScope={viewScope} 
           cotizaciones={cotizaciones} 
           data={resumenData?.tendencias}
-          loading={loading}
+          loading={loadingTendencias ?? loading}
         />
       </section>
 

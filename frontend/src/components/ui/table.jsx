@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import Tippy from "@tippyjs/react";
 import "tippy.js/dist/tippy.css";
 
 const Table = ({
   headers,
-  data,
+  data = [],
   renderRow,
   emptyMessage = "No hay datos disponibles.",
   activeRow = null,
@@ -15,14 +16,54 @@ const Table = ({
   fetchData,
   titulo,
   compact = false,
+  disablePagination = false,
+  pagination = null,
 }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [isEditingPage, setIsEditingPage] = useState(false);
+  const [inputPageVal, setInputPageVal] = useState("");
+
+  useEffect(() => {
+    if (pagination) {
+      setInputPageVal(String(pagination.currentPage));
+    }
+  }, [pagination?.currentPage]);
+
+  const handlePageSubmit = () => {
+    setIsEditingPage(false);
+    if (!pagination) return;
+    const pageNum = parseInt(inputPageVal, 10);
+    if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= pagination.totalPages) {
+      pagination.onPageChange(pageNum);
+    } else {
+      setInputPageVal(String(pagination.currentPage));
+    }
+  };
+
+  const handlePageInputChange = (e) => {
+    const val = e.target.value;
+    if (val === "") {
+      setInputPageVal("");
+      return;
+    }
+    if (!pagination) return;
+    const num = parseInt(val, 10);
+    if (!isNaN(num)) {
+      if (num > pagination.totalPages) {
+        setInputPageVal(String(pagination.totalPages));
+      } else if (num < 1) {
+        setInputPageVal("1");
+      } else {
+        setInputPageVal(String(num));
+      }
+    }
+  };
 
   const totalPages = Math.ceil(data.length / rowsPerPage) || 1;
   const startIndex = (currentPage - 1) * rowsPerPage;
   const endIndex = startIndex + rowsPerPage;
-  const paginatedData = data.slice(startIndex, endIndex);
+  const paginatedData = disablePagination ? data : data.slice(startIndex, endIndex);
 
   const goToPage = (page) => {
     if (page < 1 || page > totalPages) return;
@@ -56,7 +97,7 @@ const Table = ({
   const cardPaddingClass = compact ? "p-2" : "p-3 md:p-4";
 
   return (
-    <div className="relative w-full flex flex-col overflow-hidden">
+    <div className="relative w-full h-full flex flex-col flex-1 min-h-0 justify-between overflow-hidden">
       {/* TITULO */}
       {titulo && (
         <div className="w-full px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/80 backdrop-blur-sm flex items-center justify-between rounded-t-2xl shadow-sm">
@@ -67,7 +108,7 @@ const Table = ({
       )}
 
       {/* DESKTOP */}
-      <div className="hidden md:block w-full flex-1 overflow-x-auto scrollbar-thin scrollbar-thumb-blue-400/50 scrollbar-track-gray-100 dark:scrollbar-thumb-blue-600/50 dark:scrollbar-track-gray-800">
+      <div className="hidden md:block w-full flex-1 min-h-0 overflow-auto scrollbar-thin scrollbar-thumb-blue-400/50 scrollbar-track-gray-100 dark:scrollbar-thumb-blue-600/50 dark:scrollbar-track-gray-800">
         <table className="w-full border-collapse min-w-[720px] text-gray-800 dark:text-gray-100 rounded-2xl text-xs">
           <thead className="sticky top-0 z-10 bg-gray-100/90 dark:bg-gray-800/90 backdrop-blur-sm shadow-[0_2px_6px_rgba(0,0,0,0.05)] border-b border-gray-200 dark:border-gray-700">
             <tr>
@@ -97,12 +138,16 @@ const Table = ({
                 return (
                   <tr
                     key={rowIndex}
-                    className={`transition-colors duration-200 ease-out cursor-pointer select-none text-center
+                    className={`transition-colors duration-200 ease-out cursor-pointer text-center
                       ${activeRow === (item.id || rowIndex)
                         ? "bg-blue-100 dark:bg-blue-900/30 ring-1 ring-blue-400 dark:ring-blue-600"
                         : "hover:bg-blue-100/90 dark:hover:bg-blue-700/40"
                       }`}
-                    onClick={() => onRowClick && onRowClick(item)}
+                    onClick={() => {
+                      const selection = window.getSelection();
+                      if (selection && selection.toString().trim().length > 0) return;
+                      onRowClick && onRowClick(item);
+                    }}
                   >
                     {rowData.map((cell, i) => {
                       const isLastRow = rowIndex === paginatedData.length - 1;
@@ -222,7 +267,78 @@ const Table = ({
       </div>
 
       {/* PAGINACIÓN */}
-      {totalPages > 1 && (
+      {!disablePagination && pagination && (
+        <div className="bg-gray-50/50 px-4 py-2 border-t border-gray-100 flex items-center justify-between shrink-0">
+          <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest truncate">
+            {pagination.from} - {pagination.to} de {pagination.total}
+          </div>
+          <div className="flex items-center space-x-1.5">
+            <button
+              disabled={pagination.currentPage === 1}
+              onClick={() => pagination.onPageChange(1)}
+              className="p-1.5 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 disabled:opacity-50 transition-all shadow-xs"
+              title="Primera página"
+            >
+              <ChevronsLeft className="h-4 w-4" />
+            </button>
+            <button
+              disabled={pagination.currentPage === 1}
+              onClick={() => pagination.onPageChange(pagination.currentPage - 1)}
+              className="p-1.5 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 disabled:opacity-50 transition-all shadow-xs"
+              title="Página anterior"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+
+            {isEditingPage ? (
+              <input
+                type="number"
+                value={inputPageVal}
+                onChange={handlePageInputChange}
+                onBlur={handlePageSubmit}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handlePageSubmit();
+                  if (e.key === 'Escape') setIsEditingPage(false);
+                }}
+                onFocus={(e) => e.target.select()}
+                className="w-12 text-center text-xs font-black text-gray-700 border border-gray-300 rounded bg-white py-0.5 px-1 focus:ring-1 focus:ring-cyan-500 focus:border-cyan-500 outline-none"
+                autoFocus
+                min="1"
+                max={pagination.totalPages}
+              />
+            ) : (
+              <span 
+                onClick={() => {
+                  setInputPageVal(String(pagination.currentPage));
+                  setIsEditingPage(true);
+                }}
+                className="text-xs font-black text-gray-700 min-w-[2.5rem] text-center cursor-pointer hover:bg-gray-100 hover:text-cyan-600 px-2 py-0.5 rounded transition-all"
+                title="Hacer clic para ir a página..."
+              >
+                {pagination.currentPage} / {pagination.totalPages}
+              </span>
+            )}
+
+            <button
+              disabled={pagination.currentPage === pagination.totalPages}
+              onClick={() => pagination.onPageChange(pagination.currentPage + 1)}
+              className="p-1.5 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 disabled:opacity-50 transition-all shadow-xs"
+              title="Página siguiente"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+            <button
+              disabled={pagination.currentPage === pagination.totalPages}
+              onClick={() => pagination.onPageChange(pagination.totalPages)}
+              className="p-1.5 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 disabled:opacity-50 transition-all shadow-xs"
+              title="Última página"
+            >
+              <ChevronsRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+      {!disablePagination && !pagination && totalPages > 1 && (
         <div className="flex flex-wrap items-center justify-center gap-2 px-2 py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/80 backdrop-blur-sm rounded-b-2xl">
           <Button
             variant="ghost"
@@ -237,7 +353,7 @@ const Table = ({
             variant="ghost"
             size="sm"
             className="rounded-full hover:bg-blue-100 dark:hover:bg-blue-800/30"
-            onClick={() => goToPage(currentPage - 1)} // <--- Antes tenías solo (- 1)
+            onClick={() => goToPage(currentPage - 1)}
             disabled={currentPage === 1}
           >
             {"<"}

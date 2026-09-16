@@ -24,7 +24,7 @@ import {
   Printer
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import api from "@/services/api";
+import api, { openReport } from "@/services/api";
 import { toast } from "@/utils/toast";
 import { formatDate } from "@/utils/formatters";
 
@@ -126,9 +126,7 @@ export default function SugerenciaDetalle() {
 
   const handlePrintReport = () => {
     const token = localStorage.getItem("access_token");
-    const cleanBaseURL = api.defaults.baseURL.endsWith('/') ? api.defaults.baseURL.slice(0, -1) : api.defaults.baseURL;
-    const url = `${cleanBaseURL}/buzon/sugerencias/${id}/reporte/?token=${token}&_t=${Date.now()}`;
-    window.open(url, "_blank");
+    openReport(`buzon/sugerencias/${id}/reporte/?token=${token}&_t=${Date.now()}`);
   };
 
   const handleAddNote = async (e) => {
@@ -429,10 +427,10 @@ export default function SugerenciaDetalle() {
                         <div className="flex items-center gap-1">
                           <button
                             onClick={() => handleDeleteAttachment(adj.id_adjunto)}
-                            className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all ml-2"
+                            className="p-1.5 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 border border-rose-200/60 transition-all ml-2 flex items-center justify-center shrink-0 shadow-2xs"
                             title="Eliminar documento"
                           >
-                            <Trash2 className="h-3 w-3" />
+                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </div>
                       </div>

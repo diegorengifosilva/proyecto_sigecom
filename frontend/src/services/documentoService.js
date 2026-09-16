@@ -1,5 +1,6 @@
 // src/services/documentoService.js
 import axios from "axios";
+import { API_URL } from "./api";
 
 /* 🔹 Obtener token CSRF de cookies */
 const getCSRFToken = () => {
@@ -9,7 +10,7 @@ const getCSRFToken = () => {
 
 /* 🌐 Cliente Axios con URL dinámica y soporte CORS + credenciales */
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL + "/api/caja_chica/documentos",
+  baseURL: `${API_URL.replace(/\/+$/, "")}/caja_chica/documentos`,
   timeout: 60000,
   headers: {
     Accept: "application/json",

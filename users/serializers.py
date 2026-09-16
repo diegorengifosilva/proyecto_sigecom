@@ -58,6 +58,11 @@ class UsuarioSerializer(serializers.ModelSerializer):
             data["nombre_completo"] = "Eduardo Bonilla Cornejo"
         elif nombre.strip().upper() == "ANA CLAUDIA CARBONEL GOMERO":
             data["nombre_completo"] = "Claudia Carbonel Gomero"
+            
+        correo = (data.get("correo") or "").strip()
+        if not correo and instance.usuario:
+            data["correo"] = f"{instance.usuario.strip()}@vc-corporation.com"
+            
         return data
 
 # Token Perzonalizado para login

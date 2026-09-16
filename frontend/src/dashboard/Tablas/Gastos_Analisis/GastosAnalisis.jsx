@@ -216,66 +216,73 @@ export default function GastosAnalisis() {
     areas.find(a => a.id_area === p.id_area)?.nombre?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const [gastosPage, setGastosPage] = useState(1);
+  const [personalPage, setPersonalPage] = useState(1);
+  const pageSize = 12;
+
+  const totalGastosPages = Math.ceil(filteredGastos.length / pageSize) || 1;
+  const paginatedGastos = filteredGastos.slice((gastosPage - 1) * pageSize, gastosPage * pageSize);
+
+  const totalPersonalPages = Math.ceil(filteredPersonal.length / pageSize) || 1;
+  const paginatedPersonal = filteredPersonal.slice((personalPage - 1) * pageSize, personalPage * pageSize);
+
   return (
-    <div className="flex flex-col h-full p-6 bg-slate-50/20 font-sans">
+    <div className="h-full flex flex-col flex-1 min-h-0 bg-slate-50/20 font-sans overflow-hidden p-6">
       
-      {/* HEADER */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-100 pb-4 mb-4">
-        <div>
-          <h1 className="text-lg font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
-            <ListTree size={18} className="text-cyan-600" />
-            Gastos y Personal
-          </h1>
-          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Cuentas analíticas y perfiles de costos</p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className="flex border border-slate-200 bg-white rounded-lg p-0.5 shadow-sm">
-            <button
-              onClick={() => { setTabActiva("gastos"); setSearchTerm(""); }}
-              className={`px-3 py-1.5 text-[10px] font-black uppercase rounded-md tracking-wider transition-all ${
-                tabActiva === "gastos" 
-                  ? "bg-slate-900 text-white shadow-sm" 
-                  : "text-slate-500 hover:text-slate-800"
-              }`}
-            >
-              Tipos de Gasto
-            </button>
-            <button
-              onClick={() => { setTabActiva("personal"); setSearchTerm(""); }}
-              className={`px-3 py-1.5 text-[10px] font-black uppercase rounded-md tracking-wider transition-all ${
-                tabActiva === "personal" 
-                  ? "bg-slate-900 text-white shadow-sm" 
-                  : "text-slate-500 hover:text-slate-800"
-              }`}
-            >
-              Tipo Personal
-            </button>
-          </div>
-
-          <Button
-            onClick={tabActiva === "gastos" ? handleNewGasto : handleNewPersonal}
-            className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 h-9 text-xs font-bold uppercase tracking-wider rounded-xl shadow-lg shadow-cyan-100 flex items-center gap-1.5"
+      {/* HEADER TABS HORIZONTALES */}
+      <div className="flex items-center justify-between border-b border-slate-200 bg-white px-6 pt-1 mb-4 rounded-xl shadow-xs shrink-0 overflow-x-auto scrollbar-none">
+        <div className="flex items-center gap-6">
+          <button
+            onClick={() => { setTabActiva("gastos"); setSearchTerm(""); setGastosPage(1); }}
+            className={`flex items-center gap-2 py-3 px-2 border-b-2 text-xs font-bold transition-all whitespace-nowrap ${
+              tabActiva === "gastos"
+                ? "border-cyan-600 text-cyan-600 font-black"
+                : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
+            }`}
           >
-            <Plus size={14} strokeWidth={3} />
-            {tabActiva === "gastos" ? "Nuevo Gasto" : "Nuevo Personal"}
-          </Button>
+            <ListTree size={16} className={tabActiva === "gastos" ? "text-cyan-600" : "text-slate-400"} />
+            <span>Tipos de Gasto</span>
+          </button>
+
+          <button
+            onClick={() => { setTabActiva("personal"); setSearchTerm(""); setPersonalPage(1); }}
+            className={`flex items-center gap-2 py-3 px-2 border-b-2 text-xs font-bold transition-all whitespace-nowrap ${
+              tabActiva === "personal"
+                ? "border-cyan-600 text-cyan-600 font-black"
+                : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
+            }`}
+          >
+            <UserCheck size={16} className={tabActiva === "personal" ? "text-cyan-600" : "text-slate-400"} />
+            <span>Tipo Personal</span>
+          </button>
         </div>
+
+        <Button
+          onClick={tabActiva === "gastos" ? handleNewGasto : handleNewPersonal}
+          className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 h-8.5 text-xs font-bold uppercase tracking-wider rounded-lg shadow-sm flex items-center gap-1.5 shrink-0 my-2"
+        >
+          <Plus size={14} strokeWidth={3} />
+          {tabActiva === "gastos" ? "Nuevo Gasto" : "Nuevo Personal"}
+        </Button>
       </div>
 
       {/* SEARCH TOOLBAR */}
-      <div className="relative max-w-sm mb-4">
+      <div className="relative max-w-sm mb-3 shrink-0">
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
         <Input
           placeholder={tabActiva === "gastos" ? "Buscar por código o cuenta..." : "Buscar por nombre o departamento..."}
           value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-8 bg-white border-slate-200 text-xs h-8.5 rounded-lg shadow-sm"
+          onChange={(e) => {
+            setSearchTerm(e.target.value);
+            setGastosPage(1);
+            setPersonalPage(1);
+          }}
+          className="pl-8 bg-white border-slate-200 text-xs h-8.5 rounded-lg shadow-xs"
         />
       </div>
 
       {/* TABLE BLOCK */}
-      <div className="flex-1 overflow-auto relative border border-slate-150 rounded-xl bg-white shadow-xs">
+      <div className="flex-1 min-h-0 overflow-hidden relative border border-slate-150 rounded-xl bg-white shadow-xs flex flex-col justify-between">
         {activeLoading && (
           <div className="absolute inset-0 z-30 bg-white/60 backdrop-blur-[1px] flex items-center justify-center">
             <div className="flex flex-col items-center gap-2">
@@ -287,20 +294,29 @@ export default function GastosAnalisis() {
 
         {tabActiva === "gastos" ? (
           <Table
+            disablePagination={false}
+            pagination={{
+              currentPage: gastosPage,
+              totalPages: totalGastosPages,
+              total: filteredGastos.length,
+              from: filteredGastos.length > 0 ? (gastosPage - 1) * pageSize + 1 : 0,
+              to: Math.min(gastosPage * pageSize, filteredGastos.length),
+              onPageChange: (p) => setGastosPage(p)
+            }}
             headers={["Código", "Nombre de Cuenta de Gasto", "Tipo Principal", "Estado"]}
-            data={filteredGastos}
+            data={paginatedGastos}
             onRowClick={handleEditGasto}
             renderRow={(gasto) => [
-              <span className="text-xs font-bold text-slate-800 text-center block font-mono">
+              <span key="cod" className="text-xs font-bold text-slate-800 text-center block font-mono">
                 {gasto.codigo}
               </span>,
-              <span className="text-xs font-semibold text-slate-700 text-left block px-6">
+              <span key="nom" className="text-xs font-semibold text-slate-700 text-left block px-6">
                 {gasto.nombre}
               </span>,
-              <span className="text-[10px] font-bold text-slate-500 text-center block uppercase">
+              <span key="tipo" className="text-[10px] font-bold text-slate-500 text-center block uppercase">
                 {gasto.codigo?.startsWith("05") ? "Servicios" : gasto.codigo?.startsWith("06") ? "Viajes / Viáticos" : "General"}
               </span>,
-              <div className="flex justify-center">
+              <div key="est" className="flex justify-center">
                 <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase border ${
                   gasto.activo === 1
                     ? "bg-emerald-50 text-emerald-700 border-emerald-100"
@@ -313,26 +329,35 @@ export default function GastosAnalisis() {
           />
         ) : (
           <Table
+            disablePagination={false}
+            pagination={{
+              currentPage: personalPage,
+              totalPages: totalPersonalPages,
+              total: filteredPersonal.length,
+              from: filteredPersonal.length > 0 ? (personalPage - 1) * pageSize + 1 : 0,
+              to: Math.min(personalPage * pageSize, filteredPersonal.length),
+              onPageChange: (p) => setPersonalPage(p)
+            }}
             headers={["Código", "Nombre / Rol", "Costo Mínimo", "Costo Máximo", "Área / Departamento", "Estado"]}
-            data={filteredPersonal}
+            data={paginatedPersonal}
             onRowClick={handleEditPersonal}
             renderRow={(p) => [
-              <span className="text-xs font-bold text-slate-800 text-center block font-mono">
+              <span key="cod" className="text-xs font-bold text-slate-800 text-center block font-mono">
                 {p.codigo}
               </span>,
-              <span className="text-xs font-semibold text-slate-700 text-left block px-6">
+              <span key="nom" className="text-xs font-semibold text-slate-700 text-left block px-6">
                 {p.nombre}
               </span>,
-              <span className="text-xs font-mono font-bold text-slate-600 text-center block">
+              <span key="cmin" className="text-xs font-mono font-bold text-slate-600 text-center block">
                 $/ {Number(p.costo_min || 0).toFixed(2)}
               </span>,
-              <span className="text-xs font-mono font-bold text-slate-600 text-center block">
+              <span key="cmax" className="text-xs font-mono font-bold text-slate-600 text-center block">
                 $/ {Number(p.costo_max || 0).toFixed(2)}
               </span>,
-              <span className="text-[10px] font-bold text-slate-500 text-center block uppercase bg-slate-50 border border-slate-150/40 rounded px-1.5 py-0.5 mx-auto w-fit">
+              <span key="area" className="text-[10px] font-bold text-slate-500 text-center block uppercase bg-slate-50 border border-slate-150/40 rounded px-1.5 py-0.5 mx-auto w-fit">
                 {areas.find(a => a.id_area === p.id_area)?.nombre || "SIN ÁREA"}
               </span>,
-              <div className="flex justify-center">
+              <div key="est" className="flex justify-center">
                 <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase border ${
                   p.activo === 1
                     ? "bg-emerald-50 text-emerald-700 border-emerald-100"

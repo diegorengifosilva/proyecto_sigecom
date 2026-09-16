@@ -121,6 +121,22 @@ class Cotizacion(models.Model):
             models.Index(fields=['id_cliente', 'id_tipo']),
         ]
 
+    def clean_fk_fields(self):
+        fk_attrs = [
+            'id_tipo_id', 'id_cliente_id', 'id_representante_id',
+            'id_comercial_id', 'id_tecnico_id', 'id_creador_id',
+            'id_unidad_tiempo_entrega_suministros_id',
+            'id_unidad_tiempo_entrega_servicios_id',
+            'id_unidad_tiempo_validez_id', 'id_estado_id'
+        ]
+        for attr in fk_attrs:
+            if getattr(self, attr, None) in (0, '0', ''):
+                setattr(self, attr, None)
+
+    def save(self, *args, **kwargs):
+        self.clean_fk_fields()
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"Cotización {self.codigo} - {self.id_cliente}"
 
@@ -194,6 +210,15 @@ class CotizacionSuministro(models.Model):
         verbose_name = "Suministro"
         verbose_name_plural = "Suministros"
 
+    def clean_fk_fields(self):
+        for attr in ("id_tipo_gasto_id", "id_marca_id", "id_unidad_tiempo_entrega_id"):
+            if getattr(self, attr, None) in (0, "0", ""):
+                setattr(self, attr, None)
+
+    def save(self, *args, **kwargs):
+        self.clean_fk_fields()
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.id_registro} - {self.descripcion}"
 
@@ -251,6 +276,15 @@ class CotizacionServicio(models.Model):
         managed = False
         db_table = 'cotizaciones_servicios'
         ordering = ['orden', 'id_servicio']
+
+    def clean_fk_fields(self):
+        for attr in ("id_tipo_gasto_id", "id_area_id"):
+            if getattr(self, attr, None) in (0, "0", ""):
+                setattr(self, attr, None)
+
+    def save(self, *args, **kwargs):
+        self.clean_fk_fields()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.id_registro} - {self.nombre_servicio or self.descripcion_item}"
@@ -391,7 +425,14 @@ class CotizacionApertura(models.Model):
     anno = models.IntegerField(null=True, blank=True, db_column='anno')  # year(4) en MySQL
     mes = models.IntegerField(null=True, blank=True, db_column='mes')
     numero_orden = models.CharField(max_length=70, null=True, blank=True, db_column='numero_orden')
-    estado_orden = models.IntegerField(null=True, blank=True, default=1, db_column='estado_orden')
+    estado_orden = models.ForeignKey(
+        'core.Estado',
+        on_delete=models.SET_NULL,
+        db_column='estado_orden',
+        null=True,
+        blank=True,
+        related_name='ordenes_apertura',
+    )
 
     # ── FECHAS PROCESO ─────────────────────────────────────────
     fecha_orden = models.DateTimeField(null=True, blank=True, db_column='fecha_orden')
@@ -463,8 +504,100 @@ class CotizacionApertura(models.Model):
         managed = False  # Mantenlo en False si la base de datos ya maneja la estructura real
         db_table = 'cotizaciones_apertura'
 
+    def clean_fk_fields(self):
+        if self.id_registro_id in (0, '0', ''):
+            self.id_registro_id = None
+        if self.estado_orden_id in (0, '0', ''):
+            self.estado_orden_id = None
+        if self.orden_plazo_unidad_id in (0, '0', ''):
+            self.orden_plazo_unidad_id = None
+
+    def save(self, *args, **kwargs):
+        self.clean_fk_fields()
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"Apertura {self.id_apertura} - Orden: {self.numero_orden or 'S/N'}"
+
+class CotizacionAperturaServicio(models.Model):
+    # ── IDENTIFICADORES Y CLAVES FORÁNEAS ──────────────────────
+    id_registro = models.AutoField(primary_key=True, db_column='id_registro')
+    
+    id_apertura = models.ForeignKey(
+        'CotizacionApertura',
+        on_delete=models.CASCADE,
+        db_column='id_apertura',
+        null=True,
+        blank=True,
+        related_name='servicios_apertura'
+    )
+    
+    id_servicio = models.ForeignKey(
+        'CotizacionServicio',  # Apunta a tu modelo de cotizaciones_servicios
+        on_delete=models.SET_NULL,
+        db_column='id_servicio',
+        null=True,
+        blank=True,
+        related_name='aperturas_servicio'
+    )
+
+    # ── FECHAS Y CONTROL DE AVANCE ─────────────────────────────
+    fini = models.DateTimeField(null=True, blank=True, db_column='fini')
+    fmax = models.DateTimeField(null=True, blank=True, db_column='fmax')
+    avan = models.DecimalField(max_digits=12, decimal_places=2, default=0.00, null=True, blank=True, db_column='avan')
+
+    # ── ESTADOS Y REGISTROS ────────────────────────────────────
+    efis = models.CharField(max_length=100, null=True, blank=True, db_column='efis')
+    efin = models.CharField(max_length=100, null=True, blank=True, db_column='efin')
+    nreg = models.CharField(max_length=100, null=True, blank=True, db_column='nreg')
+
+    class Meta:
+        managed = False
+        db_table = 'cotizaciones_apertura_servicios'
+
+    def __str__(self):
+        return f"Apertura Servicio #{self.id_registro} - Apertura: {self.id_apertura_id} - Servicio: {self.id_servicio_id}"
+
+class CotizacionAperturaSuministro(models.Model):
+    # ── IDENTIFICADORES Y CLAVES FORÁNEAS ──────────────────────
+    id_registro = models.AutoField(primary_key=True, db_column='id_registro')
+    
+    id_apertura = models.ForeignKey(
+        'CotizacionApertura',
+        on_delete=models.CASCADE,
+        db_column='id_apertura',
+        null=True,
+        blank=True,
+        related_name='suministros_apertura'
+    )
+    
+    id_suministro = models.ForeignKey(
+        'CotizacionSuministro',  # Apunta a tu modelo de cotizaciones_suministros
+        on_delete=models.SET_NULL,
+        db_column='id_suministro',
+        null=True,
+        blank=True,
+        related_name='aperturas_suministro'
+    )
+
+    # ── FECHAS Y CRONOGRAMA ────────────────────────────────────
+    fini = models.DateTimeField(null=True, blank=True, db_column='fini')
+    fmax = models.DateTimeField(null=True, blank=True, db_column='fmax')
+    avan = models.DateTimeField(null=True, blank=True, db_column='avan')  # En suministros avan se definió como DATETIME
+
+    # ── ESTADOS Y CONTROL DE PROCESO ───────────────────────────
+    efis = models.CharField(max_length=100, null=True, blank=True, db_column='efis')
+    efin = models.CharField(max_length=100, null=True, blank=True, db_column='efin')
+    ead = models.CharField(max_length=100, null=True, blank=True, db_column='ead')
+    een = models.CharField(max_length=100, null=True, blank=True, db_column='een')
+    nreg = models.CharField(max_length=100, null=True, blank=True, db_column='nreg')
+
+    class Meta:
+        managed = False
+        db_table = 'cotizaciones_apertura_suministros'
+
+    def __str__(self):
+        return f"Apertura Suministro #{self.id_registro} - Apertura: {self.id_apertura_id} - Suministro: {self.id_suministro_id}"
 
 #========================================================================================
 

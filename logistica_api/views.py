@@ -2151,12 +2151,13 @@ def subir_archivo(request):
     if request.method == "POST":
         print("FILES recibidos:", request.FILES)
         archivo = request.FILES.get("archivo")
-        nombre_guardar = request.POST.get("nombre")  # <--- esto es lo nuevo
+        nombre_guardar = request.POST.get("nombre")
 
         if archivo:
-            ruta = r"C:\xampp\htdocs\vc\ocfiles"
+            from cotizaciones_api.oc_files import oc_save_dir
+            ruta = oc_save_dir()
             try:
-                # usa el nombre que enviaste desde React
+                os.makedirs(ruta, exist_ok=True)
                 with open(os.path.join(ruta, nombre_guardar), "wb+") as destino:
                     for chunk in archivo.chunks():
                         destino.write(chunk)
@@ -2165,21 +2166,25 @@ def subir_archivo(request):
                 print("Error al escribir archivo:", e)
                 return JsonResponse({"ok": False, "error": str(e)})
         else:
-            return JsonResponse({"ok": False, "error": "No se recibiÃ³ archivo"})
-    return JsonResponse({"ok": False, "error": "MÃ©todo no permitido"})
+            return JsonResponse({"ok": False, "error": "No se recibió archivo"})
+    return JsonResponse({"ok": False, "error": "Método no permitido"})
 
 @csrf_exempt
 def listar_adjuntos(request, num_reg):
-    carpeta = r"C:\xampp\htdocs\vc\ocfiles"
+    from cotizaciones_api.oc_files import oc_search_dirs
     try:
         archivos = []
-        # Itera los archivos de la carpeta
-        for nombre in os.listdir(carpeta):
-            if nombre.startswith(str(num_reg)):  # solo archivos que empiezan con num_reg
-                archivos.append({
-                    "nombre": nombre,               # nombre completo guardado en disco
-                    "displayName": nombre[len(str(num_reg)) + 1:],  # quitar prefijo para mostrar
-                })
+        nombres_vistos = set()
+        for carpeta in oc_search_dirs():
+            if not os.path.isdir(carpeta):
+                continue
+            for nombre in os.listdir(carpeta):
+                if nombre.startswith(str(num_reg)) and nombre not in nombres_vistos:
+                    nombres_vistos.add(nombre)
+                    archivos.append({
+                        "nombre": nombre,
+                        "displayName": nombre[len(str(num_reg)) + 1:],
+                    })
         return JsonResponse({"ok": True, "archivos": archivos})
     except Exception as e:
         return JsonResponse({"ok": False, "error": str(e)})
@@ -2192,19 +2197,24 @@ def eliminar_archivo(request):
         if not nombre:
             return JsonResponse({"ok": False, "error": "Nombre no recibido"})
 
-        ruta = r"C:\xampp\htdocs\vc\ocfiles"
-        path = os.path.join(ruta, nombre)
+        from cotizaciones_api.oc_files import oc_search_dirs
+        path_encontrado = None
+        for carpeta in oc_search_dirs():
+            p = os.path.join(carpeta, nombre)
+            if os.path.exists(p):
+                path_encontrado = p
+                break
 
-        if not os.path.exists(path):
+        if not path_encontrado:
             return JsonResponse({"ok": False, "error": "Archivo no existe"})
 
         try:
-            os.remove(path)
+            os.remove(path_encontrado)
             return JsonResponse({"ok": True})
         except Exception as e:
             return JsonResponse({"ok": False, "error": str(e)})
 
-    return JsonResponse({"ok": False, "error": "MÃ©todo no permitido"})
+    return JsonResponse({"ok": False, "error": "Método no permitido"})
 
 
 from pathlib import Path

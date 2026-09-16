@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import api from "@/services/api";
+import api, { downloadAttachment } from "@/services/api";
 import {
   Dialog,
   DialogContent,
@@ -121,18 +121,12 @@ export default function AdjuntosModal({ open, onClose, num_reg }) {
     // Archivo existente (en disco)
     // -------------------------
     if (registro.saveName) {
-      // URL a tu endpoint de descarga en Django
-      const url = `/api/cotizaciones/adjuntos/descargar/${encodeURIComponent(
-        registro.saveName
-      )}/`;
-
-      const a = document.createElement("a");
-      a.href = url;
-      // Descarga con el nombre guardado en disco
-      a.download = registro.saveName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      downloadAttachment(
+        `cotizaciones/adjuntos/descargar/${encodeURIComponent(registro.saveName)}/`,
+        registro.des || registro.saveName
+      ).catch((err) => {
+        toast.error(err.message || "No se pudo descargar el archivo");
+      });
     }
   };
 
@@ -324,7 +318,8 @@ export default function AdjuntosModal({ open, onClose, num_reg }) {
                           <button
                             onClick={() => handleEliminar(r.id)}
                             disabled={saving}
-                            className="p-2 rounded-lg bg-rose-50 text-rose-500 hover:bg-rose-100 hover:text-rose-700 transition-all opacity-0 group-hover:opacity-100"
+                            className="p-2 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 border border-rose-200/60 transition-all shadow-2xs"
+                            title="Eliminar adjunto"
                           >
                             <Trash2 size={14} />
                           </button>

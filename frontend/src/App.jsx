@@ -22,6 +22,7 @@ import Comercial from "./dashboard/comercial/Comercial";
 import CotizacionDetallePage from "./dashboard/comercial/CotizacionDetallePage";
 import CotizacionNuevaModal from "./modal/CotizacionNuevaModal";
 import EstructuraComercial from "./dashboard/Tablas/EstructuraComercial/EstructuraComercial";
+import MaestroCompras from "./dashboard/Tablas/MaestroCompras/MaestroCompras";
 import ParametrosVentas from "./dashboard/Tablas/ParametrosVentas/ParametrosVentas";
 import CatalogoMarcas from "./dashboard/Tablas/CatalogoMarcas/CatalogoMarcas";
 import GastosAnalisis from "./dashboard/Tablas/Gastos_Analisis/GastosAnalisis";
@@ -135,6 +136,9 @@ export default function App() {
 
               {/* Módulo Maestro / Tablas */}
               <Route path="maestro">
+                <Route index element={<Navigate to="comercial" replace />} />
+                <Route path="comercial" element={<EstructuraComercial />} />
+                <Route path="compras" element={<MaestroCompras />} />
                 <Route path="catalogo" element={<CatalogoMarcas />} />
                 <Route path="estructura" element={<EstructuraComercial />} />
                 <Route path="parametros" element={<ParametrosVentas />} />

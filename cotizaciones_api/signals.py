@@ -191,11 +191,21 @@ def on_suministro_post_save(sender, instance, created, **kwargs):
     if instance.id_registro_id:
         disparar_sincronizacion_legada(instance.id_registro_id)
 
+@receiver(post_delete, sender=CotizacionSuministro)
+def on_suministro_post_delete(sender, instance, **kwargs):
+    if instance.id_registro_id:
+        disparar_sincronizacion_legada(instance.id_registro_id)
+
 @receiver(post_save, sender=CotizacionServicio)
 def on_servicio_post_save(sender, instance, created, **kwargs):
     """
     Escucha cambios en servicios y dispara la sincronización del padre.
     """
+    if instance.id_registro_id:
+        disparar_sincronizacion_legada(instance.id_registro_id)
+
+@receiver(post_delete, sender=CotizacionServicio)
+def on_servicio_post_delete(sender, instance, **kwargs):
     if instance.id_registro_id:
         disparar_sincronizacion_legada(instance.id_registro_id)
 

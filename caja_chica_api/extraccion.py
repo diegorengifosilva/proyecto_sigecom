@@ -3,17 +3,35 @@
 import re
 import os
 import unicodedata
-import pytesseract
-import numpy as np
+try:
+    import pytesseract
+except ImportError:
+    pytesseract = None
+try:
+    import numpy as np
+except Exception:
+    class DummyNP:
+        ndarray = object
+        generic = object
+    np = DummyNP()
 # from caja_chica_api.db_connection import get_connection
 from typing import Optional, Dict, List, Union, Tuple
 from datetime import datetime, date, timedelta
 from django.db import transaction
 from django.core.exceptions import ValidationError
-from pdf2image import convert_from_bytes
-from pdf2image.exceptions import PDFInfoNotInstalledError, PDFPageCountError
-from PIL import Image, UnidentifiedImageError, ImageFilter, ImageOps, ExifTags
-import pdfplumber
+try:
+    from pdf2image import convert_from_bytes
+    from pdf2image.exceptions import PDFInfoNotInstalledError, PDFPageCountError
+except Exception:
+    convert_from_bytes = None
+try:
+    from PIL import Image, UnidentifiedImageError, ImageFilter, ImageOps, ExifTags
+except Exception:
+    Image = None
+try:
+    import pdfplumber
+except Exception:
+    pdfplumber = None
 from decimal import Decimal, InvalidOperation
 import logging
 from caja_chica_api.ocr_utils import procesar_imagen_camara, procesar_pdf

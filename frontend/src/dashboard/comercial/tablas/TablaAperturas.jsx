@@ -57,6 +57,14 @@ const renderAreaBadge = (areaName) => {
     );
 };
 
+const handleSafeClick = (action) => {
+    const selection = window.getSelection();
+    if (selection && selection.toString().trim().length > 0) {
+        return;
+    }
+    action();
+};
+
 const TablaApertura = ({
     data = [],
     isLoading = false,
@@ -88,7 +96,7 @@ const TablaApertura = ({
                 return (
                     <div
                         key={item.id_apertura}
-                        onClick={() => onRowClick(item.cotizacion_id)}
+                        onClick={() => handleSafeClick(() => onRowClick?.(item.cotizacion_id))}
                         onContextMenu={(e) => {
                             e.preventDefault();
                             onRowContextMenu?.(e, item);
@@ -108,13 +116,7 @@ const TablaApertura = ({
                                 <span className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded text-[8.5px] font-black uppercase tracking-tighter">
                                     OC: {item.numero_orden}
                                 </span>
-                                <StatusBadge status={
-                                    item.estado_orden === 1 ? "Adjudicado" :
-                                    item.estado_orden === 2 ? "Pendiente" :
-                                    item.estado_orden === 4 ? "Anulado" :
-                                    item.estado_orden === 3 ? "Facturada" :
-                                    item.estado_orden_nombre
-                                } />
+                                <StatusBadge status={item.estado_orden_nombre || "Pendiente"} />
                             </div>
                         </div>
 
@@ -135,7 +137,7 @@ const TablaApertura = ({
                                 <span>{formatDate(item.fecha_orden)}</span>
                             </div>
                             <span className="text-xs font-black text-gray-950">
-                                ${Number(item.total_orden || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                {(item.tipo_moneda || item.id_registro?.tipo_moneda) === "S" ? "S/." : "$"}{Number(item.total_orden || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                             </span>
                         </div>
                     </div>
@@ -170,7 +172,7 @@ const TablaApertura = ({
                             // 🌟 CORRECCIÓN: Usamos id_apertura como KEY único obligatorio
                             key={item.id_apertura}
                             // 🌟 CORRECCIÓN: Usamos id_apertura o cotizacion_id según a qué detalle deba viajar
-                            onClick={() => onRowClick(item.cotizacion_id)}
+                            onClick={() => handleSafeClick(() => onRowClick?.(item.cotizacion_id))}
                             onContextMenu={(e) => {
                                 e.preventDefault();
                                 onRowContextMenu?.(e, item);
@@ -218,18 +220,12 @@ const TablaApertura = ({
 
                             {/* ESTADO */}
                             <td className="px-4 py-2 whitespace-nowrap">
-                                <StatusBadge status={
-                                    item.estado_orden === 1 ? "Adjudicado" :
-                                    item.estado_orden === 2 ? "Pendiente" :
-                                    item.estado_orden === 4 ? "Anulado" :
-                                    item.estado_orden === 3 ? "Facturada" :
-                                    item.estado_orden_nombre
-                                } />
+                                <StatusBadge status={item.estado_orden_nombre || "Pendiente"} />
                             </td>
 
                             {/* IMPORTE */}
                             <td className="px-4 py-2 whitespace-nowrap text-sm font-black text-gray-900 text-right">
-                                ${Number(item.total_orden || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                {(item.tipo_moneda || item.id_registro?.tipo_moneda) === "S" ? "S/." : "$"}{Number(item.total_orden || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                             </td>
                         </tr>
                     );

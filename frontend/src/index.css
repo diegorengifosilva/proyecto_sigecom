@@ -105,3 +105,64 @@ input[type=number] {
   -moz-appearance: textfield;
   appearance: textfield;
 }
+
+/* Tablas de ítems: descripción acotada y el resto repartido, sin scroll horizontal */
+.sigecom-item-table {
+  width: 100%;
+  max-width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+.sigecom-item-table col.col-grip { width: 2.1rem; }
+.sigecom-item-table col.col-code { width: 7rem; }
+.sigecom-item-table col.col-desc { width: 23%; }
+.sigecom-item-table col.col-qty { width: 5.35rem; }
+.sigecom-item-table col.col-days { width: 5.25rem; }
+.sigecom-item-table col.col-money { width: 5.35rem; }
+.sigecom-item-table col.col-util { width: 5.7rem; }
+.sigecom-item-table col.col-act { width: 3.4rem; }
+.sigecom-item-table thead {
+  background-color: #f1f5f9;
+  border-bottom: 2px solid #cbd5e1;
+}
+.sigecom-item-table th {
+  padding: 7px 4px;
+  font-size: 9.5px;
+  font-weight: 900 !important;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #0f172a !important;
+  line-height: 1.15;
+  vertical-align: middle;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.sigecom-item-table th .th-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+.sigecom-item-table td {
+  vertical-align: middle;
+  overflow: hidden;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+.sigecom-item-table td.col-grip-cell {
+  width: 2.1rem;
+  min-width: 2.1rem;
+  max-width: 2.1rem;
+  padding: 4px 1px;
+  text-align: center;
+}
+.sigecom-item-table .col-ctrl-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  line-height: 1;
+}

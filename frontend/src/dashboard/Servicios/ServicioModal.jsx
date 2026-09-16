@@ -11,6 +11,7 @@ import ReactQuill from "react-quill";
 import "react-quill/dist/quill.snow.css";
 import { useEffect, useState } from "react";
 import { Layers3, Settings2, FileText, X, Check } from "lucide-react";
+import { quillListKeyboard } from "@/utils/quillListKeyboard";
 
 export default function ServicioModal({ open, onClose, onAceptar, servicio = null }) {
   const [nombre, setNombre] = useState("");
@@ -132,8 +133,10 @@ export default function ServicioModal({ open, onClose, onAceptar, servicio = nul
                     toolbar: [
                       ["bold", "italic"],
                       [{ list: "ordered" }, { list: "bullet" }],
+                      [{ indent: "-1" }, { indent: "+1" }],
                       ["blockquote"],
                     ],
+                    keyboard: quillListKeyboard,
                   }}
                 />
               </div>

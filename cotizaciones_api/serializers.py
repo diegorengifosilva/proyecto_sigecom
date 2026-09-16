@@ -2,6 +2,8 @@
 
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
+from django.db import connections
+from collections import defaultdict
 import uuid
 from .models import (
     Cotizacion,
@@ -11,6 +13,8 @@ from .models import (
     CotizacionMensaje,
     CotizacionSeguimiento,
     CotizacionApertura,
+    CotizacionAperturaSuministro,
+    CotizacionAperturaServicio,
 
     alm_articulos,
 
@@ -249,20 +253,60 @@ class CotizacionTablaSerializer(serializers.ModelSerializer):
         }
         return mapping.get(obj.id_area, "Otros")
 
+def _safe_related_nombre(obj, fk_attr):
+    pk = getattr(obj, f"{fk_attr}_id", None)
+    if not pk:
+        return None
+    try:
+        rel = getattr(obj, fk_attr)
+        return getattr(rel, "nombre", None) if rel else None
+    except Exception:
+        return None
+
+
+def _coerce_zero_fk(data, fields):
+    if hasattr(data, "copy"):
+        data = data.copy()
+    else:
+        data = dict(data)
+    for field in fields:
+        if field in data and data.get(field) in (0, "0", "", "null", "None"):
+            data[field] = None
+    return data
+
+
 class CotizacionSuministroSerializer(serializers.ModelSerializer):
-    # Traemos los nombres de las relaciones para no ver solo IDs en el detalle
-    marca_nombre = serializers.CharField(source="id_marca.nombre", read_only=True)
-    gasto_nombre = serializers.CharField(source="id_tipo_gasto.nombre", read_only=True)
-    unidad_entrega_nombre = serializers.CharField(source="id_unidad_tiempo_entrega.nombre", read_only=True)
+    marca_nombre = serializers.SerializerMethodField()
+    gasto_nombre = serializers.SerializerMethodField()
+    unidad_entrega_nombre = serializers.SerializerMethodField()
 
     class Meta:
         model = CotizacionSuministro
         fields = "__all__"
 
+    def get_marca_nombre(self, obj):
+        return _safe_related_nombre(obj, "id_marca")
+
+    def get_gasto_nombre(self, obj):
+        return _safe_related_nombre(obj, "id_tipo_gasto")
+
+    def get_unidad_entrega_nombre(self, obj):
+        return _safe_related_nombre(obj, "id_unidad_tiempo_entrega")
+
+    def to_internal_value(self, data):
+        data = _coerce_zero_fk(data, ("id_marca", "id_tipo_gasto", "id_unidad_tiempo_entrega"))
+        return super().to_internal_value(data)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        for field in ("id_marca", "id_tipo_gasto", "id_unidad_tiempo_entrega"):
+            if data.get(field) in (0, "0"):
+                data[field] = None
+        return data
+
 class CotizacionServicioSerializer(serializers.ModelSerializer):
-    # Campos calculados o de lectura para el frontend
-    area_nombre = serializers.ReadOnlyField(source='id_area.nombre')
-    gasto_nombre = serializers.ReadOnlyField(source='id_tipo_gasto.nombre')
+    area_nombre = serializers.SerializerMethodField()
+    gasto_nombre = serializers.SerializerMethodField()
 
     class Meta:
         model = CotizacionServicio
@@ -293,6 +337,16 @@ class CotizacionServicioSerializer(serializers.ModelSerializer):
         # id_servicio es el nuevo PK autoincremental
         read_only_fields = ['id_servicio']
 
+    def get_area_nombre(self, obj):
+        return _safe_related_nombre(obj, "id_area")
+
+    def get_gasto_nombre(self, obj):
+        return _safe_related_nombre(obj, "id_tipo_gasto")
+
+    def to_internal_value(self, data):
+        data = _coerce_zero_fk(data, ("id_tipo_gasto", "id_area"))
+        return super().to_internal_value(data)
+
     def to_representation(self, instance):
         """
         Limpiamos los valores decimales para que no lleguen como strings 
@@ -306,6 +360,9 @@ class CotizacionServicioSerializer(serializers.ModelSerializer):
         for field in decimal_fields:
             if data[field] is not None:
                 data[field] = float(data[field])
+        for field in ("id_tipo_gasto", "id_area"):
+            if data.get(field) in (0, "0"):
+                data[field] = None
         return data
 
 class CotizacionAdjuntoSerializer(serializers.ModelSerializer):
@@ -443,6 +500,13 @@ class CotizacionModalSerializer(serializers.ModelSerializer):
         source="id_unidad_tiempo_validez.nombre", read_only=True
     )
 
+    def get_fields(self):
+        fields = super().get_fields()
+        if self.context.get("include_nested") is False:
+            for key in ("suministros", "servicios", "mensajes", "seguimiento", "adjuntos"):
+                fields.pop(key, None)
+        return fields
+
     class Meta:
         model = Cotizacion
         fields = [
@@ -509,6 +573,9 @@ class CotizacionModalSerializer(serializers.ModelSerializer):
         return obj.id_estado_id != 11
 
     def get_has_apertura(self, obj):
+        cached = getattr(obj, "_has_apertura", None)
+        if cached is not None:
+            return bool(cached)
         return obj.aperturas.exists()
 
     def get_envio(self, obj):
@@ -838,6 +905,143 @@ class CotizacionCompletaSerializer(serializers.ModelSerializer):
         }
         return mapping.get(obj.id_area, "Otros")
 
+def fetch_orden_su_by_apertura(apertura_ids):
+    """
+    Líneas reales de la OC en SIGECOM 4.0 (db_vc.vc_mov_orden_su).
+    El FK id_suministro de cotizaciones_apertura_suministros a menudo está
+    duplicado o apunta a otro grupo; 4.0 agrupa por cog/nig/cod.
+    """
+    ids = []
+    for raw in apertura_ids or []:
+        try:
+            ids.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    if not ids:
+        return {}
+    db_alias = "legacy" if "legacy" in connections else "default"
+    placeholders = ",".join(["%s"] * len(ids))
+    sql = (
+        f"SELECT num_reg, cog, nog, nig, num, TRIM(cod), mov "
+        f"FROM db_vc.vc_mov_orden_su "
+        f"WHERE num_reg IN ({placeholders}) "
+        f"ORDER BY cog, nig, num"
+    )
+    out = defaultdict(list)
+    with connections[db_alias].cursor() as cursor:
+        cursor.execute(sql, ids)
+        for num_reg, cog, nog, nig, num, cod, mov in cursor.fetchall():
+            try:
+                key = int(num_reg)
+            except (TypeError, ValueError):
+                key = num_reg
+            cog_s = str(cog or "").strip()
+            out[key].append({
+                "cog": cog_s,
+                "prefix4": cog_s[:4] if len(cog_s) >= 4 else cog_s.zfill(4),
+                "nog": (nog or "").strip(),
+                "nig": nig,
+                "num": num,
+                "cod": (cod or "").strip(),
+                "mov": str(mov or "").strip(),
+            })
+    return dict(out)
+
+
+def fetch_orden_mo_by_apertura(apertura_ids):
+    """
+    Líneas reales de servicios de la OC en SIGECOM 4.0 (db_vc.vc_mov_orden_mo).
+    nig 0 = grupo, 1 = subgrupo (MO/gastos/otros), 2 = ítem.
+    cog[:2] coincide con el prefijo de codigo_servicio en 5.0.
+    """
+    ids = []
+    for raw in apertura_ids or []:
+        try:
+            ids.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    if not ids:
+        return {}
+    db_alias = "legacy" if "legacy" in connections else "default"
+    placeholders = ",".join(["%s"] * len(ids))
+    sql = (
+        f"SELECT num_reg, cog, nog, nig, num, TRIM(cod), TRIM(des), mov "
+        f"FROM db_vc.vc_mov_orden_mo "
+        f"WHERE num_reg IN ({placeholders}) "
+        f"ORDER BY cog, num"
+    )
+    out = defaultdict(list)
+    with connections[db_alias].cursor() as cursor:
+        cursor.execute(sql, ids)
+        for num_reg, cog, nog, nig, num, cod, des, mov in cursor.fetchall():
+            try:
+                key = int(num_reg)
+            except (TypeError, ValueError):
+                key = num_reg
+            cog_s = str(cog or "").strip()
+            out[key].append({
+                "cog": cog_s,
+                "prefix": cog_s[:2] if len(cog_s) >= 2 else cog_s,
+                "nog": (nog or "").strip(),
+                "nig": nig,
+                "num": num,
+                "cod": (cod or "").strip(),
+                "des": (des or "").strip(),
+                "mov": str(mov or "").strip().zfill(2) if mov not in (None, "") else "",
+            })
+    return dict(out)
+
+
+class CotizacionAperturaSuministroSerializer(serializers.ModelSerializer):
+    id_suministro = serializers.IntegerField(source="id_suministro_id", read_only=True)
+    codigo_grupo = serializers.SerializerMethodField()
+    nivel = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CotizacionAperturaSuministro
+        fields = [
+            "id_registro",
+            "id_apertura",
+            "id_suministro",
+            "codigo_grupo",
+            "nivel",
+        ]
+
+    def get_codigo_grupo(self, obj):
+        if obj.id_suministro_id and obj.id_suministro:
+            return obj.id_suministro.codigo_grupo
+        return None
+
+    def get_nivel(self, obj):
+        if obj.id_suministro_id and obj.id_suministro:
+            return obj.id_suministro.nivel
+        return None
+
+class CotizacionAperturaServicioSerializer(serializers.ModelSerializer):
+    id_servicio = serializers.IntegerField(source="id_servicio_id", read_only=True)
+    codigo_servicio = serializers.SerializerMethodField()
+    nivel = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CotizacionAperturaServicio
+        fields = [
+            "id_registro",
+            "id_apertura",
+            "id_servicio",
+            "codigo_servicio",
+            "nivel",
+        ]
+
+    def get_codigo_servicio(self, obj):
+        if obj.id_servicio_id and obj.id_servicio:
+            return obj.id_servicio.codigo_servicio
+        return None
+
+    def get_nivel(self, obj):
+        if obj.id_servicio_id and obj.id_servicio:
+            return obj.id_servicio.nivel
+        return None
+
 class CotizacionAperturaSerializer(serializers.ModelSerializer):
     # ── FORMATEO DE FECHAS ──────────────────────────────────────
     fecha_orden = RawDateTimeField(format="%Y-%m-%d %H:%M:%S", required=False, allow_null=True)
@@ -846,6 +1050,12 @@ class CotizacionAperturaSerializer(serializers.ModelSerializer):
 
     # ── SOBREESCRITURA CON EL OBJETO COMPLETO DE COTIZACIÓN ───
     id_registro = CotizacionCompletaSerializer(read_only=True)
+
+    # ── SUMINISTROS Y SERVICIOS VINCULADOS A ESTA APERTURA / OC ──
+    suministros_apertura = CotizacionAperturaSuministroSerializer(many=True, read_only=True)
+    servicios_apertura = CotizacionAperturaServicioSerializer(many=True, read_only=True)
+    suministros_orden_su = serializers.SerializerMethodField()
+    servicios_orden_mo = serializers.SerializerMethodField()
 
     # ── CAMPOS DE SOLO LECTURA DESDE TABLAS MAESTRAS ───────────
     unidad_plazo_nombre = serializers.CharField(source="orden_plazo_unidad.nombre", read_only=True)
@@ -856,6 +1066,7 @@ class CotizacionAperturaSerializer(serializers.ModelSerializer):
 
     # ── CAMPOS CON LÓGICA DE MAPEO (LECTURA) ────────────────────
     estado_orden_nombre = serializers.SerializerMethodField()
+    oc_completa = serializers.SerializerMethodField()
     prioridad_nombre = serializers.SerializerMethodField()
     tiene_archivo_fisico = serializers.SerializerMethodField()
     extension_archivo_fisico = serializers.SerializerMethodField()
@@ -869,9 +1080,42 @@ class CotizacionAperturaSerializer(serializers.ModelSerializer):
         ]
 
     # ── LÓGICA DE REPRESENTACIÓN ────────────────────────────────
+    def get_suministros_orden_su(self, obj):
+        if not obj.id_apertura:
+            return []
+        cache = self.context.setdefault("_orden_su_cache", {})
+        key = obj.id_apertura
+        if key not in cache:
+            cache.update(fetch_orden_su_by_apertura([key]))
+            cache.setdefault(key, [])
+        return cache.get(key, [])
+
+    def get_servicios_orden_mo(self, obj):
+        if not obj.id_apertura:
+            return []
+        cache = self.context.setdefault("_orden_mo_cache", {})
+        key = obj.id_apertura
+        if key not in cache:
+            cache.update(fetch_orden_mo_by_apertura([key]))
+            cache.setdefault(key, [])
+        return cache.get(key, [])
+
     def get_estado_orden_nombre(self, obj):
-        mapping = {1: "Pendiente", 2: "Aprobada", 3: "Facturada", 4: "Anulada"}
-        return mapping.get(obj.estado_orden, "Desconocido")
+        if obj.estado_orden:
+            return obj.estado_orden.nombre
+        return "Pendiente"
+
+    def get_oc_completa(self, obj):
+        from decimal import Decimal
+        from cotizaciones_api.oc_files import resolve_oc_file
+        path, _ext = resolve_oc_file(obj.id_apertura) if obj.id_apertura else (None, None)
+        has_file = bool(path) or bool((obj.orden_adjunta or "").strip())
+        has_num = bool((obj.numero_orden or "").strip())
+        try:
+            has_total = Decimal(str(obj.total_orden or 0)) > 0
+        except Exception:
+            has_total = False
+        return bool(has_file and has_num and has_total)
 
     def get_prioridad_nombre(self, obj):
         mapping = {"0": "Normal", "1": "Urgente", "2": "Crítica"}
@@ -880,26 +1124,16 @@ class CotizacionAperturaSerializer(serializers.ModelSerializer):
     def get_tiene_archivo_fisico(self, obj):
         if not obj.id_apertura:
             return False
-        import os
-        from django.conf import settings
-        ruta_carpeta = os.path.join(settings.BASE_DIR, 'cotizaciones_api', 'ocfiles')
-        extensiones = ['.pdf', '.xlsx', '.xls', '.docx', '.doc']
-        for ext in extensiones:
-            if os.path.exists(os.path.join(ruta_carpeta, f"{obj.id_apertura}{ext}")):
-                return True
-        return False
+        from cotizaciones_api.oc_files import resolve_oc_file
+        path, _ext = resolve_oc_file(obj.id_apertura)
+        return bool(path)
 
     def get_extension_archivo_fisico(self, obj):
         if not obj.id_apertura:
             return None
-        import os
-        from django.conf import settings
-        ruta_carpeta = os.path.join(settings.BASE_DIR, 'cotizaciones_api', 'ocfiles')
-        extensiones = ['.pdf', '.xlsx', '.xls', '.docx', '.doc']
-        for ext in extensiones:
-            if os.path.exists(os.path.join(ruta_carpeta, f"{obj.id_apertura}{ext}")):
-                return ext
-        return None
+        from cotizaciones_api.oc_files import resolve_oc_file
+        _path, ext = resolve_oc_file(obj.id_apertura)
+        return ext
 
 class CotizacionCompactaSerializer(serializers.ModelSerializer):
     """
@@ -979,8 +1213,9 @@ class CotizacionAperturaTablaSerializer(serializers.ModelSerializer):
 
     # ── LÓGICA DE MÉTODOS SIMPLIFICADOS PARA TABLA ──────────────
     def get_estado_orden_nombre(self, obj):
-        mapping = {1: "Pendiente", 2: "Aprobada", 3: "Facturada", 4: "Anulada"}
-        return mapping.get(obj.estado_orden, "Desconocido")
+        if obj.estado_orden:
+            return obj.estado_orden.nombre
+        return "Pendiente"
 
     def get_cliente_nombre(self, obj):
         if obj.id_registro:

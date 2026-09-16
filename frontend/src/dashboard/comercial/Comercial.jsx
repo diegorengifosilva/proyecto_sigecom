@@ -3,7 +3,8 @@ import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Search, FileText, Filter, MoreHorizontal, LayoutDashboard, ClipboardCheck, TrendingUp, FolderCheck, CalendarRange, ArrowUpRight, X, Trash2, Brush, Pin, PinOff, ExternalLink, Copy, Mail, GitBranch, ShieldCheck, FileDown, ListOrdered, FileSpreadsheet } from "lucide-react";
-import api from "@/services/api";
+import api, { openReport } from "@/services/api";
+import ReportIframe from "@/components/ReportIframe";
 import { useAuth } from "@/context/AuthContext";
 import { ERPTable, StatusBadge, ERPButton, ERPInput, FilterDropdown } from "@/components/ui/ERPComponents";
 import CotizacionNuevaModal from "../../modal/CotizacionNuevaModal";
@@ -640,9 +641,9 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
     ],
     queryFn: fetchCotizaciones,
     keepPreviousData: true,
-    staleTime: 10 * 1000, // Cache de 10 segundos para transiciones rápidas
+    staleTime: 45 * 1000,
     cacheTime: 5 * 60 * 1000,
-    refetchInterval: 10 * 1000, // Background poll cada 10 segundos
+    refetchOnWindowFocus: true,
   });
 
   // 2. NUEVA QUERY DE OPORTUNIDADES
@@ -654,9 +655,9 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
     queryKey: ["oportunidades", fOpor.selectedAnno, fOpor.selectedMes, fOpor.comercialSearch, fOpor.estadoOportunidad, fOpor.annoDesde, fOpor.annoHasta, fOpor.mesDesde, fOpor.mesHasta, fOpor.areaFilter],
     queryFn: fetchOportunidades,
     keepPreviousData: true,
-    staleTime: 10 * 1000, // Cache de 10 segundos
+    staleTime: 45 * 1000,
     cacheTime: 5 * 60 * 1000,
-    refetchInterval: 10 * 1000, // Background poll cada 10 segundos
+    refetchOnWindowFocus: true,
   });
 
   // 3. APERTURAS
@@ -795,9 +796,9 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
     ],
     queryFn: fetchAperturas,
     keepPreviousData: true,
-    staleTime: 10 * 1000, // Cache de 10 segundos
+    staleTime: 45 * 1000,
     cacheTime: 5 * 60 * 1000,
-    refetchInterval: 10 * 1000, // Background poll cada 10 segundos
+    refetchOnWindowFocus: true,
   });
 
   const cotizaciones = dataCotizaciones?.tabla || [];
@@ -1263,9 +1264,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
       }
     }
     
-    const API_URL = import.meta.env.VITE_API_URL || "";
-    const baseUrl = API_URL.endsWith("/") ? API_URL.slice(0, -1) : API_URL;
-    const reportUrl = `${baseUrl}/cotizaciones/reportes/reporte_cotizaciones_dashboard_html/?${params.toString()}`;
+    const reportUrl = `cotizaciones/reportes/reporte_cotizaciones_dashboard_html/?${params.toString()}`;
     
     setReporteUrl(reportUrl);
     setReporteDashboardOpen(true);
@@ -2146,8 +2145,8 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
             })
           ) : currentTab === "aperturas" ? (
             [
-              { label: "PENDIENTE", value: "2" },
               { label: "ADJUDICADO", value: "1" },
+              { label: "PENDIENTE", value: "2" },
               { label: "ANULADO", value: "4" }
             ].map((opt) => {
               const currentArr = Array.isArray(estadoOrdenFilter) ? estadoOrdenFilter : [];
@@ -2288,8 +2287,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
                   <>
                     <button
                       onClick={() => {
-                        const cleanBaseURL = api.defaults.baseURL.endsWith('/') ? api.defaults.baseURL.slice(0, -1) : api.defaults.baseURL;
-                        window.open(`${cleanBaseURL}/cotizaciones/${reporteActiveId}/pdf/`, '_blank');
+                        openReport(`cotizaciones/${reporteActiveId}/pdf/`);
                       }}
                       className="flex items-center px-3.5 py-2 bg-emerald-50 border border-emerald-200 rounded-xl text-[10px] font-black text-emerald-700 hover:bg-emerald-100 hover:border-emerald-300 hover:shadow-sm transition-all uppercase group"
                     >
@@ -2299,8 +2297,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
 
                     <button
                       onClick={() => {
-                        const cleanBaseURL = api.defaults.baseURL.endsWith('/') ? api.defaults.baseURL.slice(0, -1) : api.defaults.baseURL;
-                        window.open(`${cleanBaseURL}/cotizaciones/cotizacion/word/${reporteActiveId}/`, '_blank');
+                        openReport(`cotizaciones/cotizacion/word/${reporteActiveId}/`);
                       }}
                       className="flex items-center px-3.5 py-2 bg-blue-50 border border-blue-200 rounded-xl text-[10px] font-black text-blue-700 hover:bg-blue-100 hover:border-blue-300 hover:shadow-sm transition-all uppercase group"
                     >
@@ -2339,7 +2336,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
                   <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-4">Preparando reporte...</span>
                 </div>
               )}
-              <iframe 
+              <ReportIframe 
                 src={reporteUrl}
                 className="w-full h-full bg-white rounded-xl border border-slate-200 shadow-sm"
                 title="Reporte Cotizaciones Dashboard"
@@ -2458,7 +2455,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
                               setReporteActiveId(contextMenuItem.id_registro);
                               setIsPdfReport(true);
                               setReporteTitle("Previsualización de Propuesta Económica");
-                              setReporteUrl(`${cleanBaseURL}/cotizaciones/${contextMenuItem.id_registro}/pdf-preview/`);
+                              setReporteUrl(`${cleanBaseURL}/cotizaciones/${contextMenuItem.id_registro}/pdf-preview/?v=${Date.now()}`);
                               setReporteDashboardOpen(true);
                               setContextMenuOpen(false);
                             }}

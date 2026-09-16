@@ -37,6 +37,71 @@ def get_short_name(fullname):
     return name.split()[0]
 
 
+def _to_decimal(val):
+    if val is None:
+        return Decimal("0.00")
+    if isinstance(val, Decimal):
+        return val
+    try:
+        return Decimal(str(val))
+    except Exception:
+        return Decimal("0.00")
+
+
+def _factor_usd(tipo_moneda, tipo_cambio):
+    tc = _to_decimal(tipo_cambio)
+    if tc <= 0:
+        tc = Decimal("3.70")
+    if tipo_moneda == "S":
+        return Decimal("1.00") / tc
+    return Decimal("1.00")
+
+
+def _mes_apertura(ap):
+    f_oc = ap.fecha_orden
+    if f_oc:
+        return f_oc.month
+    return ap.mes or 1
+
+
+def _logrado_desde_oc(ap, cot):
+    """HH + utilidad a partir de los campos de la orden (misma fórmula que tendencias)."""
+    factor = _factor_usd(
+        cot.tipo_moneda if cot else None,
+        cot.tipo_cambio if cot else None,
+    )
+    val_pres = _to_decimal(ap.total_orden) * factor
+    costo = (
+        _to_decimal(ap.orden_compra_equipos)
+        + _to_decimal(ap.orden_compra_materiales)
+        + _to_decimal(ap.orden_compra_costo_servicios)
+        + _to_decimal(ap.orden_compra_otros)
+    ) * factor
+    hh = _to_decimal(ap.orden_compra_hh) * factor
+    imprevistos = _to_decimal(ap.orden_compra_entrega) * factor
+    return hh + (val_pres - (costo + hh + imprevistos))
+
+
+def _logrado_desde_oc_row(row):
+    factor = _factor_usd(row.get("id_registro__tipo_moneda"), row.get("id_registro__tipo_cambio"))
+    val_pres = _to_decimal(row.get("total_orden")) * factor
+    costo = (
+        _to_decimal(row.get("orden_compra_equipos"))
+        + _to_decimal(row.get("orden_compra_materiales"))
+        + _to_decimal(row.get("orden_compra_costo_servicios"))
+        + _to_decimal(row.get("orden_compra_otros"))
+    ) * factor
+    hh = _to_decimal(row.get("orden_compra_hh")) * factor
+    imprevistos = _to_decimal(row.get("orden_compra_entrega")) * factor
+    return hh + (val_pres - (costo + hh + imprevistos))
+
+
+def _es_hh_propio(codigo_servicio, nivel):
+    if nivel != 2 or not codigo_servicio or len(codigo_servicio) < 4:
+        return False
+    return codigo_servicio[:3].isdigit() and codigo_servicio[3] == "4"
+
+
 
 @api_view(["GET", "POST", "PUT"])
 @permission_classes([IsAuthenticated])
@@ -123,78 +188,60 @@ def logrado_dashboard(request):
         except ValueError:
             mes_actual = datetime.now().month
 
-    print(f"DEBUG: Año = {anno}, Mes actual = {mes_actual}")
-
-    # Ventas Reales (CotizaciónApertura con estado_orden = 1)
-    aperturas_anuales = CotizacionApertura.objects.filter(
+    aperturas_qs = CotizacionApertura.objects.filter(
         anno=anno,
         estado_orden=1,
-    )
+    ).select_related("id_registro")
 
     personal = request.GET.get("personal", "false").lower() == "true"
     if personal:
-        aperturas_anuales = aperturas_anuales.filter(
-            id_registro__id_comercial=request.user
-        )
+        aperturas_qs = aperturas_qs.filter(id_registro__id_comercial=request.user)
 
-    aperturas_mensuales = aperturas_anuales.annotate(
-        m=ExtractMonth("fecha_orden")
-    ).filter(
-        Q(m=mes_actual) | Q(mes=mes_actual)
+    aperturas = list(aperturas_qs)
+    ids_registro = list({ap.id_registro_id for ap in aperturas if ap.id_registro_id})
+    if not ids_registro:
+        return JsonResponse({"anual": 0.0, "mensual": 0.0})
+
+    meses_por_reg = {}
+    cot_info = {}
+    for ap in aperturas:
+        rid = ap.id_registro_id
+        if not rid:
+            continue
+        meses_por_reg.setdefault(rid, set()).add(_mes_apertura(ap))
+        cot = ap.id_registro
+        if cot and rid not in cot_info:
+            cot_info[rid] = (cot.tipo_moneda, cot.tipo_cambio)
+
+    servicios = CotizacionServicio.objects.filter(
+        id_registro_id__in=ids_registro,
+        nivel=2,
+    ).values(
+        "id_registro_id",
+        "codigo_servicio",
+        "cotizado_total",
+        "utilidad",
+        "cantidad_hombres",
+        "cantidad_dias",
     )
 
-    def calcular_logrado(aperturas):
-        ids_registro = [ap.id_registro_id for ap in aperturas if ap.id_registro_id]
-        if not ids_registro:
-            return Decimal("0.00")
-
-        # Obtener IDs únicos de cotizaciones asociadas a las ventas
-        ids_registro = list(set(ids_registro))
-
-        servicios = CotizacionServicio.objects.filter(
-            id_registro_id__in=ids_registro
-        ).select_related("id_registro")
-
-        total_hh = Decimal("0.00")
-        total_utilidad = Decimal("0.00")
-
-        for s in servicios:
-            cot = s.id_registro
-            if not cot:
-                continue
-
-            tipo_moneda = cot.tipo_moneda
-            tipo_cambio = cot.tipo_cambio or Decimal("3.70")
-            if tipo_cambio <= 0:
-                tipo_cambio = Decimal("3.70")
-
-            # Convertir de PEN a USD para unificar la moneda del dashboard en dólares
-            factor = Decimal("1.00") / tipo_cambio if tipo_moneda == "S" else Decimal("1.00")
-
-            # HH PROPIOS: Código de servicio que empieza por 3 dígitos y el 4to es '4', en nivel 2
-            is_hh_propio = False
-            if s.nivel == 2 and s.codigo_servicio and len(s.codigo_servicio) >= 4:
-                if s.codigo_servicio[:3].isdigit() and s.codigo_servicio[3] == '4':
-                    is_hh_propio = True
-
-            if is_hh_propio:
-                monto_hh = (s.cotizado_total or Decimal("0.00")) * factor
-                total_hh += monto_hh
-            else:
-                # Utilidad de otros servicios (nivel 2): utilidad * hombres * dias
-                if s.nivel == 2:
-                    utilidad_unit = s.utilidad or Decimal("0.00")
-                    cant_hombres = s.cantidad_hombres or 0
-                    cant_dias = s.cantidad_dias or 0
-                    monto_utilidad = (utilidad_unit * cant_hombres * cant_dias) * factor
-                    total_utilidad += monto_utilidad
-
-        return total_hh + total_utilidad
-
-    total_anual = calcular_logrado(aperturas_anuales)
-    total_mensual = calcular_logrado(aperturas_mensuales)
-
-    print(f"DEBUG: Total anual = {total_anual}, Total mensual = {total_mensual}")
+    total_anual = Decimal("0.00")
+    total_mensual = Decimal("0.00")
+    for s in servicios:
+        rid = s["id_registro_id"]
+        tipo_moneda, tipo_cambio = cot_info.get(rid, (None, None))
+        factor = _factor_usd(tipo_moneda, tipo_cambio)
+        if _es_hh_propio(s.get("codigo_servicio"), 2):
+            monto = _to_decimal(s.get("cotizado_total")) * factor
+        else:
+            monto = (
+                _to_decimal(s.get("utilidad"))
+                * (s.get("cantidad_hombres") or 0)
+                * (s.get("cantidad_dias") or 0)
+            ) * factor
+        total_anual += monto
+        if mes_actual in meses_por_reg.get(rid, set()):
+            total_mensual += monto
 
     return JsonResponse({
         "anual": float(total_anual),
@@ -238,34 +285,49 @@ def kpis_dashboard(request):
         qs_ventas_prev = qs_ventas_prev.filter(id_registro__id_comercial=request.user)
 
     qs_cot_mes = qs_cot_anual.filter(mes=mes_actual_num)
-    qs_ventas_mes = qs_ventas_anual.annotate(m=ExtractMonth("fecha_orden")).filter(m=mes_actual_num)
-    qs_ventas_prev = qs_ventas_prev.annotate(m=ExtractMonth("fecha_orden")).filter(m=mes_anterior_num)
+    qs_ventas_mes = qs_ventas_anual.filter(mes=mes_actual_num)
+    qs_ventas_prev = qs_ventas_prev.filter(mes=mes_anterior_num)
 
-    # ==========================================
-    # 2. CÁLCULOS DE MÉTRICAS
-    # ==========================================
-    def get_monto(qs, field="total_cotizacion"):
-        return qs.aggregate(total=Coalesce(Sum(field), Decimal("0.00")))["total"]
+    cot_anual = qs_cot_anual.aggregate(
+        cant=Count("id_registro"),
+        monto=Coalesce(Sum("total_cotizacion"), Decimal("0.00")),
+    )
+    cot_mes = qs_cot_mes.aggregate(
+        cant=Count("id_registro"),
+        monto=Coalesce(Sum("total_cotizacion"), Decimal("0.00")),
+    )
+    cot_prev = qs_cot_prev.aggregate(
+        cant=Count("id_registro"),
+        monto=Coalesce(Sum("total_cotizacion"), Decimal("0.00")),
+    )
+    ven_anual = qs_ventas_anual.aggregate(
+        cant=Count("id_apertura"),
+        monto=Coalesce(Sum("total_orden"), Decimal("0.00")),
+    )
+    ven_mes = qs_ventas_mes.aggregate(
+        monto=Coalesce(Sum("total_orden"), Decimal("0.00")),
+    )
+    ven_prev = qs_ventas_prev.aggregate(
+        monto=Coalesce(Sum("total_orden"), Decimal("0.00")),
+    )
 
     def calc_var(actual, anterior):
         if anterior and anterior != 0:
             return round(((float(actual) - float(anterior)) / float(anterior)) * 100, 1)
         return 0
 
-    # --- KPI 1: Cantidad de Cotizaciones ---
-    cant_mes = qs_cot_mes.count()
-    cant_anual = qs_cot_anual.count()
-    var_cant = calc_var(cant_mes, qs_cot_prev.count())
+    cant_mes = cot_mes["cant"] or 0
+    cant_anual = cot_anual["cant"] or 0
+    var_cant = calc_var(cant_mes, cot_prev["cant"] or 0)
 
-    # --- KPI 2: Monto Cotizado ---
-    monto_cot_mes = get_monto(qs_cot_mes)
-    monto_cot_anual = get_monto(qs_cot_anual)
-    var_monto_cot = calc_var(monto_cot_mes, get_monto(qs_cot_prev))
+    monto_cot_mes = cot_mes["monto"]
+    monto_cot_anual = cot_anual["monto"]
+    var_monto_cot = calc_var(monto_cot_mes, cot_prev["monto"])
 
-    # --- KPI 3: Ventas Reales (OC) ---
-    monto_v_mes = get_monto(qs_ventas_mes, "total_orden")
-    monto_v_anual = get_monto(qs_ventas_anual, "total_orden")
-    var_v = calc_var(monto_v_mes, get_monto(qs_ventas_prev, "total_orden"))
+    monto_v_mes = ven_mes["monto"]
+    monto_v_anual = ven_anual["monto"]
+    var_v = calc_var(monto_v_mes, ven_prev["monto"])
+    cant_ventas_anual = ven_anual["cant"] or 0
 
     # --- KPI 4: Efectividad (% Conversión de Monto) ---
     def calc_efec(venta, coti):
@@ -293,7 +355,7 @@ def kpis_dashboard(request):
         "ventas_variacion": var_v,
         "porcentaje_aprobacion": efec_anual,
         "porcentaje_aprobacion_mes": efec_mes,
-        "ticket_promedio": float(monto_v_anual / qs_ventas_anual.count()) if qs_ventas_anual.count() > 0 else 0
+        "ticket_promedio": float(monto_v_anual / cant_ventas_anual) if cant_ventas_anual > 0 else 0
     })
 
 @api_view(["GET"])
@@ -309,51 +371,71 @@ def tendencias_dashboard(request):
     if personal:
         base = base.filter(id_comercial=request.user)
 
-    # --- LÓGICA DE VENTAS REALES (OC) CON LOGRADO COHERENTE CON EXCEL (hh + utilidad) ---
-    ventas_reales_qs = (
-        CotizacionApertura.objects.filter(
-            anno=int(anno_buscado), 
-            estado_orden=1
-        ).select_related("id_registro")
+    user_id = getattr(request.user, "pk", None)
+    has_extra_filters = any(request.GET.get(k) for k in ("fecha_inicio", "fecha_fin", "area", "usuario", "tipo"))
+    if has_extra_filters or personal:
+        base_ids = set(base.values_list("id_registro", flat=True))
+    else:
+        base_ids = None
+        anno_int = int(anno_buscado)
+
+    ventas_rows = CotizacionApertura.objects.filter(
+        anno=int(anno_buscado),
+        estado_orden=1,
+    ).values(
+        "total_orden",
+        "orden_compra_equipos",
+        "orden_compra_materiales",
+        "orden_compra_costo_servicios",
+        "orden_compra_otros",
+        "orden_compra_hh",
+        "orden_compra_entrega",
+        "fecha_orden",
+        "mes",
+        "id_registro_id",
+        "id_registro__anno",
+        "id_registro__tipo_moneda",
+        "id_registro__tipo_cambio",
+        "id_registro__id_area",
+        "id_registro__id_cliente",
+        "id_registro__id_comercial",
+        "id_registro__id_comercial__dni",
     )
-    if personal:
-        ventas_reales_qs = ventas_reales_qs.filter(id_registro__id_comercial=request.user)
 
     ventas_reales_dict = defaultdict(Decimal)
-    for ap in ventas_reales_qs:
-        cot = ap.id_registro
-        if not cot: continue
-        tipo_moneda = cot.tipo_moneda
-        tipo_cambio = cot.tipo_cambio or Decimal("3.70")
-        if tipo_cambio <= 0:
-            tipo_cambio = Decimal("3.70")
-        factor = Decimal("1.00") / tipo_cambio if tipo_moneda == "S" else Decimal("1.00")
+    dict_ventas_por_dni = defaultdict(Decimal)
+    dict_ventas_por_area = defaultdict(Decimal)
+    dict_ventas_por_cliente = defaultdict(Decimal)
 
-        val_pres = (ap.total_orden or Decimal("0.00")) * factor
-        costo = (
-            (ap.orden_compra_equipos or Decimal("0.00")) + 
-            (ap.orden_compra_materiales or Decimal("0.00")) + 
-            (ap.orden_compra_costo_servicios or Decimal("0.00")) + 
-            (ap.orden_compra_otros or Decimal("0.00"))
-        ) * factor
-        hh = (ap.orden_compra_hh or Decimal("0.00")) * factor
-        imprevistos = (ap.orden_compra_entrega or Decimal("0.00")) * factor
-        utilidad = val_pres - (costo + hh + imprevistos)
-        val_logrado = hh + utilidad
-
-        # Extraer mes
-        f_oc = ap.fecha_orden
-        if f_oc:
-            mes_num = f_oc.month
-        else:
-            mes_num = ap.mes or 1
-
+    for row in ventas_rows:
+        if not row.get("id_registro_id"):
+            continue
+        val_logrado = _logrado_desde_oc_row(row)
+        f_oc = row.get("fecha_orden")
+        mes_num = f_oc.month if f_oc else (row.get("mes") or 1)
         mes_str = str(mes_num).zfill(2)
-        ventas_reales_dict[mes_str] += val_logrado
 
-    # ============================
-    # 1️⃣ VENTAS MENSUALES
-    # ============================
+        incluye_personal = (not personal) or (row.get("id_registro__id_comercial") == user_id)
+        if incluye_personal:
+            ventas_reales_dict[mes_str] += val_logrado
+
+        dni = row.get("id_registro__id_comercial__dni")
+        if dni:
+            dict_ventas_por_dni[dni] += val_logrado
+
+        if base_ids is None:
+            in_base = row.get("id_registro__anno") == anno_int
+        else:
+            in_base = row.get("id_registro_id") in base_ids
+        if not in_base:
+            continue
+        area_id = row.get("id_registro__id_area")
+        if area_id:
+            dict_ventas_por_area[area_id] += val_logrado
+        cli_id = row.get("id_registro__id_cliente")
+        if cli_id:
+            dict_ventas_por_cliente[cli_id] += val_logrado
+
     cotizaciones_raw = (
         base.values("mes")
         .annotate(
@@ -362,14 +444,13 @@ def tendencias_dashboard(request):
         )
         .order_by("mes")
     )
-    
+
     cot_mensuales_dict = {str(item["mes"]).zfill(2): item for item in cotizaciones_raw}
-    
+
     ventas_mensuales = []
     for m in range(1, 13):
         mes_str = str(m).zfill(2)
         cot_data = cot_mensuales_dict.get(mes_str, {})
-        
         ventas_mensuales.append({
             "mes": mes_str,
             "total": float(cot_data.get("total") or 0),
@@ -377,18 +458,15 @@ def tendencias_dashboard(request):
             "cantidad": cot_data.get("cantidad") or 0
         })
 
-    # ============================
-    # 2️⃣ TOP VENTAS COMERCIAL (Calculado globalmente para permitir comparación de promedio en radar)
-    # ============================
-    base_global = Cotizacion.objects.filter(anno=int(anno_buscado))
-    base_global = aplicar_filtros(base_global, request)
-
     dnis_permitidos = ['43662598', '20068421', '70942025']
     usuarios_qs = Usuario.objects.filter(dni__in=dnis_permitidos).values('dni', 'nombre_completo', 'usuario')
     mapa_usuarios = {u['dni']: (u['nombre_completo'] or u['usuario']).strip().upper() for u in usuarios_qs}
 
+    base_ranking = Cotizacion.objects.filter(anno=int(anno_buscado))
+    base_ranking = aplicar_filtros(base_ranking, request)
+
     cotizados_raw = (
-        base_global.filter(estado_envio=2, id_comercial__dni__in=dnis_permitidos)
+        base_ranking.filter(estado_envio=2, id_comercial__dni__in=dnis_permitidos)
         .values("id_comercial__dni")
         .annotate(
             monto_cotizado=Coalesce(Sum("total_cotizacion"), Decimal("0.00")),
@@ -397,71 +475,28 @@ def tendencias_dashboard(request):
     )
     dict_cotizados = {item['id_comercial__dni']: item for item in cotizados_raw}
 
-    base_vendedores = base_global.filter(id_comercial__dni__in=dnis_permitidos)
-    
-    # Obtener todas las aperturas de estos vendedores en estado_orden=1
-    ventas_aperturas = (
-        CotizacionApertura.objects.filter(
-            id_registro__in=base_vendedores, 
-            estado_orden=1
-        ).select_related("id_registro")
-    )
-    
-    dict_ventas_monto = defaultdict(Decimal)
-    for ap in ventas_aperturas:
-        cot = ap.id_registro
-        if not cot: continue
-        tipo_moneda = cot.tipo_moneda
-        tipo_cambio = cot.tipo_cambio or Decimal("3.70")
-        if tipo_cambio <= 0:
-            tipo_cambio = Decimal("3.70")
-        factor = Decimal("1.00") / tipo_cambio if tipo_moneda == "S" else Decimal("1.00")
-
-        val_pres = (ap.total_orden or Decimal("0.00")) * factor
-        costo = (
-            (ap.orden_compra_equipos or Decimal("0.00")) + 
-            (ap.orden_compra_materiales or Decimal("0.00")) + 
-            (ap.orden_compra_costo_servicios or Decimal("0.00")) + 
-            (ap.orden_compra_otros or Decimal("0.00"))
-        ) * factor
-        hh = (ap.orden_compra_hh or Decimal("0.00")) * factor
-        imprevistos = (ap.orden_compra_entrega or Decimal("0.00")) * factor
-        utilidad = val_pres - (costo + hh + imprevistos)
-        val_logrado = hh + utilidad
-
-        dict_ventas_monto[ap.id_registro_id] += val_logrado
-
     ranking_comercial_unificado = []
     for dni, data_cot in dict_cotizados.items():
         nombre_vendedor = mapa_usuarios.get(dni, f"DNI: {dni}")
-        ids_vendedor = base_vendedores.filter(id_comercial__dni=dni).values_list('id_registro', flat=True)
-        
-        venta_total = sum(float(dict_ventas_monto.get(cid, 0) or 0) for cid in ids_vendedor)
+        venta_total = float(dict_ventas_por_dni.get(dni, 0) or 0)
         monto_cotizado = float(data_cot['monto_cotizado'])
         cantidad = data_cot['cantidad_cot']
-
         ranking_comercial_unificado.append({
             "vendedor": nombre_vendedor,
             "monto": venta_total,
             "cotizado": monto_cotizado,
             "cantidad": cantidad,
             "ticket_promedio": venta_total / cantidad if cantidad > 0 else 0,
-            "color": "#008B8B" 
+            "color": "#008B8B"
         })
 
     ranking_comercial = sorted(ranking_comercial_unificado, key=lambda x: x['monto'], reverse=True)
 
-    # ============================
-    # 3️⃣ EMBUDO
-    # ============================
     embudo = [
-        {"etapa": "Cotizadas", "valor": base.count()},
+        {"etapa": "Cotizadas", "valor": base.count() if base_ids is None else len(base_ids)},
         {"etapa": "Aprobadas", "valor": base.filter(estado_envio=2).count()},
     ]
 
-    # ============================
-    # 4️⃣ DISTRIBUCIÓN POR ÁREA
-    # ============================
     AREA_MAP = {1: "IND", 2: "MIN", 4: "OIL", 8: "SFY"}
     areas_cotizadas_raw = base.values("id_area").exclude(id_area=3).annotate(
         total_proyectos=Count("id_registro"),
@@ -471,51 +506,18 @@ def tendencias_dashboard(request):
     areas_final = []
     for a in areas_cotizadas_raw:
         cod_area = a["id_area"]
-        if cod_area not in AREA_MAP: continue
-            
-        aperturas_area = CotizacionApertura.objects.filter(
-            id_registro__id_area=cod_area,
-            id_registro__in=base,
-            estado_orden=1
-        ).select_related("id_registro")
-        
-        venta_real_area = Decimal("0.00")
-        for ap in aperturas_area:
-            cot = ap.id_registro
-            if not cot: continue
-            tipo_moneda = cot.tipo_moneda
-            tipo_cambio = cot.tipo_cambio or Decimal("3.70")
-            if tipo_cambio <= 0:
-                tipo_cambio = Decimal("3.70")
-            factor = Decimal("1.00") / tipo_cambio if tipo_moneda == "S" else Decimal("1.00")
-
-            val_pres = (ap.total_orden or Decimal("0.00")) * factor
-            costo = (
-                (ap.orden_compra_equipos or Decimal("0.00")) + 
-                (ap.orden_compra_materiales or Decimal("0.00")) + 
-                (ap.orden_compra_costo_servicios or Decimal("0.00")) + 
-                (ap.orden_compra_otros or Decimal("0.00"))
-            ) * factor
-            hh = (ap.orden_compra_hh or Decimal("0.00")) * factor
-            imprevistos = (ap.orden_compra_entrega or Decimal("0.00")) * factor
-            utilidad = val_pres - (costo + hh + imprevistos)
-            val_logrado = hh + utilidad
-            
-            venta_real_area += val_logrado
-
+        if cod_area not in AREA_MAP:
+            continue
         areas_final.append({
             "area": AREA_MAP.get(cod_area),
             "total": a["total_proyectos"],
             "cotizado": float(a["monto_cotizado"]),
-            "monto": float(venta_real_area)
+            "monto": float(dict_ventas_por_area.get(cod_area, 0) or 0)
         })
 
     areas_final = sorted(areas_final, key=lambda x: x['monto'], reverse=True)
 
-    # ============================
-    # 5️⃣ CLIENTES RECURRENTES
-    # ============================
-    agrupados_qs = (
+    agrupados_qs = list(
         base.values("id_cliente")
         .annotate(
             total_cotizaciones=Count("id_registro"),
@@ -531,43 +533,11 @@ def tendencias_dashboard(request):
     clientes_final = []
     for item in agrupados_qs:
         cli_id = item["id_cliente"]
-        if not cli_id: continue
-        
+        if not cli_id:
+            continue
         nombre_real = mapa_nombres.get(cli_id) or f"ID: {cli_id}"
-
-        aperturas_cliente = CotizacionApertura.objects.filter(
-            id_registro__id_cliente_id=cli_id,
-            id_registro__in=base,
-            estado_orden=1
-        ).select_related("id_registro")
-
-        venta_real_cliente = Decimal("0.00")
-        for ap in aperturas_cliente:
-            cot = ap.id_registro
-            if not cot: continue
-            tipo_moneda = cot.tipo_moneda
-            tipo_cambio = cot.tipo_cambio or Decimal("3.70")
-            if tipo_cambio <= 0:
-                tipo_cambio = Decimal("3.70")
-            factor = Decimal("1.00") / tipo_cambio if tipo_moneda == "S" else Decimal("1.00")
-
-            val_pres = (ap.total_orden or Decimal("0.00")) * factor
-            costo = (
-                (ap.orden_compra_equipos or Decimal("0.00")) + 
-                (ap.orden_compra_materiales or Decimal("0.00")) + 
-                (ap.orden_compra_costo_servicios or Decimal("0.00")) + 
-                (ap.orden_compra_otros or Decimal("0.00"))
-            ) * factor
-            hh = (ap.orden_compra_hh or Decimal("0.00")) * factor
-            imprevistos = (ap.orden_compra_entrega or Decimal("0.00")) * factor
-            utilidad = val_pres - (costo + hh + imprevistos)
-            val_logrado = hh + utilidad
-            
-            venta_real_cliente += val_logrado
-
         monto_c = float(item["monto_cotizado"])
-        monto_v = float(venta_real_cliente)
-
+        monto_v = float(dict_ventas_por_cliente.get(cli_id, 0) or 0)
         clientes_final.append({
             "codigo": str(cli_id),
             "nombre": nombre_real,

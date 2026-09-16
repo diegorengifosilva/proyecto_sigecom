@@ -235,15 +235,24 @@ export default function CondicionesModal({
             .ql-editor ul li { list-style-type: disc !important; }         /* Nivel 1: ● */
             .ql-editor ul li.ql-indent-1 { list-style-type: circle !important; } /* Nivel 2: ○ */
             .ql-editor ul li.ql-indent-2 { list-style-type: square !important; } /* Nivel 3: ■ */
+            .ql-editor ul li.ql-indent-3 { list-style-type: disc !important; }
+            .ql-editor ul li.ql-indent-4 { list-style-type: circle !important; }
+            .ql-editor ul li.ql-indent-5 { list-style-type: square !important; }
 
             /* 4. Definimos los tipos de numeración por nivel (1, a, i) */
             .ql-editor ol li { list-style-type: decimal !important; }
             .ql-editor ol li.ql-indent-1 { list-style-type: lower-alpha !important; }
             .ql-editor ol li.ql-indent-2 { list-style-type: lower-roman !important; }
+            .ql-editor ol li.ql-indent-3 { list-style-type: decimal !important; }
+            .ql-editor ol li.ql-indent-4 { list-style-type: lower-alpha !important; }
+            .ql-editor ol li.ql-indent-5 { list-style-type: lower-roman !important; }
 
             /* 5. Ajuste de sangrías para que coincidan con los niveles de Word */
             .ql-editor li.ql-indent-1 { padding-left: 1.5em !important; margin-left: 1.5em !important; }
             .ql-editor li.ql-indent-2 { padding-left: 1.5em !important; margin-left: 3em !important; }
+            .ql-editor li.ql-indent-3 { padding-left: 1.5em !important; margin-left: 4.5em !important; }
+            .ql-editor li.ql-indent-4 { padding-left: 1.5em !important; margin-left: 6em !important; }
+            .ql-editor li.ql-indent-5 { padding-left: 1.5em !important; margin-left: 7.5em !important; }
           `}</style>
 
           <div className="quill-sticky-container shadow-inner">

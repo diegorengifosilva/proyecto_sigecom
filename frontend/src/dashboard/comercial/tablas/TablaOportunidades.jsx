@@ -3,6 +3,14 @@ import { ERPTable, StatusBadge } from "@/components/ui/ERPComponents";
 import { Calendar, MessageSquare, Pin } from "lucide-react";
 import { formatDate } from "@/utils/formatters"; // Usamos tu formateador global si es necesario
 
+const handleSafeClick = (action) => {
+    const selection = window.getSelection();
+    if (selection && selection.toString().trim().length > 0) {
+        return;
+    }
+    action();
+};
+
 const TablaOportunidades = ({
     data = [],            // Recibe los datos reales del Backend
     isLoading = false,    // Estado de carga aislado
@@ -43,7 +51,7 @@ const TablaOportunidades = ({
                 return (
                     <div
                         key={item.id_registro}
-                        onClick={() => onRowClick(item.id_registro)}
+                        onClick={() => handleSafeClick(() => onRowClick?.(item.id_registro))}
                         onContextMenu={(e) => {
                             e.preventDefault();
                             onRowContextMenu?.(e, item);
@@ -120,7 +128,7 @@ const TablaOportunidades = ({
                     return (
                         <tr
                             key={item.id_registro}
-                            onClick={() => onRowClick(item.id_registro)}
+                            onClick={() => handleSafeClick(() => onRowClick?.(item.id_registro))}
                             onContextMenu={(e) => {
                                 e.preventDefault();
                                 onRowContextMenu?.(e, item);

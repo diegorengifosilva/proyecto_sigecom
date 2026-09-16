@@ -155,6 +155,16 @@ export default function ParametrosVentas() {
     { id: "notas", label: "Notas / Plantillas", icon: <StickyNote size={16} />, desc: "Condiciones técnicas predefinidas" },
   ];
 
+  const [notasPage, setNotasPage] = useState(1);
+  const [estadosPage, setEstadosPage] = useState(1);
+  const pageSize = 12;
+
+  const totalNotasPages = Math.ceil(filteredNotas.length / pageSize) || 1;
+  const paginatedNotas = filteredNotas.slice((notasPage - 1) * pageSize, notasPage * pageSize);
+
+  const totalEstadosPages = Math.ceil(filteredEstados.length / pageSize) || 1;
+  const paginatedEstados = filteredEstados.slice((estadosPage - 1) * pageSize, estadosPage * pageSize);
+
   // Tab content renderer
   const renderTabContent = () => {
     if (tabActiva === "notas") {
@@ -167,7 +177,10 @@ export default function ParametrosVentas() {
               <Input
                 placeholder="Buscar por código o descripción..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setNotasPage(1);
+                }}
                 className="pl-8 bg-slate-50 border-slate-200 text-xs h-8.5 rounded-lg shadow-sm"
               />
             </div>
@@ -181,7 +194,7 @@ export default function ParametrosVentas() {
           </div>
 
           {/* TABLE */}
-          <div className="flex-1 overflow-auto relative border border-slate-150 rounded-xl bg-white shadow-xs">
+          <div className="flex-1 overflow-auto relative border border-slate-150 rounded-xl bg-white shadow-xs flex flex-col justify-between">
             {loadingNotas && (
               <div className="absolute inset-0 z-30 bg-white/60 backdrop-blur-[1px] flex items-center justify-center">
                 <div className="flex flex-col items-center gap-2">
@@ -191,17 +204,26 @@ export default function ParametrosVentas() {
               </div>
             )}
             <Table
+              disablePagination={false}
+              pagination={{
+                currentPage: notasPage,
+                totalPages: totalNotasPages,
+                total: filteredNotas.length,
+                from: filteredNotas.length > 0 ? (notasPage - 1) * pageSize + 1 : 0,
+                to: Math.min(notasPage * pageSize, filteredNotas.length),
+                onPageChange: (p) => setNotasPage(p)
+              }}
               headers={["Código", "Descripción Nota Técnica", "Estado"]}
-              data={filteredNotas}
+              data={paginatedNotas}
               onRowClick={handleEditNota}
               renderRow={(nota) => [
-                <span className="text-xs font-bold text-slate-800 text-center block font-mono">
+                <span key="cod" className="text-xs font-bold text-slate-800 text-center block font-mono">
                   {nota.codigo}
                 </span>,
-                <span className="text-xs font-semibold text-slate-700 text-left block px-6 whitespace-pre-wrap leading-relaxed py-2">
+                <span key="desc" className="text-xs font-semibold text-slate-700 text-left block px-6 whitespace-pre-wrap leading-relaxed py-2">
                   {nota.descripcion}
                 </span>,
-                <div className="flex justify-center">
+                <div key="est" className="flex justify-center">
                   <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase border ${
                     nota.activo === 1
                       ? "bg-emerald-50 text-emerald-700 border-emerald-100"
@@ -227,14 +249,17 @@ export default function ParametrosVentas() {
               <Input
                 placeholder="Buscar estado..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setEstadosPage(1);
+                }}
                 className="pl-8 bg-slate-50 border-slate-200 text-xs h-8.5 rounded-lg shadow-sm"
               />
             </div>
           </div>
 
           {/* TABLE */}
-          <div className="flex-1 overflow-auto relative border border-slate-150 rounded-xl bg-white shadow-xs">
+          <div className="flex-1 overflow-auto relative border border-slate-150 rounded-xl bg-white shadow-xs flex flex-col justify-between">
             {loadingEstados && (
               <div className="absolute inset-0 z-30 bg-white/60 backdrop-blur-[1px] flex items-center justify-center">
                 <div className="flex flex-col items-center gap-2">
@@ -244,37 +269,46 @@ export default function ParametrosVentas() {
               </div>
             )}
             <Table
+              disablePagination={false}
+              pagination={{
+                currentPage: estadosPage,
+                totalPages: totalEstadosPages,
+                total: filteredEstados.length,
+                from: filteredEstados.length > 0 ? (estadosPage - 1) * pageSize + 1 : 0,
+                to: Math.min(estadosPage * pageSize, filteredEstados.length),
+                onPageChange: (p) => setEstadosPage(p)
+              }}
               headers={["ID", "Nombre Estado", "Cotizaciones", "Orden Compra", "Facturación", "Estado"]}
-              data={filteredEstados}
+              data={paginatedEstados}
               renderRow={(est) => [
-                <span className="text-xs font-bold text-slate-800 text-center block font-mono">
+                <span key="id" className="text-xs font-bold text-slate-800 text-center block font-mono">
                   {est.id_estado}
                 </span>,
-                <span className="text-xs font-semibold text-slate-700 text-left block px-6">
+                <span key="nom" className="text-xs font-semibold text-slate-700 text-left block px-6">
                   {est.nombre}
                 </span>,
-                <div className="flex justify-center">
+                <div key="cot" className="flex justify-center">
                   <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
                     est.cotizaciones === 1 ? "bg-blue-50 text-blue-700 border border-blue-100" : "bg-slate-50 text-slate-400"
                   }`}>
                     {est.cotizaciones === 1 ? "Sí" : "No"}
                   </span>
                 </div>,
-                <div className="flex justify-center">
+                <div key="oc" className="flex justify-center">
                   <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
                     est.orden_compra === 1 ? "bg-indigo-50 text-indigo-700 border border-indigo-100" : "bg-slate-50 text-slate-400"
                   }`}>
                     {est.orden_compra === 1 ? "Sí" : "No"}
                   </span>
                 </div>,
-                <div className="flex justify-center">
+                <div key="fact" className="flex justify-center">
                   <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
                     est.facturacion === 1 ? "bg-amber-50 text-amber-700 border border-amber-100" : "bg-slate-50 text-slate-400"
                   }`}>
                     {est.facturacion === 1 ? "Sí" : "No"}
                   </span>
                 </div>,
-                <div className="flex justify-center">
+                <div key="est" className="flex justify-center">
                   <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase border ${
                     est.activo === 1 || est.activo === true
                       ? "bg-emerald-50 text-emerald-700 border-emerald-100"
@@ -403,7 +437,7 @@ export default function ParametrosVentas() {
   };
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col min-h-0 bg-slate-50/30 overflow-hidden font-sans">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="h-full flex flex-col flex-1 min-h-0 bg-slate-50/30 overflow-hidden font-sans">
       
       {/* STICKY HEADER */}
       <div className="sticky top-0 z-30 bg-white border-b border-slate-200 px-6 pt-4 flex flex-col gap-1 shrink-0">
@@ -456,7 +490,7 @@ export default function ParametrosVentas() {
       </div>
 
       {/* DYNAMIC CONTENT */}
-      <div className="flex-1 p-6 bg-slate-50/10 min-h-0 overflow-hidden">
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden p-6 bg-slate-50/10">
         {renderTabContent()}
       </div>
 

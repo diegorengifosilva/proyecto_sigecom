@@ -5,8 +5,9 @@ import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
 import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
 import * as LucideIcons from 'lucide-react';
-import api from '@/services/api';
+import api, { API_URL, downloadAttachment } from '@/services/api';
 import { toast } from '../../utils/toast';
+import { quillListKeyboard, quillServiceModules } from '@/utils/quillListKeyboard';
 import { motion, AnimatePresence } from 'framer-motion';
 import SelectField from '../../components/ui/SelectField';
 import { CompactField } from '../../components/ui/CompactField';
@@ -530,13 +531,13 @@ const handleDetailsKeyDown = (e) => {
 };
 
 const handleRowKeyDown = (e, submitFn) => {
-  // Check if Alt key is pressed alone to toggle additional details
+  // Check if Alt key is pressed alone to toggle additional details / summary
   if (e.key === "Alt") {
     e.preventDefault();
     e.stopPropagation();
     lastFocusedInput = e.target;
     const row = e.currentTarget;
-    const detailsButton = row.querySelector("button[title='Detalles Adicionales']");
+    const detailsButton = row.querySelector("button[title='Detalles Adicionales']") || row.querySelector("button[title*='Resumen']");
     if (detailsButton) {
       // Radix UI trigger responds to pointerdown and mousedown
       detailsButton.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
@@ -560,7 +561,7 @@ const handleRowKeyDown = (e, submitFn) => {
   }
 
   const row = e.currentTarget;
-  const inputs = Array.from(row.querySelectorAll("input, select, button[title='Detalles Adicionales']")).filter(input => {
+  const inputs = Array.from(row.querySelectorAll("input, select, button[title='Detalles Adicionales'], button[title*='Resumen']")).filter(input => {
     return input.type !== "hidden" && !input.disabled && !input.readOnly;
   });
   const currentIndex = inputs.indexOf(target);
@@ -569,7 +570,7 @@ const handleRowKeyDown = (e, submitFn) => {
   if (e.key === "Alt") {
     e.preventDefault();
     e.stopPropagation();
-    const btn = row.querySelector("button[title='Detalles Adicionales']");
+    const btn = row.querySelector("button[title='Detalles Adicionales']") || row.querySelector("button[title*='Resumen']");
     if (btn) {
       btn.click();
     }
@@ -646,6 +647,203 @@ const handleRowKeyDown = (e, submitFn) => {
       focusInput(0);
     }, 50);
   }
+};
+
+const ServicioItemResumenPopover = ({ item, categoria, formatMoneySymbolSafe }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+  const hoverTimer = useRef(null);
+  const triggerRef = useRef(null);
+  const popoverRef = useRef(null);
+  const [coords, setCoords] = useState(null);
+
+  const updateCoords = () => {
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setCoords({
+        top: rect.top + window.scrollY,
+        left: rect.left + window.scrollX
+      });
+    }
+  };
+
+  const handleMouseEnter = () => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    updateCoords();
+    setIsHovered(true);
+  };
+
+  const handleMouseLeave = () => {
+    hoverTimer.current = setTimeout(() => {
+      setIsHovered(false);
+    }, 250);
+  };
+
+  const handleClick = (e) => {
+    e.stopPropagation();
+    updateCoords();
+    setIsOpen(prev => !prev);
+  };
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (e) => {
+      if (e.key === "Alt") {
+        if (triggerRef.current) {
+          const row = triggerRef.current.closest('tr');
+          if (row && (row.matches(':hover') || row.contains(document.activeElement))) {
+            e.preventDefault();
+            updateCoords();
+            setIsOpen(prev => !prev);
+          }
+        }
+      } else if (e.key === "Escape") {
+        setIsOpen(false);
+      }
+    };
+
+    const handleClickOutside = (e) => {
+      if (
+        triggerRef.current && !triggerRef.current.contains(e.target) &&
+        popoverRef.current && !popoverRef.current.contains(e.target)
+      ) {
+        setIsOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      window.removeEventListener("keydown", handleGlobalKeyDown);
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  const showPopup = isHovered || isOpen;
+
+  const cat = categoria || item.categoria || (item.codigo_servicio?.includes("04") ? "04" : item.codigo_servicio?.includes("05") ? "05" : "06");
+  const isCat04 = cat === "04" || cat?.endsWith("04");
+  const isCat05 = cat === "05" || cat?.endsWith("05");
+  const isCat06 = cat === "06" || cat?.endsWith("06");
+
+  const cantidad = Number(item.cantidad_hombres || 0);
+  const dias = isCat06 ? 1 : Number(item.cantidad_dias || 1);
+  const costoUnit = Number(item.costo_hombre_dia || 0);
+  const cotizadoUnit = Number(item.cotizado_hombre_dia || 0);
+
+  const totalUnits = cantidad * (dias > 0 ? dias : 1);
+  const costoTotal = Number((totalUnits * (isCat05 ? cotizadoUnit : costoUnit)).toFixed(2));
+  const cotizadoTotal = Number(item.cotizado_total || (totalUnits * cotizadoUnit).toFixed(2));
+  const utilidadTotal = Number((cotizadoTotal - costoTotal).toFixed(2));
+
+  let title = "Resumen de Mano de Obra";
+  if (isCat05) title = "Resumen de Gastos de Servicio";
+  if (isCat06) title = "Resumen de Otros";
+
+  return (
+    <div 
+      className="relative flex items-center"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={handleClick}
+        className="p-1 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-all"
+        title="Resumen de Costos"
+      >
+        <Icon name="trending-up" className="h-3.5 w-3.5" />
+      </button>
+
+      {showPopup && coords && createPortal(
+        <div 
+          ref={popoverRef}
+          style={{
+            position: 'absolute',
+            left: coords.left,
+            top: coords.top,
+            zIndex: 9999,
+            pointerEvents: 'auto'
+          }}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+        >
+          <div className="absolute right-0 mr-2 top-0 w-fit min-w-[280px] max-w-[400px] bg-white rounded-xl shadow-xl border border-gray-200 p-3.5 text-left text-xs space-y-3 animate-in fade-in zoom-in-95 duration-100 select-text">
+            <div className="flex items-center gap-1.5 text-slate-500 font-bold text-[10px] uppercase tracking-wider border-b border-gray-100 pb-1.5">
+              <Icon name="info" className="h-3.5 w-3.5 text-slate-400" />
+              <span>{title}</span>
+            </div>
+
+            <div className="bg-emerald-50/40 border border-emerald-100 rounded-xl p-3 space-y-2 shadow-inner">
+              <div className="flex items-center gap-1.5 text-emerald-800 font-extrabold text-[10px] uppercase tracking-wider">
+                <Icon name="calculator" className="h-3.5 w-3.5" />
+                <span>Resumen de Costos</span>
+              </div>
+              <div className="space-y-1 text-[11px]">
+                {isCat04 && (
+                  <>
+                    <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-200/30">
+                      <span>Costo Total:</span>
+                      <span className="font-semibold text-slate-700">{formatMoneySymbolSafe(costoTotal)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-200/30">
+                      <span>Cotizado Hombre/día:</span>
+                      <span className="font-semibold text-slate-700">{formatMoneySymbolSafe(cotizadoUnit)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-200/30">
+                      <span>Cotizado Total:</span>
+                      <span className="font-bold text-emerald-700">{formatMoneySymbolSafe(cotizadoTotal)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-gray-500 py-0.5">
+                      <span>Utilidad Total:</span>
+                      <span className="font-semibold text-slate-700">{formatMoneySymbolSafe(utilidadTotal)}</span>
+                    </div>
+                  </>
+                )}
+                {isCat05 && (
+                  <>
+                    <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-200/30">
+                      <span>Costo Total:</span>
+                      <span className="font-semibold text-slate-700">{formatMoneySymbolSafe(costoTotal)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-200/30">
+                      <span>Precio:</span>
+                      <span className="font-semibold text-slate-700">{formatMoneySymbolSafe(cotizadoUnit)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-gray-500 py-0.5">
+                      <span>Total:</span>
+                      <span className="font-bold text-emerald-700">{formatMoneySymbolSafe(cotizadoTotal)}</span>
+                    </div>
+                  </>
+                )}
+                {isCat06 && (
+                  <>
+                    <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-200/30">
+                      <span>Total (Costo):</span>
+                      <span className="font-semibold text-slate-700">{formatMoneySymbolSafe(costoTotal)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-200/30">
+                      <span>Venta Precio:</span>
+                      <span className="font-semibold text-slate-700">{formatMoneySymbolSafe(cotizadoUnit)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-200/30">
+                      <span>Venta Total:</span>
+                      <span className="font-bold text-emerald-700">{formatMoneySymbolSafe(cotizadoTotal)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-gray-500 py-0.5">
+                      <span>Utilidad Total:</span>
+                      <span className="font-semibold text-slate-700">{formatMoneySymbolSafe(utilidadTotal)}</span>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
 };
 
 const EditableGroupRow = ({
@@ -925,13 +1123,15 @@ const EditableGroupRow = ({
   const recalculateServiceItem = (item, fieldModificado) => {
     const next = { ...item };
     const cantidad = Number(next.cantidad_hombres || 0);
-    const dias = next.categoria === "06" ? 1 : Number(next.cantidad_dias || 0);
+    const isCat06 = next.categoria === "06";
+    const isCat04 = next.categoria === "04";
+    const dias = isCat06 ? 1 : Number(next.cantidad_dias || 0);
     const horas = Number(next.horas || 8);
     
-    if (next.categoria === "04" || next.categoria === "06") {
+    if (isCat04 || isCat06) {
       const costo = Number(next.costo_hombre_dia || 0);
-      const isCat04 = next.categoria === "04";
-      const costoTotal = isCat04 ? (cantidad * dias * costo) : (cantidad * 1 * costo);
+      const totalUnits = cantidad * (isCat04 ? (dias > 0 ? dias : 1) : 1);
+      const costoTotal = totalUnits * costo;
       
       let pct = Number(next.porcentaje || 0);
       if (pct > 100) {
@@ -939,35 +1139,40 @@ const EditableGroupRow = ({
         next.porcentaje = 100;
       }
       
-      let utilidad = costoTotal * (pct / 100);
+      let utilidadUnit = costo * (pct / 100);
       
       if (fieldModificado === 'utilidad') {
-        utilidad = Number(next.utilidad || 0);
-        if (utilidad > costoTotal) {
-          utilidad = costoTotal;
-          next.utilidad = costoTotal;
+        utilidadUnit = Number(next.utilidad || 0);
+        if (utilidadUnit > costo && costo > 0) {
+          utilidadUnit = costo;
+          next.utilidad = costo;
         }
-        pct = costoTotal > 0 ? (utilidad / costoTotal) * 100 : 0;
+        pct = costo > 0 ? (utilidadUnit / costo) * 100 : 0;
         next.porcentaje = Number(pct.toFixed(2));
       } else if (fieldModificado === 'porcentaje') {
-        next.utilidad = Number(utilidad.toFixed(2));
+        next.utilidad = Number(utilidadUnit.toFixed(2));
       } else {
-        next.utilidad = Number(utilidad.toFixed(2));
+        next.utilidad = Number(utilidadUnit.toFixed(2));
         next.porcentaje = Number(pct.toFixed(2));
       }
       
-      if (!isCat04) {
+      if (isCat06) {
         next.cantidad_dias = 1;
       }
       
-      next.cotizado_hombre_dia = Number((costo * (1 + pct / 100)).toFixed(2));
-      next.cotizado_total = Number((costoTotal + Number(next.utilidad || 0)).toFixed(2));
+      const cotizadoUnit = costo + Number(next.utilidad || 0);
+      next.costo_total = Number(costoTotal.toFixed(2));
+      next.cotizado_hombre_dia = Number(cotizadoUnit.toFixed(2));
+      next.cotizado_total = Number((totalUnits * next.cotizado_hombre_dia).toFixed(2));
     } else if (next.categoria === "05") {
-      const precio = Number(next.cotizado_hombre_dia || 0);
+      const precio = Number(next.cotizado_hombre_dia || next.costo_hombre_dia || 0);
+      const totalUnits = cantidad * (dias > 0 ? dias : 1);
+      next.costo_hombre_dia = precio;
+      next.cotizado_hombre_dia = precio;
+      next.costo_total = Number((totalUnits * precio).toFixed(2));
+      next.cotizado_total = Number((totalUnits * precio).toFixed(2));
       next.porcentaje = 0;
       next.utilidad = 0;
-      next.costo_hombre_dia = precio;
-      next.cotizado_total = Number((cantidad * dias * precio).toFixed(2));
     }
     return next;
   };
@@ -1010,12 +1215,9 @@ const EditableGroupRow = ({
         toast.warning("El porcentaje de utilidad no puede superar el 100%. Se limitó al máximo.", "Límite de Utilidad");
       }
       let updated = { ...prev, [field]: value };
-      const formHombres = Number(updated.cantidad_hombres || 0);
-      const formDias = Number(updated.cantidad_dias || 0);
       const formCosto = Number(updated.costo_hombre_dia || 0);
-      const costoTotal = formHombres * formDias * formCosto;
-      if (field === 'utilidad' && valNum > costoTotal && costoTotal > 0) {
-        toast.warning("El monto de utilidad no puede superar el costo total del ítem (100%). Se limitó al máximo.", "Límite de Utilidad");
+      if (field === 'utilidad' && valNum > formCosto && formCosto > 0) {
+        toast.warning("El monto de utilidad unitaria no puede superar el costo del ítem (100%). Se limitó al máximo.", "Límite de Utilidad");
       }
       return recalculateServiceItem(updated, field);
     });
@@ -1035,11 +1237,9 @@ const EditableGroupRow = ({
         toast.warning("El porcentaje de utilidad no puede superar el 100%. Se limitó al máximo.", "Límite de Utilidad");
       }
       let updated = { ...prev, [field]: value };
-      const formHombres = Number(updated.cantidad_hombres || 0);
       const formCosto = Number(updated.costo_hombre_dia || 0);
-      const costoTotal = formHombres * 1 * formCosto;
-      if (field === 'utilidad' && valNum > costoTotal && costoTotal > 0) {
-        toast.warning("El monto de utilidad no puede superar el costo total del ítem (100%). Se limitó al máximo.", "Límite de Utilidad");
+      if (field === 'utilidad' && valNum > formCosto && formCosto > 0) {
+        toast.warning("El monto de utilidad unitaria no puede superar el costo del ítem (100%). Se limitó al máximo.", "Límite de Utilidad");
       }
       return recalculateServiceItem(updated, field);
     });
@@ -1285,49 +1485,57 @@ const EditableGroupRow = ({
       const finalCosto = Number(next.costo_hombre_dia || 0);
       let finalPorcentaje = Number(next.porcentaje || 0);
       
-      const newCostoTotal = finalHombres * finalDias * finalCosto;
-      let newUtil = newCostoTotal * (finalPorcentaje / 100);
+      const totalUnits = finalHombres * (finalDias > 0 ? finalDias : 1);
+      const newCostoTotal = totalUnits * finalCosto;
+      let utilUnit = finalCosto * (finalPorcentaje / 100);
 
       if (fieldModificado === 'utilidad') {
-        newUtil = Number(value || 0);
-        finalPorcentaje = newCostoTotal > 0 ? (newUtil / newCostoTotal) * 100 : 0;
+        utilUnit = Number(value || 0);
+        finalPorcentaje = finalCosto > 0 ? (utilUnit / finalCosto) * 100 : 0;
         next.porcentaje = Number(finalPorcentaje.toFixed(2));
+        next.utilidad = Number(utilUnit.toFixed(2));
       } else {
-        next.utilidad = Number(newUtil.toFixed(2));
+        next.utilidad = Number(utilUnit.toFixed(2));
       }
 
-      const newCotizadoTotal = newCostoTotal + next.utilidad;
-      const newCotizadoHD = (finalHombres > 0 && finalDias > 0) ? (newCotizadoTotal / (finalHombres * finalDias)) : 0;
+      const newCotizadoHD = finalCosto + utilUnit;
+      const newCotizadoTotal = totalUnits * newCotizadoHD;
       
-      next.costo_total = newCostoTotal;
+      next.costo_total = Number(newCostoTotal.toFixed(2));
       next.cotizado_total = Number(newCotizadoTotal.toFixed(2));
       next.cotizado_hombre_dia = Number(newCotizadoHD.toFixed(2));
     } else if (cat === "05") {
       const finalHombres = Number(next.cantidad_hombres || 0);
       const finalDias = Number(next.cantidad_dias || 0);
-      const precio = Number(next.cotizado_hombre_dia || 0);
-      const newTotal = finalHombres * finalDias * precio;
-      next.cotizado_total = Number(newTotal.toFixed(2));
+      const precio = Number(next.cotizado_hombre_dia || next.costo_hombre_dia || 0);
+      const totalUnits = finalHombres * (finalDias > 0 ? finalDias : 1);
+      next.costo_hombre_dia = precio;
+      next.cotizado_hombre_dia = precio;
+      next.costo_total = Number((totalUnits * precio).toFixed(2));
+      next.cotizado_total = Number((totalUnits * precio).toFixed(2));
+      next.porcentaje = 0;
+      next.utilidad = 0;
     } else if (cat === "06") {
       const finalCant = Number(next.cantidad_hombres || 0);
       const finalCosto = Number(next.costo_hombre_dia || 0);
       let finalPorcentaje = Number(next.porcentaje || 0);
       
       const newCostoTotal = finalCant * finalCosto;
-      let newUtil = newCostoTotal * (finalPorcentaje / 100);
+      let utilUnit = finalCosto * (finalPorcentaje / 100);
 
       if (fieldModificado === 'utilidad') {
-        newUtil = Number(value || 0);
-        finalPorcentaje = newCostoTotal > 0 ? (newUtil / newCostoTotal) * 100 : 0;
+        utilUnit = Number(value || 0);
+        finalPorcentaje = finalCosto > 0 ? (utilUnit / finalCosto) * 100 : 0;
         next.porcentaje = Number(finalPorcentaje.toFixed(2));
+        next.utilidad = Number(utilUnit.toFixed(2));
       } else {
-        next.utilidad = Number(newUtil.toFixed(2));
+        next.utilidad = Number(utilUnit.toFixed(2));
       }
 
-      const newCotizadoTotal = newCostoTotal + next.utilidad;
-      const newCotizadoHD = finalCant > 0 ? (newCotizadoTotal / finalCant) : 0;
+      const newCotizadoHD = finalCosto + utilUnit;
+      const newCotizadoTotal = finalCant * newCotizadoHD;
       
-      next.costo_total = newCostoTotal;
+      next.costo_total = Number(newCostoTotal.toFixed(2));
       next.cotizado_total = Number(newCotizadoTotal.toFixed(2));
       next.cotizado_hombre_dia = Number(newCotizadoHD.toFixed(2));
     }
@@ -1355,12 +1563,12 @@ const EditableGroupRow = ({
         const finalPorcentaje = Number(updatedForm.porcentaje || 0);
         
         const newCostoTotal = finalHombres * finalDias * finalCosto;
-        const newUtil = newCostoTotal * (finalPorcentaje / 100);
-        const newCotizadoTotal = newCostoTotal + newUtil;
-        const newCotizadoHD = (finalHombres > 0 && finalDias > 0) ? (newCotizadoTotal / (finalHombres * finalDias)) : 0;
+        const newUtilUnit = finalCosto * (finalPorcentaje / 100);
+        const newCotizadoHD = finalCosto + newUtilUnit;
+        const newCotizadoTotal = totalUnits * newCotizadoHD;
         
-        updatedForm.costo_total = newCostoTotal;
-        updatedForm.utilidad = Number(newUtil.toFixed(2));
+        updatedForm.costo_total = Number(newCostoTotal.toFixed(2));
+        updatedForm.utilidad = Number(newUtilUnit.toFixed(2));
         updatedForm.cotizado_total = Number(newCotizadoTotal.toFixed(2));
         updatedForm.cotizado_hombre_dia = Number(newCotizadoHD.toFixed(2));
 
@@ -1381,12 +1589,12 @@ const EditableGroupRow = ({
         const finalPorcentaje = Number(updatedForm.porcentaje || 0);
         
         const newCostoTotal = finalCant * finalCosto;
-        const newUtil = newCostoTotal * (finalPorcentaje / 100);
-        const newCotizadoTotal = newCostoTotal + newUtil;
-        const newCotizadoHD = finalCant > 0 ? (newCotizadoTotal / finalCant) : 0;
+        const newUtilUnit = finalCosto * (finalPorcentaje / 100);
+        const newCotizadoHD = finalCosto + newUtilUnit;
+        const newCotizadoTotal = finalCant * newCotizadoHD;
         
-        updatedForm.costo_total = newCostoTotal;
-        updatedForm.utilidad = Number(newUtil.toFixed(2));
+        updatedForm.costo_total = Number(newCostoTotal.toFixed(2));
+        updatedForm.utilidad = Number(newUtilUnit.toFixed(2));
         updatedForm.cotizado_total = Number(newCotizadoTotal.toFixed(2));
         updatedForm.cotizado_hombre_dia = Number(newCotizadoHD.toFixed(2));
       }
@@ -1527,7 +1735,7 @@ const EditableGroupRow = ({
           </div>
 
           {canExpand && (
-            <span className="text-[10px] text-indigo-600 font-bold bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full">
+            <span className="text-[10px] text-teal-900 font-black bg-teal-50 border border-teal-200 px-2.5 py-0.5 rounded-full shadow-2xs">
               {tempItems.length} Ítems a crear
             </span>
           )}
@@ -1536,15 +1744,15 @@ const EditableGroupRow = ({
         <div className="flex items-center gap-4">
           {/* Condicional: Costo Envío para Venta (Total o Parcial) */}
           {isVenta && canExpand && (
-            <div className="flex items-center gap-1.5 ml-2 px-2.5 py-1 bg-blue-50 border border-blue-100 rounded-lg focus-within:border-blue-400 transition-colors">
-              <span className="text-[9px] font-black text-blue-600 uppercase">
+            <div className="flex items-center gap-1.5 ml-2 px-2.5 py-1 bg-blue-50 border border-blue-100 rounded-lg focus-within:border-blue-400 transition-colors shadow-2xs">
+              <span className="text-[9.5px] font-black text-blue-700 uppercase">
                 {tipoVenta === "P" ? "Envío Unit:" : "Envío Tot:"}
               </span>
               <input
                 type="number"
                 min="0"
                 step="0.01"
-                className="w-16 bg-transparent border-none outline-none text-[11.5px] font-black text-blue-800 text-center focus:ring-0 p-0"
+                className="w-16 bg-transparent border-none outline-none text-[12px] font-black text-blue-900 text-center focus:ring-0 p-0"
                 value={tempData.costoEnvio === undefined || tempData.costoEnvio === null ? "" : tempData.costoEnvio}
                 onChange={(e) => handleGroupCostoEnvioChange(e.target.value)}
                 onKeyDown={handleKeyDown}
@@ -1552,12 +1760,12 @@ const EditableGroupRow = ({
             </div>
           )}
 
-          <div className="flex items-center gap-1.5 ml-2 px-2.5 py-1 bg-indigo-50 border border-indigo-100 rounded-lg focus-within:border-indigo-400 transition-colors">
-            <span className="text-[9px] font-black text-indigo-600 uppercase">Cant:</span>
+          <div className="flex items-center gap-1.5 ml-2 px-2.5 py-1 bg-teal-50/90 border border-teal-200 rounded-lg focus-within:border-teal-400 transition-colors shadow-2xs">
+            <span className="text-[9.5px] font-black text-teal-800 uppercase">CANT:</span>
             <input
               type="number"
               min="1"
-              className="w-10 bg-transparent border-none outline-none text-[11.5px] font-black text-indigo-800 text-center focus:ring-0 p-0"
+              className="w-10 bg-transparent border-none outline-none text-[12px] font-black text-teal-950 text-center focus:ring-0 p-0"
               value={tempData.cantidad}
               onChange={(e) => setTempData({ ...tempData, cantidad: parseInt(e.target.value) || 1 })}
               onKeyDown={handleKeyDown}
@@ -1716,11 +1924,7 @@ const EditableGroupRow = ({
                             value={tempData.detalle || ""}
                             onChange={(content) => setTempData(prev => ({ ...prev, detalle: content }))}
                             theme="snow"
-                            modules={{
-                              toolbar: {
-                                container: "#srv-quill-toolbar"
-                              }
-                            }}
+                            modules={quillServiceModules("#srv-quill-toolbar")}
                             placeholder="Escriba aquí los detalles y especificaciones del servicio con negrita, guiones, etc..."
                           />
                         </div>
@@ -1761,20 +1965,55 @@ const EditableGroupRow = ({
                       </div>
                     </div>
                     
-                    <div className="overflow-x-auto overflow-y-hidden">
-                      <table className="min-w-full table-fixed divide-y divide-slate-100">
+                    <div className="overflow-x-hidden overflow-y-hidden">
+                      <table className="sigecom-item-table">
+                        <colgroup>
+                          <col className="col-code" />
+                          <col className="col-desc" />
+                          <col className="col-qty" />
+                          <col className="col-days" />
+                          <col className="col-money" />
+                          <col className="col-util" />
+                          <col className="col-money" />
+                          <col className="col-money" />
+                          <col className="col-act" />
+                        </colgroup>
                         <thead className="bg-slate-100/50 border-b border-slate-200">
                           <tr>
-                            <th className="w-[14%] px-3 py-2 text-center text-[10px] font-black text-slate-755 uppercase tracking-wider">Código Personal</th>
-                            <th className="w-[25%] px-3 py-2 text-center text-[10px] font-black text-slate-755 uppercase tracking-wider">Descripción</th>
-                            <th className="w-[5%] px-3 py-2 text-center text-[10px] font-black text-slate-755 uppercase tracking-wider">Cantidad</th>
-                            <th className="w-[5%] px-3 py-2 text-center text-[10px] font-black text-slate-755 uppercase tracking-wider">Días</th>
-                            <th className="w-[5%] px-3 py-2 text-center text-[10px] font-black text-slate-755 uppercase tracking-wider">Horas</th>
-                            <th className="w-[8%] px-3 py-2 text-center text-[10px] font-black text-slate-755 uppercase tracking-wider">Costo H/D</th>
-                            <th className="w-[10%] px-3 py-2 text-center text-[10px] font-black text-slate-755 uppercase tracking-wider">Utilidad</th>
-                            <th className="w-[8%] px-3 py-2 text-center text-[10px] font-black text-slate-755 uppercase tracking-wider">Cotizado H/D</th>
-                            <th className="w-[16%] px-3 py-2 text-center text-[10px] font-black text-slate-755 uppercase tracking-wider">Cotizado Total</th>
-                            <th className="w-[4%] px-3 py-2"></th>
+                            <th>
+                              <div className="th-stack">
+                                <span>Código</span>
+                                <span>Personal</span>
+                              </div>
+                            </th>
+                            <th>Descripción</th>
+                            <th>Cantidad</th>
+                            <th>
+                              <div className="th-stack">
+                                <span>Días /</span>
+                                <span>Horas</span>
+                              </div>
+                            </th>
+                            <th>
+                              <div className="th-stack">
+                                <span>Costo</span>
+                                <span>H/D</span>
+                              </div>
+                            </th>
+                            <th>Utilidad</th>
+                            <th>
+                              <div className="th-stack">
+                                <span>Cotizado</span>
+                                <span>H/D</span>
+                              </div>
+                            </th>
+                            <th>
+                              <div className="th-stack">
+                                <span>Cotizado</span>
+                                <span>Total</span>
+                              </div>
+                            </th>
+                            <th></th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
@@ -1849,23 +2088,27 @@ const EditableGroupRow = ({
                                       onChange={e => setEditingTempItemForm(recalculateTempItemServicioLocal(editingTempItemForm, 'cantidad_hombres', parseInt(e.target.value) || 0))}
                                     />
                                   </td>
-                                  <td className="px-3 py-1">
-                                    <input
-                                      type="number"
-                                      data-field="cantidad_dias"
-                                      className="w-full text-[11px] border border-slate-300 rounded px-1 py-0.5 text-center font-bold"
-                                      value={editingTempItemForm.cantidad_dias || ""}
-                                      onChange={e => setEditingTempItemForm(recalculateTempItemServicioLocal(editingTempItemForm, 'cantidad_dias', parseInt(e.target.value) || 0))}
-                                    />
-                                  </td>
-                                  <td className="px-3 py-1">
-                                    <input
-                                      type="number"
-                                      data-field="horas"
-                                      className="w-full text-[11px] border border-slate-300 rounded px-1 py-0.5 text-center font-bold"
-                                      value={editingTempItemForm.horas || ""}
-                                      onChange={e => setEditingTempItemForm({ ...editingTempItemForm, horas: parseInt(e.target.value) || 8 })}
-                                    />
+                                  <td className="px-2 py-1 text-center">
+                                    <div className="flex flex-col gap-1 items-center">
+                                      <input
+                                        type="number"
+                                        placeholder="Días"
+                                        data-field="cantidad_dias"
+                                        className="w-full text-center text-[10px] border border-slate-300 rounded px-1 py-0.5 font-bold bg-white"
+                                        value={editingTempItemForm.cantidad_dias === undefined || editingTempItemForm.cantidad_dias === null ? "" : editingTempItemForm.cantidad_dias}
+                                        onChange={e => setEditingTempItemForm(recalculateTempItemServicioLocal(editingTempItemForm, 'cantidad_dias', parseInt(e.target.value) || 0))}
+                                        onFocus={(e) => e.target.select()}
+                                      />
+                                      <input
+                                        type="number"
+                                        placeholder="Horas"
+                                        data-field="horas"
+                                        className="w-full text-center text-[9px] border border-slate-300 rounded px-1 py-0.5 font-black text-indigo-700 bg-indigo-50/50"
+                                        value={editingTempItemForm.horas === undefined || editingTempItemForm.horas === null ? "" : editingTempItemForm.horas}
+                                        onChange={e => setEditingTempItemForm({ ...editingTempItemForm, horas: parseInt(e.target.value) || 8 })}
+                                        onFocus={(e) => e.target.select()}
+                                      />
+                                    </div>
                                   </td>
                                   <td className="px-3 py-1">
                                     <input
@@ -1939,8 +2182,19 @@ const EditableGroupRow = ({
                             }
                             return (
                               <tr key={item.id_temp} onDoubleClick={() => handleStartEditTempItem(item, 'descripcion_item')} className="hover:bg-slate-50/30 transition-colors cursor-pointer" title="Doble clic para editar">
-                                <td className="px-3 py-1.5 text-[11px] font-bold text-slate-900 uppercase" onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'codigo_item'); }}>
-                                  {item.codigo_item || "S/C"}
+                                <td className="px-3 py-1.5 text-center cursor-pointer" onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'codigo_item'); }}>
+                                  {(() => {
+                                    const parts = (item.codigo_item || '').split('-');
+                                    if (parts.length > 1) {
+                                      return (
+                                        <div className="flex flex-col items-center justify-center leading-none select-none">
+                                          <span className="text-[10px] font-black text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded-full border border-indigo-100">{parts[0]}</span>
+                                          <span className="text-[9px] text-slate-500 font-extrabold mt-1 uppercase max-w-[120px] truncate">{parts.slice(1).join('-')}</span>
+                                        </div>
+                                      );
+                                    }
+                                    return <span className="text-[10px] font-bold text-gray-900 uppercase">{item.codigo_item || '-'}</span>;
+                                  })()}
                                 </td>
                                 <td className="px-3 py-1.5 text-[11px] text-slate-700 uppercase font-medium truncate max-w-0" title={item.descripcion_item} onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'descripcion_item'); }}>
                                   {item.descripcion_item}
@@ -1948,11 +2202,23 @@ const EditableGroupRow = ({
                                 <td className="px-3 py-1.5 text-[11px] text-center font-bold text-slate-900" onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'cantidad_hombres'); }}>
                                   {item.cantidad_hombres}
                                 </td>
-                                <td className="px-3 py-1.5 text-[11px] text-center font-bold text-slate-900" onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'cantidad_dias'); }}>
-                                  {item.cantidad_dias}
-                                </td>
-                                <td className="px-3 py-1.5 text-[11px] text-center font-bold text-slate-900" onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'horas'); }}>
-                                  {item.horas}
+                                <td className="px-3 py-1.5 text-center cursor-pointer" onDoubleClick={(e) => e.stopPropagation()}>
+                                  <div className="flex flex-col items-center justify-center gap-0.5 whitespace-nowrap select-none">
+                                    <span 
+                                      className="text-[10px] font-semibold text-slate-800 hover:text-indigo-600 transition-colors"
+                                      onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'cantidad_dias'); }}
+                                      title="Doble clic para editar días"
+                                    >
+                                      {item.cantidad_dias || 1} {Number(item.cantidad_dias || 1) === 1 ? 'día' : 'días'}
+                                    </span>
+                                    <span 
+                                      className="text-[10px] font-black text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded-full border border-indigo-100 hover:bg-indigo-100 transition-colors"
+                                      onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'horas'); }}
+                                      title="Doble clic para editar horas"
+                                    >
+                                      {item.horas || 8} {Number(item.horas || 8) === 1 ? 'hora' : 'horas'}
+                                    </span>
+                                  </div>
                                 </td>
                                 <td className="px-3 py-1.5 text-[11px] text-right text-slate-600 font-medium whitespace-nowrap" onDoubleClick={(e) => { e.stopPropagation(); handleStartEditTempItem(item, 'costo_hombre_dia'); }}>
                                   {formatMoneySymbolSafe(item.costo_hombre_dia)}
@@ -1970,13 +2236,20 @@ const EditableGroupRow = ({
                                   {formatMoneySymbolSafe(item.cotizado_total)}
                                 </td>
                                 <td className="px-3 py-1.5 text-center" onDoubleClick={(e) => e.stopPropagation()}>
-                                  <button
-                                    onClick={() => handleRemoveItem(item.id_temp)}
-                                    className="p-1 text-slate-400 hover:text-rose-500 rounded transition-colors"
-                                    title="Quitar"
-                                  >
-                                    <Icon name="trash-2" className="h-3.5 w-3.5" />
-                                  </button>
+                                  <div className="flex justify-center items-center gap-1">
+                                    <ServicioItemResumenPopover
+                                      item={item}
+                                      categoria="04"
+                                      formatMoneySymbolSafe={formatMoneySymbolSafe}
+                                    />
+                                    <button
+                                      onClick={() => handleRemoveItem(item.id_temp)}
+                                      className="p-1 text-slate-400 hover:text-rose-500 rounded transition-colors"
+                                      title="Quitar"
+                                    >
+                                      <Icon name="trash-2" className="h-3.5 w-3.5" />
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -2073,37 +2346,37 @@ const EditableGroupRow = ({
                                 }}
                               />
                             </td>
-                            <td className="px-3 py-1.5 text-center">
-                              <input
-                                type="number"
-                                placeholder="1"
-                                min="1"
-                                className="w-full text-[11px] border border-slate-300 text-center rounded px-1 py-1 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
-                                value={newManoObraItem.cantidad_dias || ""}
-                                onChange={(e) => handleManoObraFieldChange('cantidad_dias', parseInt(e.target.value) || 1)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    e.preventDefault();
-                                    handleAddManoObraItem();
-                                  }
-                                }}
-                              />
-                            </td>
-                            <td className="px-3 py-1.5 text-center">
-                              <input
-                                type="number"
-                                placeholder="8"
-                                min="1"
-                                className="w-full text-[11px] border border-slate-300 text-center rounded px-1 py-1 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
-                                value={newManoObraItem.horas || ""}
-                                onChange={(e) => handleManoObraFieldChange('horas', parseInt(e.target.value) || 8)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    e.preventDefault();
-                                    handleAddManoObraItem();
-                                  }
-                                }}
-                              />
+                            <td className="px-2 py-1 text-center">
+                              <div className="flex flex-col gap-1 items-center">
+                                <input
+                                  type="number"
+                                  placeholder="Días"
+                                  min="1"
+                                  className="w-full text-center text-[10px] border border-slate-300 text-center rounded px-1 py-0.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                                  value={newManoObraItem.cantidad_dias || ""}
+                                  onChange={(e) => handleManoObraFieldChange('cantidad_dias', parseInt(e.target.value) || 1)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      handleAddManoObraItem();
+                                    }
+                                  }}
+                                />
+                                <input
+                                  type="number"
+                                  placeholder="Horas"
+                                  min="1"
+                                  className="w-full text-center text-[9px] border border-slate-300 text-center rounded px-1 py-0.5 font-black text-indigo-700 bg-indigo-50/50 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                  value={newManoObraItem.horas || ""}
+                                  onChange={(e) => handleManoObraFieldChange('horas', parseInt(e.target.value) || 8)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      handleAddManoObraItem();
+                                    }
+                                  }}
+                                />
+                              </div>
                             </td>
                             <td className="px-3 py-1.5 text-right">
                               <input
@@ -2142,12 +2415,9 @@ const EditableGroupRow = ({
                                     onBlur={(e) => {
                                       const num = parseFloat(e.target.value);
                                       if (!isNaN(num)) {
-                                        const formHombres = Number(newManoObraItem.cantidad_hombres || 0);
-                                        const formDias = Number(newManoObraItem.cantidad_dias || 0);
                                         const formCosto = Number(newManoObraItem.costo_hombre_dia || 0);
-                                        const costoTotal = formHombres * formDias * formCosto;
-                                        if (num > costoTotal && costoTotal > 0) {
-                                          toast.warning("El monto de utilidad no puede superar el costo total del ítem (100%). Se limitó al máximo.", "Límite de Utilidad");
+                                        if (num > formCosto && formCosto > 0) {
+                                          toast.warning("El monto de utilidad unitaria no puede superar el costo del ítem (100%). Se limitó al máximo.", "Límite de Utilidad");
                                         }
                                         handleManoObraFieldChange('utilidad', Number(num.toFixed(2)));
                                       }
@@ -2193,13 +2463,7 @@ const EditableGroupRow = ({
                               {formatMoneySymbolSafe(Number(newManoObraItem.cotizado_total || 0))}
                             </td>
                             <td className="px-3 py-1.5 text-center align-middle">
-                              <button
-                                onClick={handleAddManoObraItem}
-                                className="p-1 bg-indigo-50 border border-indigo-200 text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors"
-                                title="Añadir"
-                              >
-                                <Icon name="check" className="h-4 w-4" />
-                              </button>
+                              <div className="h-4" />
                             </td>
                           </tr>
                           {renderInlinePersonalCreateForm && renderInlinePersonalCreateForm('new', handlePersonalCreatedLocal, handlePersonalCancelLocal)}
@@ -2238,17 +2502,31 @@ const EditableGroupRow = ({
                       </div>
                     </div>
                     
-                    <div className="overflow-x-auto overflow-y-hidden">
-                      <table className="min-w-full table-fixed divide-y divide-slate-100">
+                    <div className="overflow-x-hidden overflow-y-hidden">
+                      <table className="sigecom-item-table">
+                        <colgroup>
+                          <col className="col-code" />
+                          <col className="col-desc" />
+                          <col className="col-qty" />
+                          <col className="col-qty" />
+                          <col className="col-money" />
+                          <col className="col-money" />
+                          <col className="col-act" />
+                        </colgroup>
                         <thead className="bg-slate-100/50 border-b border-slate-200">
                           <tr>
-                            <th className="w-[15%] px-3 py-2 text-center text-[10px] font-black text-slate-750 uppercase tracking-wider">Código Gasto</th>
-                            <th className="w-[35%] px-3 py-2 text-center text-[10px] font-black text-slate-750 uppercase tracking-wider">Descripción</th>
-                            <th className="w-[10%] px-3 py-2 text-center text-[10px] font-black text-slate-750 uppercase tracking-wider">Cantidad</th>
-                            <th className="w-[15%] px-3 py-2 text-center text-[10px] font-black text-slate-750 uppercase tracking-wider">Días</th>
-                            <th className="w-[15%] px-3 py-2 text-center text-[10px] font-black text-slate-750 uppercase tracking-wider">Precio</th>
-                            <th className="w-[8%] px-3 py-2 text-center text-[10px] font-black text-slate-750 uppercase tracking-wider">Total</th>
-                            <th className="w-[3%] px-3 py-2"></th>
+                            <th>
+                              <div className="th-stack">
+                                <span>Código</span>
+                                <span>Gasto</span>
+                              </div>
+                            </th>
+                            <th>Descripción</th>
+                            <th>Cantidad</th>
+                            <th>Días</th>
+                            <th>Precio</th>
+                            <th>Total</th>
+                            <th></th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
@@ -2381,13 +2659,20 @@ const EditableGroupRow = ({
                                   {formatMoneySymbolSafe(item.cotizado_total)}
                                 </td>
                                 <td className="px-3 py-1.5 text-center" onDoubleClick={(e) => e.stopPropagation()}>
-                                  <button
-                                    onClick={() => handleRemoveItem(item.id_temp)}
-                                    className="p-1 text-slate-400 hover:text-rose-500 rounded transition-colors"
-                                    title="Quitar"
-                                  >
-                                    <Icon name="trash-2" className="h-3.5 w-3.5" />
-                                  </button>
+                                  <div className="flex justify-center items-center gap-1">
+                                    <ServicioItemResumenPopover
+                                      item={item}
+                                      categoria="05"
+                                      formatMoneySymbolSafe={formatMoneySymbolSafe}
+                                    />
+                                    <button
+                                      onClick={() => handleRemoveItem(item.id_temp)}
+                                      className="p-1 text-slate-400 hover:text-rose-500 rounded transition-colors"
+                                      title="Quitar"
+                                    >
+                                      <Icon name="trash-2" className="h-3.5 w-3.5" />
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -2508,13 +2793,7 @@ const EditableGroupRow = ({
                               {formatMoneySymbolSafe(Number(newGastosServicioItem.cotizado_total || 0))}
                             </td>
                             <td className="px-3 py-1.5 text-center align-middle">
-                              <button
-                                onClick={handleAddGastosServicioItem}
-                                className="p-1 bg-indigo-50 border border-indigo-200 text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors"
-                                title="Añadir"
-                              >
-                                <Icon name="check" className="h-4 w-4" />
-                              </button>
+                              <div className="h-4" />
                             </td>
                           </tr>
                           {renderInlineGastoCreateForm && renderInlineGastoCreateForm('new', handleGastoCreatedLocal, handleGastoCancelLocal)}
@@ -2553,18 +2832,43 @@ const EditableGroupRow = ({
                       </div>
                     </div>
                     
-                    <div className="overflow-x-auto overflow-y-hidden">
-                      <table className="min-w-full table-fixed divide-y divide-slate-100">
+                    <div className="overflow-x-hidden overflow-y-hidden">
+                      <table className="sigecom-item-table">
+                        <colgroup>
+                          <col className="col-code" />
+                          <col className="col-desc" />
+                          <col className="col-qty" />
+                          <col className="col-money" />
+                          <col className="col-util" />
+                          <col className="col-money" />
+                          <col className="col-money" />
+                          <col className="col-act" />
+                        </colgroup>
                         <thead className="bg-slate-100/50 border-b border-slate-200">
                           <tr>
-                            <th className="w-[15%] px-3 py-2 text-center text-[10px] font-black text-slate-750 uppercase tracking-wider">Código Gasto</th>
-                            <th className="w-[32%] px-3 py-2 text-center text-[10px] font-black text-slate-750 uppercase tracking-wider">Descripción</th>
-                            <th className="w-[6%] px-3 py-2 text-center text-[10px] font-black text-slate-750 uppercase tracking-wider">Cantidad</th>
-                            <th className="w-[8%] px-3 py-2 text-center text-[10px] font-black text-slate-750 uppercase tracking-wider">Precio</th>
-                            <th className="w-[10%] px-3 py-2 text-center text-[10px] font-black text-slate-750 uppercase tracking-wider">Utilidad</th>
-                            <th className="w-[10%] px-3 py-2 text-center text-[10px] font-black text-slate-750 uppercase tracking-wider">Venta Precio</th>
-                            <th className="w-[14%] px-3 py-2 text-center text-[10px] font-black text-slate-750 uppercase tracking-wider">Venta Total</th>
-                            <th className="w-[5%] px-3 py-2"></th>
+                            <th>
+                              <div className="th-stack">
+                                <span>Código</span>
+                                <span>Gasto</span>
+                              </div>
+                            </th>
+                            <th>Descripción</th>
+                            <th>Cantidad</th>
+                            <th>Precio</th>
+                            <th>Utilidad</th>
+                            <th>
+                              <div className="th-stack">
+                                <span>Venta</span>
+                                <span>Precio</span>
+                              </div>
+                            </th>
+                            <th>
+                              <div className="th-stack">
+                                <span>Venta</span>
+                                <span>Total</span>
+                              </div>
+                            </th>
+                            <th></th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
@@ -2718,13 +3022,20 @@ const EditableGroupRow = ({
                                   {formatMoneySymbolSafe(item.cotizado_total)}
                                 </td>
                                 <td className="px-3 py-1.5 text-center" onDoubleClick={(e) => e.stopPropagation()}>
-                                  <button
-                                    onClick={() => handleRemoveItem(item.id_temp)}
-                                    className="p-1 text-slate-400 hover:text-rose-500 rounded transition-colors"
-                                    title="Quitar"
-                                  >
-                                    <Icon name="trash-2" className="h-3.5 w-3.5" />
-                                  </button>
+                                  <div className="flex justify-center items-center gap-1">
+                                    <ServicioItemResumenPopover
+                                      item={item}
+                                      categoria="06"
+                                      formatMoneySymbolSafe={formatMoneySymbolSafe}
+                                    />
+                                    <button
+                                      onClick={() => handleRemoveItem(item.id_temp)}
+                                      className="p-1 text-slate-400 hover:text-rose-500 rounded transition-colors"
+                                      title="Quitar"
+                                    >
+                                      <Icon name="trash-2" className="h-3.5 w-3.5" />
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -2839,11 +3150,9 @@ const EditableGroupRow = ({
                                     onBlur={(e) => {
                                       const num = parseFloat(e.target.value);
                                       if (!isNaN(num)) {
-                                        const formHombres = Number(newOtrosItem.cantidad_hombres || 0);
                                         const formCosto = Number(newOtrosItem.costo_hombre_dia || 0);
-                                        const costoTotal = formHombres * 1 * formCosto;
-                                        if (num > costoTotal && costoTotal > 0) {
-                                          toast.warning("El monto de utilidad no puede superar el costo total del ítem (100%). Se limitó al máximo.", "Límite de Utilidad");
+                                        if (num > formCosto && formCosto > 0) {
+                                          toast.warning("El monto de utilidad unitaria no puede superar el costo del ítem (100%). Se limitó al máximo.", "Límite de Utilidad");
                                         }
                                         handleOtrosFieldChange('utilidad', Number(num.toFixed(2)));
                                       }
@@ -2889,13 +3198,7 @@ const EditableGroupRow = ({
                               {formatMoneySymbolSafe(Number(newOtrosItem.cotizado_total || 0))}
                             </td>
                             <td className="px-3 py-1.5 text-center align-middle">
-                              <button
-                                onClick={handleAddOtrosItem}
-                                className="p-1 bg-indigo-50 border border-indigo-200 text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors"
-                                title="Añadir"
-                              >
-                                <Icon name="check" className="h-4 w-4" />
-                              </button>
+                              <div className="h-4" />
                             </td>
                           </tr>
                           {renderInlineGastoCreateForm && renderInlineGastoCreateForm('new', handleGastoCreatedLocal, handleGastoCancelLocal)}
@@ -2907,25 +3210,60 @@ const EditableGroupRow = ({
                 </div>
               ) : (
                 <>
-                  <table className="min-w-full table-fixed divide-y divide-gray-100">
+                  <div className="w-full overflow-x-hidden overflow-y-hidden">
+                  <table className="sigecom-item-table">
+                    <colgroup>
+                      <col className="col-grip" />
+                      <col className="col-code" />
+                      <col className="col-desc" />
+                      <col className="col-qty" />
+                      <col className="col-money" />
+                      {isVenta && <col className="col-money" />}
+                      <col className="col-util" />
+                      {!ocultarTotalesMap['draft'] && (
+                        <>
+                          <col className="col-money" />
+                          <col className="col-money" />
+                        </>
+                      )}
+                      <col className="col-act" />
+                    </colgroup>
                     <thead className="bg-slate-100 border-b border-slate-200">
                       <tr>
-                        <th className="w-[1.5%] py-2"></th>
-                        <th className={isVenta ? "w-[14%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[15%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Código/Marca</th>
-                        <th className={isVenta ? "w-[26.5%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[29.5%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Descripción *</th>
-                        <th className={isVenta ? "w-[6%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[7%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Cantidad</th>
-                        <th className={isVenta ? "w-[11%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[12%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Costo Unit.</th>
-                        {isVenta && (
-                          <th className="w-[10%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Envío</th>
-                        )}
-                        <th className={isVenta ? "w-[9%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[10%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Utilidad</th>
+                        <th></th>
+                        <th>
+                          <div className="th-stack">
+                            <span>Código /</span>
+                            <span>Marca</span>
+                          </div>
+                        </th>
+                        <th>Descripción *</th>
+                        <th>Cantidad</th>
+                        <th>
+                          <div className="th-stack">
+                            <span>Costo</span>
+                            <span>Unit.</span>
+                          </div>
+                        </th>
+                        {isVenta && <th>Envío</th>}
+                        <th>Utilidad</th>
                         {!ocultarTotalesMap['draft'] && (
                           <>
-                            <th className={isVenta ? "w-[11%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[12%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Venta Precio</th>
-                            <th className={isVenta ? "w-[11%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[13%] px-4 py-2 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Venta Total</th>
+                            <th>
+                              <div className="th-stack">
+                                <span>Venta</span>
+                                <span>Precio</span>
+                              </div>
+                            </th>
+                            <th>
+                              <div className="th-stack">
+                                <span>Venta</span>
+                                <span>Total</span>
+                              </div>
+                            </th>
                           </>
                         )}
-                        <th className="w-[5%] px-4 py-2"></th>
+                        <th></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -3536,6 +3874,7 @@ const EditableGroupRow = ({
                       {renderInlineProductCreateForm && renderInlineProductCreateForm('editingTemp', handleProductCreatedEditingLocal, handleProductCancelEditingLocal)}
                     </tbody>
                   </table>
+                  </div>
                 </>
               )}
             </div>
@@ -3985,6 +4324,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
   const xlsInputRef = useRef(null);
   const [xlsImportGrupoActivo, setXlsImportGrupoActivo] = useState(null);
   const [quickAddForm, setQuickAddForm] = useState({});
+  const [quickAddEpoch, setQuickAddEpoch] = useState({});
 
   // Product creation form states
   const [productCreateState, setProductCreateState] = useState({
@@ -4965,6 +5305,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
   const [reporteResumenOpen, setReporteResumenOpen] = useState(false);
   const [reporteDetalladoOpen, setReporteDetalladoOpen] = useState(false);
   const [reportePdfOpen, setReportePdfOpen] = useState(false);
+  const [reportePdfNonce, setReportePdfNonce] = useState(0);
 
   // Control de altura responsiva para iframes de reportes
   const [reporteHeight, setReporteHeight] = useState(null);
@@ -5139,6 +5480,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           ...current,
           proveedor: sug.proveedor,
           id_marca: brandId,
+          marca_nombre: sug.marca || "",
           codigo_item: sug.codigo,
           descripcion: sug.descripcion,
           tipo_unidad: sug.unidad,
@@ -5456,7 +5798,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           descripcion: normalizado.descripcion,
           tipo_unidad: normalizado.unidad,
           costo_precio: normalizado.costoPrecio,
-          porcentaje_utilidad: prev[groupCode]?.porcentaje_utilidad || 20
+          porcentaje_utilidad: prev[groupCode]?.porcentaje_utilidad || 20,
+          marca_nombre: encontrado.marca_nombre || normalizado.marca || ""
         };
         const recalculated = recalculateRowValues(updated, 'porcentaje_utilidad');
         return {
@@ -5546,8 +5889,14 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       return;
     }
 
+    const marcaNombre = form.marca_nombre
+      || form.marca
+      || proveedores?.find(p => Number(p.id_marca) === Number(form.id_marca))?.nombre
+      || "";
+
     const success = await handleAgregarItem({
       ...form,
+      marca_nombre: marcaNombre,
       cog_override: groupCode
     });
 
@@ -5557,6 +5906,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
         [groupCode]: {
           proveedor: "",
           id_marca: null,
+          marca_nombre: "",
           codigo_item: "",
           descripcion: "",
           observacion: "",
@@ -5574,6 +5924,10 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           tipo_unidad: "UNI"
         }
       }));
+      setQuickAddEpoch(prev => ({ ...prev, [groupCode]: (prev[groupCode] || 0) + 1 }));
+      requestAnimationFrame(() => {
+        document.getElementById(`quick-add-marca-${groupCode}`)?.focus();
+      });
     }
   };
 
@@ -5591,6 +5945,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     handleDuplicarGrupo,
     handleEliminarGrupo,
     handleEliminarItem,
+    handleEliminarItemsBulk,
     handleExportarGrupoXLS,
     handleExportarGeneralXLS,
     handleImportarDesdeXLS,
@@ -5634,6 +5989,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     handleAgregarItemServicio,
     handleEliminarGrupoServicio,
     handleEliminarItemServicio,
+    handleEliminarItemsServicioBulk,
     handleDuplicarServicio,
     sensors: sensorsServicios,
     handleDragEnd: handleDragEndServicios,
@@ -5649,6 +6005,84 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
   const [generalConditions, setGeneralConditions] = useState('');
   const [currentStatus, setCurrentStatus] = useState('');
   const [searchQueryNotas, setSearchQueryNotas] = useState('');
+  const [selectedItemIds, setSelectedItemIds] = useState(new Set());
+
+  const handleToggleSelectItem = useCallback((id, e) => {
+    if (!id) return;
+    setSelectedItemIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleClearSelection = useCallback(() => {
+    setSelectedItemIds(new Set());
+  }, []);
+
+  const handleBulkDeleteSelected = useCallback(() => {
+    if (selectedItemIds.size === 0) return;
+    const ids = Array.from(selectedItemIds);
+    if (!confirm(`¿Está seguro de eliminar los ${ids.length} ítem(s) seleccionados?`)) {
+      return;
+    }
+
+    const sumIds = [];
+    const srvIds = [];
+
+    Object.values(gruposSuministros || {}).forEach(gp => {
+      (gp.items || []).forEach(it => {
+        const id = it.id_suministro || it.id;
+        if (selectedItemIds.has(id)) {
+          sumIds.push(id);
+        }
+      });
+    });
+
+    Object.values(gruposServicios || {}).forEach(gp => {
+      (gp.subgrupos || []).forEach(subg => {
+        (subg.items || []).forEach(it => {
+          if (selectedItemIds.has(it.id_servicio)) {
+            srvIds.push(it.id_servicio);
+          }
+        });
+      });
+    });
+
+    if (sumIds.length > 0) {
+      handleEliminarItemsBulk(sumIds, data?.tipo_venta);
+    }
+
+    if (srvIds.length > 0) {
+      handleEliminarItemsServicioBulk(srvIds);
+    }
+
+    setSelectedItemIds(new Set());
+  }, [selectedItemIds, gruposSuministros, gruposServicios, handleEliminarItemsBulk, handleEliminarItemsServicioBulk, data?.tipo_venta]);
+
+  useEffect(() => {
+    if (selectedItemIds.size === 0) return;
+
+    const handleKeyDownGlobal = (e) => {
+      if (e.key === "Escape") {
+        setSelectedItemIds(new Set());
+      } else if (e.key === "Delete" || e.key === "Supr") {
+        const active = document.activeElement;
+        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT' || active.isContentEditable)) {
+          return;
+        }
+        e.preventDefault();
+        handleBulkDeleteSelected();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDownGlobal);
+    return () => window.removeEventListener("keydown", handleKeyDownGlobal);
+  }, [selectedItemIds, handleBulkDeleteSelected]);
 
   // Sincronizar el estado del badge del estado de forma automática e inmediata al cambiar de vista o recibir datos
   useEffect(() => {
@@ -6135,20 +6569,39 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
 
   const isDirty = isHeaderDirty || isSuministrosDirty || isServiciosDirty || isCondicionesDirty || isDescuentoDirty;
 
+  const refreshHeaderTotals = useCallback(async () => {
+    if (!numReg) return;
+    try {
+      const { data: detailData } = await api.get(`cotizaciones/cotizacion_detalle/${numReg}/`);
+      setData((prev) => {
+        if (!prev) return detailData;
+        return {
+          ...prev,
+          total_cotizacion: detailData.total_cotizacion,
+          saldo: detailData.saldo,
+          descuento_monto: detailData.descuento_monto,
+          descuento_porcentaje: detailData.descuento_porcentaje,
+        };
+      });
+    } catch (err) {
+      console.debug("No se pudieron refrescar totales:", err);
+    }
+  }, [numReg]);
+
   // Auto-save Suministros
   useEffect(() => {
     if (!isSuministrosDirty || isReadOnly) return;
     const timer = setTimeout(async () => {
       try {
         await saveSuministros(ocultarTotalesMap);
-        await loadAllData(true);
+        await refreshHeaderTotals();
       } catch (err) {
         console.error("Error al autoguardar suministros:", err);
         toast.error("Error al autoguardar suministros");
       }
     }, 1500);
     return () => clearTimeout(timer);
-  }, [isSuministrosDirty, saveSuministros, isReadOnly]);
+  }, [isSuministrosDirty, saveSuministros, isReadOnly, refreshHeaderTotals, ocultarTotalesMap]);
 
   // Auto-save Servicios
   useEffect(() => {
@@ -6156,14 +6609,14 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     const timer = setTimeout(async () => {
       try {
         await saveServicios();
-        await loadAllData(true);
+        await refreshHeaderTotals();
       } catch (err) {
         console.error("Error al autoguardar servicios:", err);
         toast.error("Error al autoguardar servicios");
       }
     }, 1500);
     return () => clearTimeout(timer);
-  }, [isServiciosDirty, saveServicios, isReadOnly]);
+  }, [isServiciosDirty, saveServicios, isReadOnly, refreshHeaderTotals]);
 
   const saveCondicionesInstantly = useCallback(async () => {
     if (generalConditions === loadedConditionsRef.current || isReadOnly) return;
@@ -6709,7 +7162,6 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     try {
       const endpoint = `cotizaciones/cotizacion_detalle/${numReg}/`;
 
-      // Parallel execution of all independent API calls
       const [unitsRes, detailRes, condRes, verRes] = await Promise.all([
         api.get("core/unidades_medida/").catch(err => {
           console.error("Error loading units of measure:", err);
@@ -6721,8 +7173,6 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           return { data: { condiciones: null } };
         }),
         api.get(`cotizaciones/version/${numReg}/`).catch(() => ({ data: null })),
-        fetchDescuento(),
-        fetchHistory()
       ]);
 
       if (verRes?.data?.version) {
@@ -6749,6 +7199,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       setGeneralConditions(conditions);
       loadedConditionsRef.current = conditions;
 
+      fetchDescuento();
+      fetchHistory();
     } catch (err) {
       console.error("Error loading data:", err);
       if (!silent) toast.error("Error al cargar la información");
@@ -6777,7 +7229,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           console.debug("Error checking version:", err);
         }
       }
-    }, 3500); // Check version every 3.5 seconds
+    }, 15000);
 
     return () => clearInterval(interval);
   }, [isDirty, numReg, loadAllData]);
@@ -6917,6 +7369,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       horas: Number(form.horas || 8),
       costo_hombre_dia: finalCosto,
       porcentaje: Number(form.porcentaje || 0),
+      utilidad: form.utilidad !== undefined && form.utilidad !== null ? Number(form.utilidad) : undefined
     };
     const success = await handleAgregarItemServicio(hookForm, grupoId, subgrupoId, data?.id_area);
     if (success) {
@@ -7076,8 +7529,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     const formDias = item.categoria === "06" ? 1 : Number(item.cantidad_dias || 0);
     const formCosto = Number(item.costo_hombre_dia || 0);
     const formPorcentaje = Number(item.porcentaje || 0);
-    const calculatedCostoTotal = formHombres * formDias * formCosto;
-    const calculatedUtilidad = calculatedCostoTotal * (formPorcentaje / 100);
+    const calculatedUtilidadUnit = item.utilidad !== undefined && item.utilidad !== null ? Number(item.utilidad) : (formCosto * (formPorcentaje / 100));
 
     setEditingServicioForm({
       id_servicio: item.id_servicio,
@@ -7089,7 +7541,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       costo_hombre_dia: item.costo_hombre_dia,
       cotizado_hombre_dia: item.cotizado_hombre_dia || item.costo_hombre_dia,
       porcentaje: item.porcentaje,
-      utilidad: calculatedUtilidad.toFixed(2),
+      utilidad: calculatedUtilidadUnit.toFixed(2),
       costo_min: item.costo_min || 0,
       costo_max: item.costo_max || 0
     });
@@ -7165,22 +7617,22 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
               )}
             </div>
 
-            <span className="text-[11px] text-gray-600 font-medium bg-gray-100 px-1.5 rounded">
-              {grupo.items.length} Items
+            <span className="text-[10px] font-black text-slate-800 bg-slate-200/90 border border-slate-300/80 px-2.5 py-0.5 rounded-full shadow-2xs select-none">
+              {grupo.items.length} Ítems
             </span>
           </div>
 
           <div className="flex items-center gap-4">
             <div 
-              className="flex items-center gap-1.5 px-2 py-0.5 bg-indigo-50 border border-indigo-100 rounded-md"
+              className="flex items-center gap-1.5 px-2.5 py-0.5 bg-teal-50/90 border border-teal-200 rounded-md shadow-2xs"
               onClick={(e) => e.stopPropagation()}
             >
-              <span className="text-[9px] font-black text-indigo-500 uppercase">Cant:</span>
+              <span className="text-[9.5px] font-black text-teal-800 uppercase">CANT:</span>
               {editingGroupHeader?.codigo_grupo === grupo.codigo_grupo && editingGroupHeader?.campo === 'cantidad' ? (
                 <input
                   type="number"
                   min="1"
-                  className="w-12 bg-transparent border border-indigo-300 rounded text-[11.5px] font-black text-indigo-800 text-center p-0 focus:ring-0 focus:outline-none"
+                  className="w-12 bg-transparent border border-teal-300 rounded text-[12px] font-black text-teal-950 text-center p-0 focus:ring-0 focus:outline-none"
                   value={editingHeaderValue}
                   onChange={(e) => setEditingHeaderValue(e.target.value)}
                   onBlur={() => handleSaveHeaderEdit(grupo)}
@@ -7194,7 +7646,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 />
               ) : (
                 <span 
-                  className="text-[11.5px] font-black text-indigo-700 cursor-pointer"
+                  className="text-[12px] font-black text-teal-950 cursor-pointer"
                   onDoubleClick={(e) => {
                     e.stopPropagation();
                     setEditingGroupHeader({ codigo_grupo: grupo.codigo_grupo, campo: 'cantidad' });
@@ -7272,26 +7724,60 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
               transition={{ duration: 0.2 }}
             >
               {/* Tabla de Items */}
-              <div className="w-full overflow-x-auto overflow-y-hidden border-t border-gray-100">
-                <table className="min-w-[850px] md:min-w-full table-fixed">
+              <div className="w-full overflow-x-hidden overflow-y-hidden border-t border-gray-100">
+                <table className="sigecom-item-table">
+                  <colgroup>
+                    <col className="col-grip" />
+                    <col className="col-code" />
+                    <col className="col-desc" />
+                    <col className="col-qty" />
+                    <col className="col-money" />
+                    {isVenta && <col className="col-money" />}
+                    <col className="col-util" />
+                    {!ocultarTotalesGrupo && (
+                      <>
+                        <col className="col-money" />
+                        <col className="col-money" />
+                      </>
+                    )}
+                    <col className="col-act" />
+                  </colgroup>
                   <thead className="bg-slate-100 border-b border-slate-200">
                     <tr>
-                      <th className="w-[1.5%] py-1.5"></th>
-                      <th className={isVenta ? "w-[14%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[15%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Código / Marca</th>
-                      <th className="px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Descripción</th>
-                      <th className={isVenta ? "w-[6%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[7%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Cantidad</th>
-                      <th className={isVenta ? "w-[11%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[12%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Costo Unit.</th>
-                      {isVenta && (
-                        <th className="w-[10%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Envío</th>
-                      )}
-                      <th className={isVenta ? "w-[9%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[10%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Utilidad</th>
+                      <th></th>
+                      <th>
+                        <div className="th-stack">
+                          <span>Código /</span>
+                          <span>Marca</span>
+                        </div>
+                      </th>
+                      <th>Descripción</th>
+                      <th>Cantidad</th>
+                      <th>
+                        <div className="th-stack">
+                          <span>Costo</span>
+                          <span>Unit.</span>
+                        </div>
+                      </th>
+                      {isVenta && <th>Envío</th>}
+                      <th>Utilidad</th>
                       {!ocultarTotalesGrupo && (
                         <>
-                          <th className={isVenta ? "w-[11%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[12%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Venta Precio</th>
-                          <th className={isVenta ? "w-[11%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider" : "w-[13%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider"}>Venta Total</th>
+                          <th>
+                            <div className="th-stack">
+                              <span>Venta</span>
+                              <span>Precio</span>
+                            </div>
+                          </th>
+                          <th>
+                            <div className="th-stack">
+                              <span>Venta</span>
+                              <span>Total</span>
+                            </div>
+                          </th>
                         </>
                       )}
-                      <th className="w-[60px] py-1.5 text-center"></th>
+                      <th></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
@@ -7331,6 +7817,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                           renderInlineProductCreateForm={renderInlineProductCreateForm}
                           ocultarTotales={ocultarTotalesGrupo}
                           numReg={numReg}
+                          selectedItemIds={selectedItemIds}
+                          handleToggleSelectItem={handleToggleSelectItem}
                         />
                       ))}
                     </SortableContext>
@@ -7373,6 +7861,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                           <td className="px-3 py-1.5">
                             <div className="flex flex-col gap-1 items-center justify-center text-center relative">
                               <MarcaAutocomplete
+                                key={`quick-add-marca-${grupo.codigo_grupo}-${quickAddEpoch[grupo.codigo_grupo] || 0}`}
+                                id={`quick-add-marca-${grupo.codigo_grupo}`}
                                 idMarca={currentForm.id_marca}
                                 idRegistro={numReg}
                                 proveedores={proveedores}
@@ -7380,12 +7870,14 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                                   const code = String(brand.id_marca).padStart(2, '0');
                                   handleRowChange("proveedor", code, "add", grupo.codigo_grupo);
                                   handleRowChange("id_marca", brand.id_marca, "add", grupo.codigo_grupo);
+                                  handleRowChange("marca_nombre", brand.nombre || "", "add", grupo.codigo_grupo);
                                 }}
                                 onAddBrand={(newBrand) => {
                                   setProveedores(prev => [...prev, newBrand]);
                                 }}
                               />
                               <ProductoAutocomplete
+                                key={`quick-add-codigo-${grupo.codigo_grupo}-${quickAddEpoch[grupo.codigo_grupo] || 0}`}
                                 id={`quick-add-codigo-${grupo.codigo_grupo}`}
                                 value={currentForm.codigo_item || ""}
                                 idMarca={currentForm.id_marca}
@@ -7404,6 +7896,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                                         ...current,
                                         proveedor: normalizado.proveedor,
                                         id_marca: prod.id_marca,
+                                        marca_nombre: prod.marca_nombre || normalizado.marca || current.marca_nombre || "",
                                         codigo_item: normalizado.codigo,
                                         descripcion: normalizado.descripcion,
                                         tipo_unidad: normalizado.unidad,
@@ -7864,7 +8357,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     const handleGastoCancelQuickLocal = () => {};
 
     const gripPlaceholder = (
-      <td className="px-0.5 text-center align-middle">
+      <td className="col-grip-cell">
         <Icon name="grip-vertical" className="h-3 w-3 text-gray-200 mx-auto" />
       </td>
     );
@@ -7876,9 +8369,9 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       const formPorcentaje = Number(form.porcentaje || 0);
 
       const calculatedCostoTotal = formHombres * formDias * formCosto;
-      const calculatedUtilidad = calculatedCostoTotal * (formPorcentaje / 100);
-      const calculatedCotizadoTotal = calculatedCostoTotal + calculatedUtilidad;
-      const calculatedCotizadoHD = formCosto * (1 + formPorcentaje / 100);
+      const calculatedUtilidad = form.utilidad !== undefined && form.utilidad !== null ? Number(form.utilidad) : (formCosto * (formPorcentaje / 100));
+      const calculatedCotizadoHD = formCosto + calculatedUtilidad;
+      const calculatedCotizadoTotal = (formHombres * (formDias > 0 ? formDias : 1)) * calculatedCotizadoHD;
 
       return (
         <tr 
@@ -8007,8 +8500,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                   value={form.utilidad === undefined || form.utilidad === null ? calculatedUtilidad.toFixed(2) : form.utilidad}
                   onChange={(e) => handleDecimalChange(e, (val) => {
                     const num = parseFloat(val) || 0;
-                    const costoTotal = Number(form.cantidad_hombres || 0) * Number(form.cantidad_dias || 0) * Number(form.costo_hombre_dia || 0);
-                    const pct = costoTotal > 0 ? (num / costoTotal) * 100 : 0;
+                    const formCosto = Number(form.costo_hombre_dia || 0);
+                    const pct = formCosto > 0 ? (num / formCosto) * 100 : 0;
                     setForm({ utilidad: val, porcentaje: Number(pct.toFixed(2)) });
                   })}
                   onFocus={(e) => e.target.select()}
@@ -8156,9 +8649,9 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       const formPorcentaje = Number(form.porcentaje || 0);
 
       const calculatedCostoTotal = formHombres * formCosto;
-      const calculatedUtilidad = calculatedCostoTotal * (formPorcentaje / 100);
-      const calculatedCotizadoTotal = calculatedCostoTotal + calculatedUtilidad;
-      const calculatedCotizadoHD = formCosto * (1 + formPorcentaje / 100);
+      const calculatedUtilidad = form.utilidad !== undefined && form.utilidad !== null ? Number(form.utilidad) : (formCosto * (formPorcentaje / 100));
+      const calculatedCotizadoHD = formCosto + calculatedUtilidad;
+      const calculatedCotizadoTotal = formHombres * calculatedCotizadoHD;
 
       return (
         <tr 
@@ -8254,8 +8747,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                   value={form.utilidad === undefined || form.utilidad === null ? calculatedUtilidad.toFixed(2) : form.utilidad}
                   onChange={(e) => handleDecimalChange(e, (val) => {
                     const num = parseFloat(val) || 0;
-                    const costoTotal = Number(form.cantidad_hombres || 0) * Number(form.costo_hombre_dia || 0);
-                    const pct = costoTotal > 0 ? (num / costoTotal) * 100 : 0;
+                    const formCosto = Number(form.costo_hombre_dia || 0);
+                    const pct = formCosto > 0 ? (num / formCosto) * 100 : 0;
                     setForm({ utilidad: val, porcentaje: Number(pct.toFixed(2)) });
                   })}
                   onFocus={(e) => e.target.select()}
@@ -8584,11 +9077,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                             }}
                             theme="snow"
                             readOnly={isReadOnly}
-                            modules={{
-                              toolbar: {
-                                container: `#srv-quill-toolbar-${grupo.id_servicio}`
-                              }
-                            }}
+                            modules={quillServiceModules(`#srv-quill-toolbar-${grupo.id_servicio}`)}
                             placeholder="Escriba aquí los detalles y especificaciones del servicio con negrita, guiones, etc..."
                           />
                         </div>
@@ -8663,8 +9152,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                                 : sg.tipoNombre}
                             </span>
                           )}
-                          <span className="text-[9px] font-bold text-gray-400 bg-white border border-gray-200 px-1.5 rounded-full select-none">
-                            {sortedItems.length}
+                          <span className="text-[10px] font-black text-slate-800 bg-slate-200/90 border border-slate-300/80 px-2.5 py-0.5 rounded-full shadow-2xs select-none">
+                            {sortedItems.length} Ítems
                           </span>
                         </div>
 
@@ -8683,59 +9172,138 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                             exit={{ height: 0, opacity: 0 }}
                             transition={{ duration: 0.15 }}
                           >
-                            <div className="w-full overflow-x-auto overflow-y-hidden">
-                              <table className="min-w-[850px] md:min-w-full table-fixed border-collapse">
+                            <div className="w-full overflow-x-hidden overflow-y-hidden">
+                              <table className="sigecom-item-table">
                                 {sg.tipoCodigo?.endsWith("04") && (
+                                  <>
+                                  <colgroup>
+                                    <col className="col-grip" />
+                                    <col className="col-code" />
+                                    <col className="col-desc" />
+                                    <col className="col-qty" />
+                                    <col className="col-days" />
+                                    <col className="col-money" />
+                                    <col className="col-util" />
+                                    <col className="col-money" />
+                                    <col className="col-money" />
+                                    <col className="col-act" />
+                                  </colgroup>
                                   <thead className="bg-slate-100 border-b border-slate-200">
                                     <tr>
-                                      <th className="w-[1.5%] py-1.5"></th>
-                                      <th className="w-[14%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Código Personal</th>
-                                      <th className="px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Descripción</th>
-                                      <th className="w-[5%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Cantidad</th>
-                                      <th className="w-[8%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Días / Horas</th>
-                                      <th className="w-[8%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Costo H/D</th>
-                                      <th className="w-[10%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Utilidad</th>
-                                      <th className="w-[8%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Cotizado H/D</th>
-                                      <th className="w-[9%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">
-                                        <div className="flex flex-col items-center justify-center leading-none">
+                                      <th></th>
+                                      <th>
+                                        <div className="th-stack">
+                                          <span>Código</span>
+                                          <span>Personal</span>
+                                        </div>
+                                      </th>
+                                      <th>Descripción</th>
+                                      <th>Cantidad</th>
+                                      <th>
+                                        <div className="th-stack">
+                                          <span>Días /</span>
+                                          <span>Horas</span>
+                                        </div>
+                                      </th>
+                                      <th>
+                                        <div className="th-stack">
+                                          <span>Costo</span>
+                                          <span>H/D</span>
+                                        </div>
+                                      </th>
+                                      <th>Utilidad</th>
+                                      <th>
+                                        <div className="th-stack">
+                                          <span>Cotizado</span>
+                                          <span>H/D</span>
+                                        </div>
+                                      </th>
+                                      <th>
+                                        <div className="th-stack">
                                           <span>Cotizado</span>
                                           <span>Total</span>
                                         </div>
                                       </th>
-                                      <th className="w-[60px] py-1.5"></th>
+                                      <th></th>
                                     </tr>
                                   </thead>
+                                  </>
                                 )}
 
                                 {sg.tipoCodigo?.endsWith("05") && (
+                                  <>
+                                  <colgroup>
+                                    <col className="col-grip" />
+                                    <col className="col-code" />
+                                    <col className="col-desc" />
+                                    <col className="col-qty" />
+                                    <col className="col-qty" />
+                                    <col className="col-money" />
+                                    <col className="col-money" />
+                                    <col className="col-act" />
+                                  </colgroup>
                                   <thead className="bg-slate-100 border-b border-slate-200">
                                     <tr>
-                                      <th className="w-[1.5%] py-1.5"></th>
-                                      <th className="w-[15%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Código Gasto</th>
-                                      <th className="px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Descripción</th>
-                                      <th className="w-[6%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Cantidad</th>
-                                      <th className="w-[6%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Días</th>
-                                      <th className="w-[9%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Precio</th>
-                                      <th className="w-[16%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Total</th>
-                                      <th className="w-[60px] py-1.5 text-center"></th>
+                                      <th></th>
+                                      <th>
+                                        <div className="th-stack">
+                                          <span>Código</span>
+                                          <span>Gasto</span>
+                                        </div>
+                                      </th>
+                                      <th>Descripción</th>
+                                      <th>Cantidad</th>
+                                      <th>Días</th>
+                                      <th>Precio</th>
+                                      <th>Total</th>
+                                      <th></th>
                                     </tr>
                                   </thead>
+                                  </>
                                 )}
 
                                 {sg.tipoCodigo?.endsWith("06") && (
+                                  <>
+                                  <colgroup>
+                                    <col className="col-grip" />
+                                    <col className="col-code" />
+                                    <col className="col-desc" />
+                                    <col className="col-qty" />
+                                    <col className="col-money" />
+                                    <col className="col-util" />
+                                    <col className="col-money" />
+                                    <col className="col-money" />
+                                    <col className="col-act" />
+                                  </colgroup>
                                   <thead className="bg-slate-100 border-b border-slate-200">
                                     <tr>
-                                      <th className="w-[1.5%] py-1.5"></th>
-                                      <th className="w-[15%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Código Gasto</th>
-                                      <th className="px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Descripción</th>
-                                      <th className="w-[6%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Cantidad</th>
-                                      <th className="w-[8%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Precio</th>
-                                      <th className="w-[10%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Utilidad</th>
-                                      <th className="w-[10%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Venta Precio</th>
-                                      <th className="w-[12%] px-3 py-1.5 text-center text-[10px] font-black text-slate-700 uppercase tracking-wider">Venta Total</th>
-                                      <th className="w-[60px] py-1.5 text-center"></th>
+                                      <th></th>
+                                      <th>
+                                        <div className="th-stack">
+                                          <span>Código</span>
+                                          <span>Gasto</span>
+                                        </div>
+                                      </th>
+                                      <th>Descripción</th>
+                                      <th>Cantidad</th>
+                                      <th>Precio</th>
+                                      <th>Utilidad</th>
+                                      <th>
+                                        <div className="th-stack">
+                                          <span>Venta</span>
+                                          <span>Precio</span>
+                                        </div>
+                                      </th>
+                                      <th>
+                                        <div className="th-stack">
+                                          <span>Venta</span>
+                                          <span>Total</span>
+                                        </div>
+                                      </th>
+                                      <th></th>
                                     </tr>
                                   </thead>
+                                  </>
                                 )}
 
                                 <tbody className="divide-y divide-gray-50">
@@ -8770,7 +9338,9 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                                         renderInlineGastoCreateForm={renderInlineGastoCreateForm}
                                         catalogoVersion={catalogoVersion}
                                         numReg={numReg}
-                                        tipoMoneda={data?.tipo_moneda}
+                                        tipoMoneda={data?.tipo_moneda || "S"}
+                                        selectedItemIds={selectedItemIds}
+                                        handleToggleSelectItem={handleToggleSelectItem}
                                       />
                                     ))}
                                   </SortableContext>
@@ -8885,10 +9455,16 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           id: a.id,
           name: a.nombre,
           description: a.description, // <--- AGREGA ESTA LÍNEA
-          file_path: a.file_path,
+          file_path: `cotizaciones/adjuntos/${numReg}/archivo/${a.id}/`,
           upload_date: a.fecha,
           uploaded_by: a.usuario,
         }));
+        console.log("[SIGECOM adjunto] listado", {
+          numReg,
+          API_URL,
+          pagina: window.location.href,
+          archivos: mapeados.map((d) => ({ id: d.id, name: d.name, file_path: d.file_path })),
+        });
         setDocuments(mapeados);
       }
     } catch (err) {
@@ -9615,6 +10191,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                       {/* Opción 3: Formato Word/PDF*/}
                       <button
                         onClick={() => {
+                          setReportePdfNonce(Date.now());
                           setReportePdfOpen(true);
                           setReporteMenuOpen(false);
                         }}
@@ -10240,7 +10817,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
             <div className="flex items-center gap-3">
               <Icon name={expandedCategories.includes('Suministros') ? 'chevron-down' : 'chevron-right'} className="h-4 w-4 text-indigo-600 font-bold" />
               <h3 className="text-[13px] font-black text-gray-900 uppercase tracking-widest">Suministros</h3>
-              <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 text-[10px] font-bold rounded-md uppercase">
+              <span className="px-2.5 py-0.5 bg-emerald-100/90 text-emerald-800 text-[11px] font-black rounded-full border border-emerald-200 uppercase shadow-2xs">
                 {Object.keys(gruposSuministros || {}).length} Grupos
               </span>
             </div>
@@ -10360,7 +10937,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
             <div className="flex items-center gap-3">
               <Icon name={expandedCategories.includes('Servicios') ? 'chevron-down' : 'chevron-right'} className="h-4 w-4 text-indigo-600 font-bold" />
               <h3 className="text-[13px] font-black text-gray-900 uppercase tracking-widest">Servicios</h3>
-              <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 text-[10px] font-bold rounded-md uppercase">
+              <span className="px-2.5 py-0.5 bg-emerald-100/90 text-emerald-800 text-[11px] font-black rounded-full border border-emerald-200 uppercase shadow-2xs">
                 {Object.keys(gruposServicios || {}).length} Grupos
               </span>
             </div>
@@ -10675,6 +11252,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                           [{ 'indent': '-1' }, { 'indent': '+1' }],
                           ['clean']
                         ],
+                        keyboard: quillListKeyboard,
                       }}
                     />
                   </div>
@@ -11742,14 +12320,40 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                     <div className="flex flex-col">
                       <div className="flex justify-between items-start">
                         {/* 1. NOMBRE DEL ARCHIVO (PRUEBA.pdf) */}
-                        <a
-                          href={`http://localhost:8001${doc.file_path}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-indigo-600 hover:text-indigo-800 font-black text-[11px] truncate uppercase tracking-tight"
+                        <button
+                          type="button"
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            console.log("[SIGECOM adjunto] click", {
+                              name: doc.name,
+                              file_path: doc.file_path,
+                              pagina: window.location.href,
+                              API_URL,
+                            });
+                            try {
+                              await downloadAttachment(
+                                `cotizaciones/adjuntos/${numReg}/archivo/${doc.id}/`,
+                                doc.name
+                              );
+                              console.log("[SIGECOM adjunto] descarga OK", doc.name);
+                            } catch (err) {
+                              console.error("[SIGECOM adjunto] error exacto", {
+                                message: err?.message,
+                                code: err?.code,
+                                status: err?.response?.status,
+                                axiosUrl: `${err?.config?.baseURL || ""}${err?.config?.url || ""}`,
+                                responseUrl: err?.request?.responseURL,
+                                data: err?.response?.data,
+                                err,
+                              });
+                              toast.error(err.message || "No se pudo abrir el archivo");
+                            }
+                          }}
+                          className="text-left text-indigo-600 hover:text-indigo-800 font-black text-[11px] truncate uppercase tracking-tight cursor-pointer hover:underline"
                         >
                           {doc.name}
-                        </a>
+                        </button>
                         {/* Acciones de Documento */}
                         <div className="flex items-center gap-1">
                           {deletingDocId === doc.id ? (
@@ -11771,10 +12375,10 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                           ) : (
                             <button
                               onClick={() => setDeletingDocId(doc.id)}
-                              className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all ml-2"
+                              className="p-1.5 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 border border-rose-200/60 transition-all ml-2 flex items-center justify-center shrink-0 shadow-2xs"
                               title="Eliminar documento"
                             >
-                              <Icon name="trash-2" className="h-3 w-3" />
+                              <Icon name="trash-2" className="h-3.5 w-3.5" />
                             </button>
                           )}
                         </div>
@@ -12320,6 +12924,39 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
         </div>
       )}
 
+      {/* BARRA FLOTANTE DE ACCIONES MASIVAS */}
+      {selectedItemIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[250] bg-slate-900/95 text-white px-5 py-3 rounded-2xl shadow-2xl border border-slate-700/80 backdrop-blur-md flex items-center gap-4 animate-in slide-in-from-bottom-4 duration-200">
+          <div className="flex items-center gap-2 pr-2 border-r border-slate-700">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-500 text-xs font-black text-white">
+              {selectedItemIds.size}
+            </span>
+            <span className="text-xs font-semibold text-slate-200">
+              {selectedItemIds.size === 1 ? 'ítem seleccionado' : 'ítems seleccionados'}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleBulkDeleteSelected}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md hover:shadow-rose-600/30"
+            title="Eliminar ítems seleccionados (Supr)"
+          >
+            <Icon name="trash-2" className="h-4 w-4" />
+            <span>Eliminar Seleccionados</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleClearSelection}
+            className="text-xs font-bold text-slate-400 hover:text-white px-2 py-1 transition-colors uppercase tracking-wider"
+            title="Deseleccionar todo (Esc)"
+          >
+            Cancelar
+          </button>
+        </div>
+      )}
+
       {/* INPUT XLS IMPORT */}
       <input
         type="file"
@@ -12704,7 +13341,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 </div>
               )}
               <iframe 
-                src={`${cleanBaseURL}/cotizaciones/${numReg}/pdf-preview/`}
+                src={`${cleanBaseURL}/cotizaciones/${numReg}/pdf-preview/?v=${reportePdfNonce}`}
                 className="w-full h-full bg-white rounded-xl border border-slate-200 shadow-sm"
                 title="Previsualización de Cotización PDF"
                 scrolling="auto"
@@ -13083,7 +13720,9 @@ const SortableItemRow = ({
   handleTriggerCreateProduct,
   renderInlineProductCreateForm,
   ocultarTotales,
-  numReg
+  numReg,
+  selectedItemIds,
+  handleToggleSelectItem
 }) => {
   const {
     attributes,
@@ -13115,6 +13754,9 @@ const SortableItemRow = ({
   const rowRef = useRef(null);
   const triggerRef = useRef(null);
   const [coords, setCoords] = useState(null);
+  const marcaLabel = item.marca_nombre
+    || proveedores.find(p => Number(p.id_marca) === Number(item.id_marca))?.nombre
+    || "";
 
   const setMergedRef = (el) => {
     setNodeRef(el);
@@ -13383,7 +14025,7 @@ const SortableItemRow = ({
     return (
       <>
         <tr ref={setMergedRef} style={style} className="bg-indigo-50/50">
-        <td className="px-0.5 text-center align-middle">
+        <td className="col-grip-cell">
           <Icon name="grip-vertical" className="h-3 w-3 text-gray-200 mx-auto" />
         </td>
         {/* Código / Marca */}
@@ -13703,30 +14345,57 @@ const SortableItemRow = ({
     );
   }
 
+  const isSelected = selectedItemIds?.has(itemId);
+
   // Visualizar Renglón en la Tabla
   return (
     <tr
       ref={setMergedRef}
       style={style}
-      {...attributes}
       className={cn(
         "hover:bg-gray-50 cursor-pointer group transition-all duration-150 border-b border-gray-100",
+        isSelected && "bg-indigo-100/80 hover:bg-indigo-100 text-indigo-950 font-bold border-l-4 border-l-indigo-600 ring-1 ring-indigo-300/80 shadow-xs",
         isDragging && "bg-indigo-50/20 shadow-inner"
       )}
+      onClick={(e) => {
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          handleToggleSelectItem(itemId, e);
+        }
+      }}
       onDoubleClick={() => !isReadOnly && startEditItem(item)}
     >
       {!isReadOnly ? (
         <td
-          {...listeners}
-          data-drag-handle
-          className="px-0.5 text-center align-middle cursor-grab active:cursor-grabbing hover:bg-gray-100/50"
+          className="col-grip-cell"
           onDoubleClick={(e) => e.stopPropagation()}
         >
-          <Icon name="grip-vertical" className="h-3 w-3 text-slate-400 group-hover:text-slate-700 mx-auto transition-colors" />
+          <div className="col-ctrl-stack">
+            <input
+              type="checkbox"
+              checked={!!isSelected}
+              onChange={(e) => {
+                e.stopPropagation();
+                handleToggleSelectItem(itemId, e);
+              }}
+              onClick={(e) => e.stopPropagation()}
+              className="h-3 w-3 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 cursor-pointer"
+              title="Seleccionar para acción masiva (Ctrl+Clic)"
+            />
+            <div
+              {...listeners}
+              {...attributes}
+              data-drag-handle
+              onClick={(e) => e.stopPropagation()}
+              className="cursor-grab active:cursor-grabbing p-0 text-slate-400 group-hover:text-slate-700 transition-colors"
+            >
+              <Icon name="grip-vertical" className="h-3 w-3" />
+            </div>
+          </div>
         </td>
       ) : (
         <td 
-          className="px-0.5 text-center align-middle cursor-default"
+          className="col-grip-cell cursor-default"
           onDoubleClick={(e) => e.stopPropagation()}
         >
           <Icon name="grip-vertical" className="h-3 w-3 text-slate-300 mx-auto" />
@@ -13754,7 +14423,7 @@ const SortableItemRow = ({
           >
             {item.codigo_item}
           </span>
-          {item.marca_nombre && (
+          {marcaLabel && (
             <span 
               className="text-[8.5px] font-semibold text-teal-600 uppercase tracking-tighter cursor-pointer"
               onDoubleClick={(e) => {
@@ -13764,7 +14433,7 @@ const SortableItemRow = ({
                 }
               }}
             >
-              {item.marca_nombre}
+              {marcaLabel}
             </span>
           )}
         </div>
@@ -13991,46 +14660,20 @@ const SortableItemRow = ({
             )}
           </div>
 
-          {/* Eliminar Item Direct Button & Inline Confirm */}
+          {/* Eliminar Item Direct Button (Single Click) */}
           {!isReadOnly && (
-            <div className="relative flex items-center" ref={deleteConfirmRef}>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  setShowDeleteConfirm(prev => !prev);
-                }}
-                className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-all"
-                title="Eliminar Ítem"
-              >
-                <Icon name="trash-2" className="h-3.5 w-3.5" />
-              </button>
-
-              {showDeleteConfirm && (
-                <div className="absolute right-0 bottom-full mb-1 flex items-center gap-1.5 bg-white border border-gray-100 rounded-lg p-1.5 shadow-lg z-50 whitespace-nowrap animate-in fade-in slide-in-from-bottom-1 duration-100">
-                  <span className="text-[10px] font-black text-gray-700 px-1">¿Borrar?</span>
-                  <button
-                    onClick={(e) => {
-                      e.preventDefault();
-                      handleEliminarItem(item.id_suministro, item.codigo_grupo, tipoVenta, true);
-                      setShowDeleteConfirm(false);
-                    }}
-                    className="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white font-black text-[9px] rounded uppercase transition-colors"
-                  >
-                    Sí
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setShowDeleteConfirm(false);
-                    }}
-                    className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-[9px] rounded uppercase transition-colors"
-                  >
-                    No
-                  </button>
-                </div>
-              )}
-            </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleEliminarItem(item.id_suministro, item.codigo_grupo, tipoVenta, true);
+              }}
+              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+              title="Eliminar Ítem"
+            >
+              <Icon name="trash-2" className="h-3.5 w-3.5" />
+            </button>
           )}
         </div>
       </td>
@@ -14064,6 +14707,8 @@ const SortableItemServicioRow = ({
   catalogoVersion,
   numReg,
   tipoMoneda,
+  selectedItemIds,
+  handleToggleSelectItem
 }) => {
   const {
     attributes,
@@ -14354,9 +14999,9 @@ const SortableItemServicioRow = ({
       const formPorcentaje = Number(editingServicioForm.porcentaje || 0);
 
       const calculatedCostoTotal = formHombres * formDias * formCosto;
-      const calculatedUtilidad = calculatedCostoTotal * (formPorcentaje / 100);
-      const calculatedCotizadoTotal = calculatedCostoTotal + calculatedUtilidad;
-      const calculatedCotizadoHD = formCosto * (1 + formPorcentaje / 100);
+      const calculatedUtilidad = editingServicioForm.utilidad !== undefined && editingServicioForm.utilidad !== null ? Number(editingServicioForm.utilidad) : (formCosto * (formPorcentaje / 100));
+      const calculatedCotizadoHD = formCosto + calculatedUtilidad;
+      const calculatedCotizadoTotal = (formHombres * (formDias > 0 ? formDias : 1)) * calculatedCotizadoHD;
 
       const handlePersonalCreatedEditLocal = (registro) => {
         const cMin = parseFloat(registro.costo_min || 0);
@@ -14384,7 +15029,7 @@ const SortableItemServicioRow = ({
       return (
         <>
           <tr ref={setMergedRef} style={style} className="bg-indigo-50/30">
-            <td className="px-0.5 text-center align-middle">
+            <td className="col-grip-cell">
               <Icon name="grip-vertical" className="h-3 w-3 text-gray-200 mx-auto" />
             </td>
             <td className="px-2 py-1">
@@ -14442,15 +15087,9 @@ const SortableItemServicioRow = ({
               value={editingServicioForm.cantidad_hombres === undefined || editingServicioForm.cantidad_hombres === null ? "" : editingServicioForm.cantidad_hombres}
               onChange={(e) => {
                 const qty = parseInt(e.target.value) || 0;
-                const finalDias = Number(editingServicioForm.cantidad_dias || 0);
-                const finalCosto = Number(editingServicioForm.costo_hombre_dia || 0);
-                const costoTotal = qty * finalDias * finalCosto;
-                const finalPorcentaje = Number(editingServicioForm.porcentaje || 0);
-                const newUtil = costoTotal * (finalPorcentaje / 100);
                 setEditingServicioForm({
                   ...editingServicioForm,
-                  cantidad_hombres: qty,
-                  utilidad: Number(newUtil.toFixed(2))
+                  cantidad_hombres: qty
                 });
               }}
               onFocus={(e) => e.target.select()}
@@ -14467,15 +15106,9 @@ const SortableItemServicioRow = ({
                 value={editingServicioForm.cantidad_dias === undefined || editingServicioForm.cantidad_dias === null ? "" : editingServicioForm.cantidad_dias}
                 onChange={(e) => {
                   const days = parseInt(e.target.value) || 0;
-                  const finalHombres = Number(editingServicioForm.cantidad_hombres || 0);
-                  const finalCosto = Number(editingServicioForm.costo_hombre_dia || 0);
-                  const costoTotal = finalHombres * days * finalCosto;
-                  const finalPorcentaje = Number(editingServicioForm.porcentaje || 0);
-                  const newUtil = costoTotal * (finalPorcentaje / 100);
                   setEditingServicioForm({
                     ...editingServicioForm,
-                    cantidad_dias: days,
-                    utilidad: Number(newUtil.toFixed(2))
+                    cantidad_dias: days
                   });
                 }}
                 onFocus={(e) => e.target.select()}
@@ -14500,12 +15133,9 @@ const SortableItemServicioRow = ({
               className="w-full text-[10.5px] border border-gray-300 text-right rounded px-1 py-0.5 bg-white"
               value={editingServicioForm.costo_hombre_dia === undefined || editingServicioForm.costo_hombre_dia === null ? "" : editingServicioForm.costo_hombre_dia}
               onChange={(e) => handleDecimalChange(e, (val) => {
-                const finalHombres = Number(editingServicioForm.cantidad_hombres || 0);
-                const finalDias = Number(editingServicioForm.cantidad_dias || 0);
                 const valNum = Number(val || 0);
-                const newCostoTotal = finalHombres * finalDias * valNum;
                 const finalPorcentaje = Number(editingServicioForm.porcentaje || 0);
-                const newUtil = newCostoTotal * (finalPorcentaje / 100);
+                const newUtil = valNum * (finalPorcentaje / 100);
                 setEditingServicioForm({ 
                   ...editingServicioForm, 
                   costo_hombre_dia: val,
@@ -14522,11 +15152,8 @@ const SortableItemServicioRow = ({
                     toast.warning(`Sugerencia: El costo recomendado para este personal está en el rango de ${formatMoneySymbol(min)} a ${formatMoneySymbol(max)}.`, "Rango de Costo Recomendado");
                   }
                   
-                  const finalHombres = Number(editingServicioForm.cantidad_hombres || 0);
-                  const finalDias = Number(editingServicioForm.cantidad_dias || 0);
-                  const newCostoTotal = finalHombres * finalDias * val;
                   const finalPorcentaje = Number(editingServicioForm.porcentaje || 0);
-                  const newUtil = newCostoTotal * (finalPorcentaje / 100);
+                  const newUtil = val * (finalPorcentaje / 100);
                   
                   setEditingServicioForm({
                     ...editingServicioForm,
@@ -14553,19 +15180,15 @@ const SortableItemServicioRow = ({
                   value={editingServicioForm.utilidad === undefined || editingServicioForm.utilidad === null ? "" : editingServicioForm.utilidad}
                   onChange={(e) => {
                     handleDecimalChange(e, (val) => {
-                      const finalHombres = Number(editingServicioForm.cantidad_hombres || 0);
-                      const finalDias = Number(editingServicioForm.cantidad_dias || 0);
                       const finalCosto = Number(editingServicioForm.costo_hombre_dia || 0);
-                      const costoTotal = finalHombres * finalDias * finalCosto;
-                      
                       let valNum = Number(val || 0);
-                      if (valNum > costoTotal && costoTotal > 0) {
-                        toast.warning("El monto de utilidad no puede superar el costo total del ítem (100%). Se limitó al máximo.", "Límite de Utilidad");
-                        valNum = costoTotal;
-                        val = costoTotal.toFixed(2);
+                      if (valNum > finalCosto && finalCosto > 0) {
+                        toast.warning("El monto de utilidad unitaria no puede superar el costo del ítem (100%). Se limitó al máximo.", "Límite de Utilidad");
+                        valNum = finalCosto;
+                        val = finalCosto.toFixed(2);
                       }
                       
-                      const computedPct = costoTotal > 0 ? (valNum / costoTotal) * 100 : 0;
+                      const computedPct = finalCosto > 0 ? (valNum / finalCosto) * 100 : 0;
                       setEditingServicioForm({
                         ...editingServicioForm,
                         utilidad: val,
@@ -14576,16 +15199,12 @@ const SortableItemServicioRow = ({
                   onBlur={(e) => {
                     const num = parseFloat(e.target.value);
                     if (!isNaN(num)) {
-                      const finalHombres = Number(editingServicioForm.cantidad_hombres || 0);
-                      const finalDias = Number(editingServicioForm.cantidad_dias || 0);
                       const finalCosto = Number(editingServicioForm.costo_hombre_dia || 0);
-                      const costoTotal = finalHombres * finalDias * finalCosto;
-                      
                       let valNum = num;
-                      if (valNum > costoTotal && costoTotal > 0) {
-                        valNum = costoTotal;
+                      if (valNum > finalCosto && finalCosto > 0) {
+                        valNum = finalCosto;
                       }
-                      const computedPct = costoTotal > 0 ? (valNum / costoTotal) * 100 : 0;
+                      const computedPct = finalCosto > 0 ? (valNum / finalCosto) * 100 : 0;
                       setEditingServicioForm({
                         ...editingServicioForm,
                         utilidad: Number(valNum.toFixed(2)),
@@ -14612,11 +15231,8 @@ const SortableItemServicioRow = ({
                       val = 100;
                     }
                     
-                    const finalHombres = Number(editingServicioForm.cantidad_hombres || 0);
-                    const finalDias = Number(editingServicioForm.cantidad_dias || 0);
                     const finalCosto = Number(editingServicioForm.costo_hombre_dia || 0);
-                    const costoTotal = finalHombres * finalDias * finalCosto;
-                    const computedUtil = costoTotal * (valNum / 100);
+                    const computedUtil = finalCosto * (valNum / 100);
                     
                     setEditingServicioForm({
                       ...editingServicioForm,
@@ -14632,11 +15248,8 @@ const SortableItemServicioRow = ({
                         valNum = 100;
                       }
                       
-                      const finalHombres = Number(editingServicioForm.cantidad_hombres || 0);
-                      const finalDias = Number(editingServicioForm.cantidad_dias || 0);
                       const finalCosto = Number(editingServicioForm.costo_hombre_dia || 0);
-                      const costoTotal = finalHombres * finalDias * finalCosto;
-                      const computedUtil = costoTotal * (valNum / 100);
+                      const computedUtil = finalCosto * (valNum / 100);
                       
                       setEditingServicioForm({
                         ...editingServicioForm,
@@ -14692,7 +15305,7 @@ const SortableItemServicioRow = ({
       return (
         <>
           <tr ref={setMergedRef} style={style} className="bg-indigo-50/30">
-            <td className="px-0.5 text-center align-middle">
+            <td className="col-grip-cell">
               <Icon name="grip-vertical" className="h-3 w-3 text-gray-200 mx-auto" />
             </td>
             <td className="px-2 py-1">
@@ -14782,9 +15395,9 @@ const SortableItemServicioRow = ({
       const formPorcentaje = Number(editingServicioForm.porcentaje || 0);
 
       const calculatedCostoTotal = formHombres * formCosto;
-      const calculatedUtilidad = calculatedCostoTotal * (formPorcentaje / 100);
-      const calculatedCotizadoTotal = calculatedCostoTotal + calculatedUtilidad;
-      const calculatedCotizadoHD = formCosto * (1 + formPorcentaje / 100);
+      const calculatedUtilidad = editingServicioForm.utilidad !== undefined && editingServicioForm.utilidad !== null ? Number(editingServicioForm.utilidad) : (formCosto * (formPorcentaje / 100));
+      const calculatedCotizadoHD = formCosto + calculatedUtilidad;
+      const calculatedCotizadoTotal = formHombres * calculatedCotizadoHD;
 
       const handleGastoCreatedEditLocal = (registro) => {
         setEditingServicioForm(prev => ({
@@ -14806,7 +15419,7 @@ const SortableItemServicioRow = ({
       return (
         <>
           <tr ref={setMergedRef} style={style} className="bg-indigo-50/30">
-            <td className="px-0.5 text-center align-middle">
+            <td className="col-grip-cell">
               <Icon name="grip-vertical" className="h-3 w-3 text-gray-200 mx-auto" />
             </td>
             <td className="px-2 py-1">
@@ -14882,18 +15495,15 @@ const SortableItemServicioRow = ({
                     value={editingServicioForm.utilidad === undefined || editingServicioForm.utilidad === null ? "" : editingServicioForm.utilidad}
                     onChange={(e) => {
                       handleDecimalChange(e, (val) => {
-                        const finalHombres = Number(editingServicioForm.cantidad_hombres || 0);
                         const finalCosto = Number(editingServicioForm.costo_hombre_dia || 0);
-                        const costoTotal = finalHombres * finalCosto;
-                        
                         let valNum = Number(val || 0);
-                        if (valNum > costoTotal && costoTotal > 0) {
-                          toast.warning("El monto de utilidad no puede superar el costo total del ítem (100%). Se limitó al máximo.", "Límite de Utilidad");
-                          valNum = costoTotal;
-                          val = costoTotal.toFixed(2);
+                        if (valNum > finalCosto && finalCosto > 0) {
+                          toast.warning("El monto de utilidad unitaria no puede superar el costo del ítem (100%). Se limitó al máximo.", "Límite de Utilidad");
+                          valNum = finalCosto;
+                          val = finalCosto.toFixed(2);
                         }
                         
-                        const computedPct = costoTotal > 0 ? (valNum / costoTotal) * 100 : 0;
+                        const computedPct = finalCosto > 0 ? (valNum / finalCosto) * 100 : 0;
                         setEditingServicioForm({
                           ...editingServicioForm,
                           utilidad: val,
@@ -14904,15 +15514,12 @@ const SortableItemServicioRow = ({
                     onBlur={(e) => {
                       const num = parseFloat(e.target.value);
                       if (!isNaN(num)) {
-                        const finalHombres = Number(editingServicioForm.cantidad_hombres || 0);
                         const finalCosto = Number(editingServicioForm.costo_hombre_dia || 0);
-                        const costoTotal = finalHombres * finalCosto;
-                        
                         let valNum = num;
-                        if (valNum > costoTotal && costoTotal > 0) {
-                          valNum = costoTotal;
+                        if (valNum > finalCosto && finalCosto > 0) {
+                          valNum = finalCosto;
                         }
-                        const computedPct = costoTotal > 0 ? (valNum / costoTotal) * 100 : 0;
+                        const computedPct = finalCosto > 0 ? (valNum / finalCosto) * 100 : 0;
                         setEditingServicioForm({
                           ...editingServicioForm,
                           utilidad: Number(valNum.toFixed(2)),
@@ -14939,10 +15546,8 @@ const SortableItemServicioRow = ({
                         val = 100;
                       }
                       
-                      const finalHombres = Number(editingServicioForm.cantidad_hombres || 0);
                       const finalCosto = Number(editingServicioForm.costo_hombre_dia || 0);
-                      const costoTotal = finalHombres * finalCosto;
-                      const computedUtil = costoTotal * (valNum / 100);
+                      const computedUtil = finalCosto * (valNum / 100);
                       
                       setEditingServicioForm({
                         ...editingServicioForm,
@@ -14958,10 +15563,8 @@ const SortableItemServicioRow = ({
                           valNum = 100;
                         }
                         
-                        const finalHombres = Number(editingServicioForm.cantidad_hombres || 0);
                         const finalCosto = Number(editingServicioForm.costo_hombre_dia || 0);
-                        const costoTotal = finalHombres * finalCosto;
-                        const computedUtil = costoTotal * (valNum / 100);
+                        const computedUtil = finalCosto * (valNum / 100);
                         
                         setEditingServicioForm({
                           ...editingServicioForm,
@@ -14992,26 +15595,50 @@ const SortableItemServicioRow = ({
     }
   }
 
+  const isSelected = selectedItemIds?.has(item.id_servicio);
+
   return (
     <tr
       ref={setMergedRef}
       style={style}
+      onClick={(e) => {
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          handleToggleSelectItem(item.id_servicio, e);
+        }
+      }}
       onDoubleClick={() => !isReadOnly && handleStartEditingItemInline(item)}
-      className="hover:bg-gray-50/70 group transition-colors cursor-pointer animate-in fade-in duration-150 border-b border-gray-100"
+      className={cn(
+        "hover:bg-gray-50/70 group transition-colors cursor-pointer border-b border-gray-100",
+        isSelected && "bg-indigo-100/80 hover:bg-indigo-100 text-indigo-950 font-bold border-l-4 border-l-indigo-600 ring-1 ring-indigo-300/80 shadow-xs"
+      )}
     >
       <td 
-        className="px-0.5 text-center align-middle"
+        className="col-grip-cell"
         onDoubleClick={(e) => e.stopPropagation()}
       >
         {!isReadOnly ? (
-          <div
-            {...listeners}
-            {...attributes}
-            data-drag-handle
-            onClick={(e) => e.stopPropagation()}
-            className="cursor-grab active:cursor-grabbing p-0.5 text-slate-400 hover:text-slate-700 rounded transition-colors flex justify-center items-center"
-          >
-            <Icon name="grip-vertical" className="h-3 w-3" />
+          <div className="col-ctrl-stack">
+            <input
+              type="checkbox"
+              checked={!!isSelected}
+              onChange={(e) => {
+                e.stopPropagation();
+                handleToggleSelectItem(item.id_servicio, e);
+              }}
+              onClick={(e) => e.stopPropagation()}
+              className="h-3 w-3 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 cursor-pointer"
+              title="Seleccionar para acción masiva (Ctrl+Clic)"
+            />
+            <div
+              {...listeners}
+              {...attributes}
+              data-drag-handle
+              onClick={(e) => e.stopPropagation()}
+              className="cursor-grab active:cursor-grabbing p-0 text-slate-400 hover:text-slate-700 transition-colors flex justify-center items-center"
+            >
+              <Icon name="grip-vertical" className="h-3 w-3" />
+            </div>
           </div>
         ) : (
           <div className="p-0.5 text-slate-300 flex justify-center items-center">
@@ -15456,44 +16083,17 @@ const SortableItemServicioRow = ({
           )}
 
           {!isReadOnly && (
-            <div className="relative flex items-center" ref={deleteConfirmRef}>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowDeleteConfirm(prev => !prev);
-                }}
-                className="p-0.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-all"
-                title="Eliminar Ítem"
-              >
-                <Icon name="trash-2" className="h-3.5 w-3.5" />
-              </button>
-
-              {showDeleteConfirm && (
-                <div className="absolute right-0 bottom-full mb-1 flex items-center gap-1.5 bg-white border border-gray-100 rounded-lg p-1.5 shadow-lg z-50 whitespace-nowrap animate-in fade-in slide-in-from-bottom-1 duration-100">
-                  <span className="text-[10px] font-black text-gray-700 px-1">¿Borrar?</span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleEliminarItemServicio(item.id_servicio, true);
-                      setShowDeleteConfirm(false);
-                    }}
-                    className="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white font-black text-[9px] rounded uppercase transition-colors"
-                  >
-                    Sí
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowDeleteConfirm(false);
-                    }}
-                    className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-[9px] rounded uppercase transition-colors"
-                  >
-                    No
-                  </button>
-                </div>
-              )}
-            </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleEliminarItemServicio(item.id_servicio, true);
+              }}
+              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+              title="Eliminar Ítem"
+            >
+              <Icon name="trash-2" className="h-3.5 w-3.5" />
+            </button>
           )}
         </div>
       </td>

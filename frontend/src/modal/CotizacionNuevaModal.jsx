@@ -1680,6 +1680,12 @@ export default function CotizacionNuevaModal({ open, onClose, cotizacion, modo, 
 
     const payload = {
       ...data,
+      // Alta inicial: Oportunidad / Pendiente. No reutilizar id_estado=1
+      // (Adjudicado de cotización) ni confundirlo con estado_op=1 (Pendiente).
+      id_estado: esNueva ? 11 : (data.id_estado ?? data.estado_codigo ?? 11),
+      estado_codigo: esNueva ? 11 : (data.estado_codigo ?? 11),
+      estado_oportunidad: esNueva ? 1 : Number(data.estado_op ?? data.estado_oportunidad ?? 1),
+      estado_op: esNueva ? 1 : Number(data.estado_op ?? 1),
       tipo_moneda: data.tipo_moneda || data.tmone || "D",
       tipo_cambio: data.tipo_cambio || data.tcamb || "3.362",
       tmone: data.tipo_moneda || data.tmone || "D",

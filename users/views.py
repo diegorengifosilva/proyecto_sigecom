@@ -55,7 +55,7 @@ def usuarios_activos(request):
     serializer = UsuarioSerializer(usuarios, many=True)
     return Response(serializer.data)
 
-# Login DB_VC
+# Login db_vc
 @csrf_exempt
 @api_view(['POST'])
 def login_usuario(request):
@@ -65,8 +65,8 @@ def login_usuario(request):
     Compatible con contraseñas planas o hasheadas.
     Devuelve JWT y datos del usuario.
     """
-    usuario_input = request.data.get("usuario")
-    password_input = request.data.get("contrasena")
+    usuario_input = request.data.get("usuario") or request.data.get("username")
+    password_input = request.data.get("contrasena") or request.data.get("password")
 
     # Validación básica
     if not usuario_input or not password_input:

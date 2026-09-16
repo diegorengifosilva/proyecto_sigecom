@@ -46,12 +46,12 @@ const NAV_ITEMS = [
   { path: "/almacen", label: "Almacén", icon: "Package", modulo: "LOGISTICA" },
   { path: "/finanzas", label: "Finanzas", icon: "DollarSign", modulo: "CAJA CHICA" },
   {
-    path: "/maestro/catalogo",
+    path: "/maestro/comercial",
     label: "Maestro",
     icon: "Database",
     subItems: [
-      { path: "/maestro/catalogo", label: "Marcas y Productos" },
-      { path: "/maestro/estructura", label: "Estructura y Comercial" },
+      { path: "/maestro/comercial", label: "Maestro Comercial" },
+      { path: "/maestro/compras", label: "Maestro Compras" },
       { path: "/maestro/parametros", label: "Parámetros y Notas" },
       { path: "/maestro/gastos", label: "Gastos y Personal" }
     ]
@@ -723,8 +723,8 @@ export default function DashboardLayout() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-auto p-4 md:p-6 bg-gray-50/50">
-          <div className="w-full h-full">
+        <main className="flex-1 min-h-0 overflow-auto p-4 md:p-6 bg-gray-50/50">
+          <div className="w-full h-full min-h-0">
             {hasAccess ? (
               <Outlet context={{ setCustomBreadcrumbs, setBreadcrumbOverride }} />
             ) : (

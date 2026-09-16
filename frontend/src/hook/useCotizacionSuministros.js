@@ -6,6 +6,13 @@ import { calcularItemSegunProveedor, resolverEndpointPorCodigo } from '@/dashboa
 import { useSensors, useSensor, PointerSensor } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 
+const toFkId = (val) => {
+  if (val === undefined || val === null || val === "" || val === "null" || val === "undefined") return null;
+  const n = Number(val);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+};
+
 export const recalculateGroupSuministrosValues = (grupo, tipoVenta) => {
   const items = grupo.items || [];
   const cantidadGrupo = Number(grupo.cantidad || 1);
@@ -301,6 +308,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
         precio_venta: Number(form.precio_venta || form.ventaPrecio || 0),
         venta_total: Number(form.venta_total || form.ventaTotal || 0),
         id_marca: form.id_marca || null,
+        marca_nombre: form.marca_nombre || form.marca || (proveedores || []).find(p => Number(p.id_marca) === Number(form.id_marca))?.nombre || "",
         proveedor: form.proveedor || "",
         id_tipo_gasto: 1,
         observacion: form.observacion || "",
@@ -340,7 +348,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
     }
 
     return true;
-  }, [gruposSuministros, numReg, onAddLog]);
+  }, [gruposSuministros, numReg, onAddLog, proveedores]);
 
   const saveEditItem = useCallback((editingItemId, editForm, setEditingItemId, tipoVenta = null) => {
     let foundGroupKey = null;
@@ -369,6 +377,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
         precio_venta: Number(editForm.precio_venta || editForm.ventaPrecio || 0),
         venta_total: Number(editForm.venta_total || editForm.ventaTotal || 0),
         id_marca: editForm.id_marca || null,
+        marca_nombre: editForm.marca_nombre || editForm.marca || existingItem.marca_nombre || (proveedores || []).find(p => Number(p.id_marca) === Number(editForm.id_marca))?.nombre || "",
         proveedor: editForm.proveedor || "",
         tipo_unidad: editForm.tipo_unidad || editForm.unidad || "UNI",
         observacion: editForm.observacion || "",
@@ -402,7 +411,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
     }
 
     return true;
-  }, [gruposSuministros, onAddLog]);
+  }, [gruposSuministros, onAddLog, proveedores]);
 
   const handleDuplicarGrupo = useCallback((cogOriginal) => {
     const grupo = gruposSuministros[cogOriginal];
@@ -466,6 +475,12 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
     const toDelete = [];
     if (typeof grupo.id !== 'string' || !grupo.id.startsWith('temp_')) {
       toDelete.push(grupo.id);
+      api.delete(`cotizaciones/lista_suministros/${numReg}/`, { params: { id_suministro: grupo.id } })
+        .catch(err => {
+          if (err.response?.status !== 404) {
+            console.error("Error al eliminar grupo de suministro en backend:", err);
+          }
+        });
     }
 
     if (toDelete.length > 0) {
@@ -478,12 +493,19 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
       return next;
     });
 
+    setOriginalGruposSuministros(prev => {
+      if (!prev) return prev;
+      const next = { ...prev };
+      delete next[codigo_grupo];
+      return next;
+    });
+
     toast.delete(`Suministro "${grupo.nombre_grupo}" eliminado`, "SUMINISTRO ELIMINADO");
     
     if (onAddLog) {
       onAddLog(`Suministros: Se eliminó el suministro '${grupo.nombre_grupo}'`);
     }
-  }, [gruposSuministros, onAddLog]);
+  }, [gruposSuministros, numReg, onAddLog]);
 
   const handleEliminarItem = useCallback((itemId, codigo_grupo, tipoVenta = null, skipConfirm = false) => {
     const grupo = gruposSuministros[codigo_grupo];
@@ -496,6 +518,12 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
 
     if (typeof itemId !== 'string' || !itemId.startsWith('temp_')) {
       setDeletedSuministroIds(prev => [...prev, itemId]);
+      api.delete(`cotizaciones/lista_suministros/${numReg}/`, { params: { id_suministro: itemId } })
+        .catch(err => {
+          if (err.response?.status !== 404) {
+            console.error("Error al eliminar suministro en backend:", err);
+          }
+        });
     }
 
     setGruposSuministros(prev => {
@@ -512,6 +540,15 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
       return next;
     });
 
+    setOriginalGruposSuministros(prev => {
+      if (!prev || !prev[codigo_grupo]) return prev;
+      const next = { ...prev };
+      const gp = next[codigo_grupo];
+      const remainingItems = (gp.items || []).filter(it => it.id_suministro !== itemId);
+      next[codigo_grupo] = { ...gp, items: remainingItems };
+      return next;
+    });
+
     if (!skipConfirm) {
       toast.delete(`Ítem${desc} eliminado correctamente`, "ÍTEM ELIMINADO");
     }
@@ -522,11 +559,79 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
       const descripcion = (item.descripcion || "S/D").toUpperCase();
       onAddLog(`Suministros: Se eliminó el ítem '${codigo_item} - ${descripcion}' - ${nom_padre}`);
     }
-  }, [gruposSuministros, onAddLog]);
+  }, [gruposSuministros, numReg, onAddLog]);
+
+  const handleEliminarItemsBulk = useCallback((itemIds = [], globalTipoVenta = null) => {
+    if (!Array.isArray(itemIds) || itemIds.length === 0) return;
+    const itemIdsSet = new Set(itemIds);
+
+    const realIdsToDelete = itemIds.filter(id => typeof id !== 'string' || !id.startsWith('temp_'));
+    if (realIdsToDelete.length > 0) {
+      setDeletedSuministroIds(prev => [...prev, ...realIdsToDelete]);
+    }
+
+    setGruposSuministros(prev => {
+      const next = { ...prev };
+      Object.keys(next).forEach(codigo_grupo => {
+        const gp = next[codigo_grupo];
+        if (!gp || !gp.items) return;
+
+        const hasTarget = gp.items.some(it => itemIdsSet.has(it.id_suministro));
+        if (hasTarget) {
+          const remainingItems = gp.items.filter(it => !itemIdsSet.has(it.id_suministro));
+          const rawGroup = {
+            ...gp,
+            items: remainingItems
+          };
+          const tipoVenta = typeof globalTipoVenta === 'string' ? globalTipoVenta : (globalTipoVenta?.[codigo_grupo] || null);
+          next[codigo_grupo] = recalculateGroupSuministrosValues(rawGroup, tipoVenta);
+        }
+      });
+      return next;
+    });
+
+    toast.delete(`${itemIds.length} ítem(s) de suministro eliminado(s) correctamente`, "ÍTEMS ELIMINADOS");
+    if (onAddLog) {
+      onAddLog(`Suministros: Se eliminaron ${itemIds.length} ítem(s) en lote`);
+    }
+  }, [onAddLog]);
 
   const saveSuministros = async (ocultarMap = {}) => {
     if (isSavingRef.current) return;
     isSavingRef.current = true;
+    const tempIdToRealIdMap = new Map();
+    const tempGroupCodeToRealGroupCodeMap = new Map();
+    const updateStateWithRealIdsAndOrders = (prev) => {
+      const next = {};
+      let orderCounter = 1;
+
+      const sortedGroups = Object.values(prev).sort((a, b) => (a.orden || 0) - (b.orden || 0));
+
+      sortedGroups.forEach((gp) => {
+        const realCode = tempGroupCodeToRealGroupCodeMap.get(Number(gp.codigo_grupo)) || Number(gp.codigo_grupo);
+        const realId = tempIdToRealIdMap.get(gp.id) || gp.id;
+        const groupOrder = orderCounter++;
+
+        const updatedItems = (gp.items || []).map(item => {
+          const realItemId = tempIdToRealIdMap.get(item.id_suministro) || item.id_suministro;
+          return {
+            ...item,
+            id_suministro: realItemId,
+            codigo_grupo: realCode,
+            orden: orderCounter++
+          };
+        });
+
+        next[realCode] = {
+          ...gp,
+          id: realId,
+          codigo_grupo: realCode,
+          orden: groupOrder,
+          items: updatedItems
+        };
+      });
+      return next;
+    };
     try {
       // Sincronizar total_por_grupo desde ocultarMap antes de guardar
       for (const gp of Object.values(gruposSuministros)) {
@@ -612,8 +717,6 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
         }
       }
 
-      const tempIdToRealIdMap = new Map();
-      const tempGroupCodeToRealGroupCodeMap = new Map();
       const savePromises = [];
 
       for (const gp of Object.values(gruposSuministros)) {
@@ -631,6 +734,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
             cantidad: Number(gp.cantidad || 0),
             venta_total: toDec(gp.venta_total),
             id_tipo_gasto: 1,
+            id_marca: null,
             codigo_item: "GRUPO",
             descripcion: "GRUPO",
             orden: Number(gp.orden || 0),
@@ -660,7 +764,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
               utilidad: toDec(item.utilidad),
               precio_venta: toDec(item.precio_venta),
               venta_total: toDec(item.venta_total),
-              id_marca: (item.id_marca && item.id_marca !== "null" && item.id_marca !== "undefined") ? Number(item.id_marca) : null,
+              id_marca: toFkId(item.id_marca),
               proveedor: item.proveedor || "",
               id_tipo_gasto: 1,
               observacion: item.observacion || "",
@@ -671,7 +775,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
               costo_envio_unidad: toDec(item.costo_envio),
               costo_con_envio: toDec(item.costo_con_envio),
               tiempo_entrega: (item.tiempo_entrega !== "" && item.tiempo_entrega !== undefined && item.tiempo_entrega !== null && !isNaN(item.tiempo_entrega)) ? Number(item.tiempo_entrega) : null,
-              id_unidad_tiempo_entrega: (item.id_unidad_tiempo_entrega && item.id_unidad_tiempo_entrega !== "null" && item.id_unidad_tiempo_entrega !== "undefined") ? Number(item.id_unidad_tiempo_entrega) : null,
+              id_unidad_tiempo_entrega: toFkId(item.id_unidad_tiempo_entrega),
               orden: Number(item.orden || 0)
             };
             const resItem = await api.post(`cotizaciones/lista_suministros/${numReg}/`, payloadItem);
@@ -688,6 +792,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
               nivel: 0,
               cantidad: Number(gp.cantidad || 0),
               venta_total: toDec(gp.venta_total),
+              id_marca: null,
               orden: Number(gp.orden || 0),
               costo_envio: toDec(gp.costo_envio),
               costo_envio_total: toDec(gp.costo_envio_total),
@@ -713,7 +818,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
                 costo_total: toDec(Number(item.costo_precio || 0) * Number(item.cantidad || 0)),
                 porcentaje_utilidad: toDec(item.porcentaje_utilidad),
                 utilidad: toDec(item.utilidad),
-                id_marca: (item.id_marca && item.id_marca !== "null" && item.id_marca !== "undefined") ? Number(item.id_marca) : null,
+                id_marca: toFkId(item.id_marca),
                 proveedor: item.proveedor || "",
                 id_tipo_gasto: 1,
                 observacion: item.observacion || "",
@@ -724,7 +829,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
                 costo_envio_unidad: toDec(item.costo_envio),
                 costo_con_envio: toDec(item.costo_con_envio),
                 tiempo_entrega: (item.tiempo_entrega !== "" && item.tiempo_entrega !== undefined && item.tiempo_entrega !== null && !isNaN(item.tiempo_entrega)) ? Number(item.tiempo_entrega) : null,
-                id_unidad_tiempo_entrega: (item.id_unidad_tiempo_entrega && item.id_unidad_tiempo_entrega !== "null" && item.id_unidad_tiempo_entrega !== "undefined") ? Number(item.id_unidad_tiempo_entrega) : null,
+                id_unidad_tiempo_entrega: toFkId(item.id_unidad_tiempo_entrega),
                 orden: Number(item.orden || 0)
               };
               const postPromise = api.post(`cotizaciones/lista_suministros/${numReg}/`, payloadItem).then(res => {
@@ -747,7 +852,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
                   utilidad: toDec(item.utilidad),
                   precio_venta: toDec(item.precio_venta),
                   venta_total: toDec(item.venta_total),
-                  id_marca: (item.id_marca && item.id_marca !== "null" && item.id_marca !== "undefined") ? Number(item.id_marca) : null,
+                  id_marca: toFkId(item.id_marca),
                   proveedor: item.proveedor || "",
                   tipo_unidad: item.tipo_unidad || "UNI",
                   observacion: item.observacion || "",
@@ -757,7 +862,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
                   costo_envio_unidad: toDec(item.costo_envio),
                   costo_con_envio: toDec(item.costo_con_envio),
                   tiempo_entrega: (item.tiempo_entrega !== "" && item.tiempo_entrega !== undefined && item.tiempo_entrega !== null && !isNaN(item.tiempo_entrega)) ? Number(item.tiempo_entrega) : null,
-                  id_unidad_tiempo_entrega: (item.id_unidad_tiempo_entrega && item.id_unidad_tiempo_entrega !== "null" && item.id_unidad_tiempo_entrega !== "undefined") ? Number(item.id_unidad_tiempo_entrega) : null,
+                  id_unidad_tiempo_entrega: toFkId(item.id_unidad_tiempo_entrega),
                   orden: Number(item.orden || 0)
                 };
                 savePromises.push(api.put(`cotizaciones/lista_suministros/${numReg}/`, payloadItem));
@@ -775,23 +880,29 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
       let counter = 1;
       const sorted = Object.values(gruposSuministros).sort((a, b) => (a.orden || 0) - (b.orden || 0));
 
+      const isNumericSuministroId = (id) => id != null && /^\d+$/.test(String(id));
+
       sorted.forEach((grupo) => {
         const realId = tempIdToRealIdMap.get(grupo.id) || grupo.id;
         const realCode = tempGroupCodeToRealGroupCodeMap.get(grupo.codigo_grupo) || grupo.codigo_grupo;
-        reorderItems.push({
-          id_suministro: realId,
-          orden: counter++,
-          codigo_grupo: parseInt(realCode, 10)
-        });
+        if (isNumericSuministroId(realId)) {
+          reorderItems.push({
+            id_suministro: Number(realId),
+            orden: counter++,
+            codigo_grupo: parseInt(realCode, 10)
+          });
+        }
 
         if (grupo.items && Array.isArray(grupo.items)) {
           grupo.items.forEach((item) => {
             const realItemId = tempIdToRealIdMap.get(item.id_suministro) || item.id_suministro;
-            reorderItems.push({
-              id_suministro: realItemId,
-              orden: counter++,
-              codigo_grupo: parseInt(realCode, 10)
-            });
+            if (isNumericSuministroId(realItemId)) {
+              reorderItems.push({
+                id_suministro: Number(realItemId),
+                orden: counter++,
+                codigo_grupo: parseInt(realCode, 10)
+              });
+            }
           });
         }
       });
@@ -801,38 +912,6 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
           reorder_items: reorderItems
         });
       }
-
-      const updateStateWithRealIdsAndOrders = (prev) => {
-        const next = {};
-        let orderCounter = 1;
-
-        const sortedGroups = Object.values(prev).sort((a, b) => (a.orden || 0) - (b.orden || 0));
-
-        sortedGroups.forEach((gp) => {
-          const realCode = tempGroupCodeToRealGroupCodeMap.get(Number(gp.codigo_grupo)) || Number(gp.codigo_grupo);
-          const realId = tempIdToRealIdMap.get(gp.id) || gp.id;
-          const groupOrder = orderCounter++;
-
-          const updatedItems = (gp.items || []).map(item => {
-            const realItemId = tempIdToRealIdMap.get(item.id_suministro) || item.id_suministro;
-            return {
-              ...item,
-              id_suministro: realItemId,
-              codigo_grupo: realCode,
-              orden: orderCounter++
-            };
-          });
-
-          next[realCode] = {
-            ...gp,
-            id: realId,
-            codigo_grupo: realCode,
-            orden: groupOrder,
-            items: updatedItems
-          };
-        });
-        return next;
-      };
 
       setDeletedSuministroIds([]);
       setGruposSuministros(prev => updateStateWithRealIdsAndOrders(prev));
@@ -855,6 +934,11 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
                   ? "SUMINISTROS ACTUALIZADOS" 
                   : "SUMINISTROS GUARDADOS"))
       };
+    } catch (err) {
+      if (tempIdToRealIdMap.size > 0 || tempGroupCodeToRealGroupCodeMap.size > 0) {
+        setGruposSuministros(prev => updateStateWithRealIdsAndOrders(prev));
+      }
+      throw err;
     } finally {
       isSavingRef.current = false;
     }
@@ -1645,7 +1729,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
               utilidad: Number(item.tou || 0),
               porcentaje_utilidad: Number(item.cau || 0),
               proveedor: getOfficialBrandName(item.pro) || getOfficialBrandName(item.proveedorExcel) || "",
-              id_marca: parseInt(item.tpr, 10),
+              id_marca: toFkId(item.tpr),
               marca_nombre: getOfficialBrandName(item.pro) || getOfficialBrandName(item.proveedorExcel) || "",
               tipo_unidad: item.tde || "UNI",
               id_tipo_gasto: 1,
@@ -1811,6 +1895,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
     handleDuplicarGrupo,
     handleEliminarGrupo,
     handleEliminarItem,
+    handleEliminarItemsBulk,
     handleExportarGrupoXLS,
     handleExportarGeneralXLS,
     handleImportarDesdeXLS,

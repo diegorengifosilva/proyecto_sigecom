@@ -249,45 +249,49 @@ export default function CatalogoMarcas() {
   );
 
   return (
-    <div className="flex flex-col lg:flex-row h-full min-h-[calc(100vh-120px)] font-sans bg-slate-50/20">
+    <div className="h-full flex flex-col flex-1 min-h-0 bg-slate-50/20 font-sans overflow-hidden p-6 gap-4">
       
-      {/* BRAND PANEL (LEFT SIDEBAR) */}
-      <div className="w-full lg:w-80 bg-white border-b lg:border-b-0 lg:border-r border-slate-200 p-6 flex flex-col shrink-0">
-        <div className="flex items-center justify-between mb-4">
+      {/* TOP HORIZONTAL BRAND SELECTOR BAR */}
+      <div className="flex flex-col gap-3 border-b border-slate-200 bg-white p-4 rounded-xl shadow-xs shrink-0">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-              <Tag size={16} className="text-cyan-600" />
-              Marcas
+            <h2 className="text-base font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+              <Tag size={18} className="text-cyan-600" />
+              Catálogo de Marcas y Productos
             </h2>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Fabricantes de Suministros</p>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Fabricantes de suministros y sus productos asociados</p>
           </div>
-          <Button 
-            onClick={handleNewMarca}
-            size="sm" 
-            className="bg-cyan-600 hover:bg-cyan-700 text-white p-2 h-8 rounded-lg animate-in"
-          >
-            <FolderPlus size={16} />
-          </Button>
+
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <div className="relative flex-1 sm:w-56">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+              <Input 
+                placeholder="Filtrar marca..." 
+                value={marcaSearch}
+                onChange={(e) => setMarcaSearch(e.target.value)}
+                className="pl-8 bg-slate-50 border-slate-200 text-xs h-8.5 rounded-lg"
+              />
+            </div>
+            <Button 
+              onClick={handleNewMarca}
+              size="sm" 
+              className="bg-cyan-600 hover:bg-cyan-700 text-white px-3 h-8.5 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 shrink-0"
+            >
+              <FolderPlus size={15} />
+              <span>Nueva Marca</span>
+            </Button>
+          </div>
         </div>
 
-        <div className="relative mb-4">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-          <Input 
-            placeholder="Buscar marca..." 
-            value={marcaSearch}
-            onChange={(e) => setMarcaSearch(e.target.value)}
-            className="pl-8 bg-slate-50 border-slate-250/60 focus:bg-white text-xs h-8.5 rounded-lg"
-          />
-        </div>
-
-        <div className="flex-1 overflow-y-auto space-y-1 max-h-[300px] lg:max-h-[600px] pr-1">
+        {/* HORIZONTAL BRAND TABS */}
+        <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pt-2 border-t border-slate-100">
           {loadingMarcas ? (
-            <div className="flex flex-col items-center py-10 gap-2">
-              <Loader className="w-6 h-6 animate-spin text-cyan-600" />
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Cargando</span>
+            <div className="flex items-center py-2 gap-2 text-xs font-bold text-slate-400">
+              <Loader className="w-4 h-4 animate-spin text-cyan-600" />
+              <span>Cargando marcas...</span>
             </div>
           ) : marcasFiltradas.length === 0 ? (
-            <div className="text-center py-8 text-xs font-semibold text-slate-400">Ninguna marca encontrada</div>
+            <div className="py-2 text-xs font-semibold text-slate-400">Ninguna marca encontrada</div>
           ) : (
             marcasFiltradas.map((marca) => {
               const isSelected = activeMarcaId === marca.id_marca;
@@ -295,22 +299,19 @@ export default function CatalogoMarcas() {
                 <div
                   key={marca.id_marca}
                   onClick={() => setSelectedMarca(marca)}
-                  className={`group flex items-center justify-between p-3.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                  className={`group flex items-center gap-2 px-3.5 py-2 border-b-2 text-xs font-bold transition-all whitespace-nowrap cursor-pointer rounded-t-lg ${
                     isSelected 
-                      ? "bg-slate-900 border-slate-900 text-white shadow-md shadow-slate-100" 
-                      : "bg-white hover:bg-slate-50 border-slate-150 text-slate-700"
+                      ? "border-cyan-600 bg-cyan-50/50 text-cyan-700 font-black shadow-xs" 
+                      : "border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50"
                   }`}
                 >
-                  <span className="truncate">{marca.nombre}</span>
+                  <span>{marca.nombre}</span>
                   
-                  <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex items-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity ml-1">
                     <button
                       onClick={(e) => handleEditMarca(marca, e)}
-                      className={`p-1 rounded-md transition-colors ${
-                        isSelected 
-                          ? "text-slate-400 hover:text-white hover:bg-slate-800" 
-                          : "text-slate-400 hover:text-slate-700 hover:bg-slate-100"
-                      }`}
+                      title="Editar marca"
+                      className="p-1 rounded text-slate-400 hover:text-cyan-700 hover:bg-white/80"
                     >
                       <Edit2 size={12} />
                     </button>
@@ -321,11 +322,8 @@ export default function CatalogoMarcas() {
                           deleteMarcaMutation.mutate(marca.id_marca);
                         }
                       }}
-                      className={`p-1 rounded-md transition-colors ${
-                        isSelected 
-                          ? "text-red-400 hover:text-red-300 hover:bg-slate-800" 
-                          : "text-slate-400 hover:text-red-600 hover:bg-red-50"
-                      }`}
+                      title="Desactivar marca"
+                      className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-white/80"
                     >
                       <Trash2 size={12} />
                     </button>
@@ -337,42 +335,39 @@ export default function CatalogoMarcas() {
         </div>
       </div>
 
-      {/* PRODUCTS PANEL (RIGHT VIEW) */}
-      <div className="flex-1 p-6 flex flex-col min-w-0">
+      {/* PRODUCTS PANEL */}
+      <div className="flex-1 min-h-0 flex flex-col justify-between overflow-hidden">
         {selectedMarca ? (
-          <div className="h-full flex flex-col space-y-4">
+          <div className="h-full flex flex-col min-h-0 space-y-3">
             
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-slate-100 pb-3">
-              <div>
-                <h1 className="text-lg font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
-                  <ShoppingBag size={18} className="text-cyan-600" />
-                  Productos: {selectedMarca.nombre}
-                </h1>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Catálogo técnico y precios base</p>
+            {/* Products Header & Search */}
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="relative w-72">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                  <Input 
+                    placeholder="Buscar por código o descripción..."
+                    value={productSearch}
+                    onChange={(e) => setProductSearch(e.target.value)}
+                    className="pl-8 bg-white border-slate-200 text-xs h-8.5 rounded-lg shadow-xs"
+                  />
+                </div>
+                <span className="text-xs font-bold text-slate-400 hidden md:inline">
+                  Mostrando catálogo de <strong className="text-slate-700">{selectedMarca.nombre}</strong>
+                </span>
               </div>
+
               <Button
                 onClick={handleNewProduct}
-                className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 h-9 text-xs font-bold uppercase tracking-wider rounded-xl shadow-lg shadow-cyan-100 flex items-center gap-1.5 self-start sm:self-auto"
+                className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 h-8.5 text-xs font-bold uppercase tracking-wider rounded-lg shadow-sm flex items-center gap-1.5 self-start sm:self-auto"
               >
                 <Plus size={14} strokeWidth={3} />
                 Nuevo Producto
               </Button>
             </div>
 
-            {/* Search */}
-            <div className="relative max-w-sm">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-              <Input 
-                placeholder="Buscar por código o descripción..."
-                value={productSearch}
-                onChange={(e) => setProductSearch(e.target.value)}
-                className="pl-8 bg-white border-slate-200 text-xs h-8.5 rounded-lg shadow-sm"
-              />
-            </div>
-
-            {/* Table wrapper */}
-            <div className="flex-1 overflow-auto relative border border-slate-150 rounded-xl bg-white shadow-xs">
+            {/* Table wrapper - takes full remaining vertical space */}
+            <div className="flex-1 min-h-0 flex flex-col justify-between overflow-hidden relative border border-slate-150 rounded-xl bg-white shadow-xs">
               {(loadingProducts || saveProductMutation.isPending) && (
                 <div className="absolute inset-0 z-30 bg-white/60 backdrop-blur-[1px] flex items-center justify-center">
                   <div className="flex flex-col items-center gap-2">
@@ -383,6 +378,15 @@ export default function CatalogoMarcas() {
               )}
 
               <Table
+                disablePagination={false}
+                pagination={{
+                  currentPage: productPage,
+                  totalPages: productsData.total_pages || 1,
+                  total: productsData.total || 0,
+                  from: productsData.total > 0 ? (productPage - 1) * 15 + 1 : 0,
+                  to: Math.min(productPage * 15, productsData.total || 0),
+                  onPageChange: (p) => setProductPage(p)
+                }}
                 headers={[
                   "P/N / Código", "Código Alternativo", "Descripción / Nombre", "Precio base", "U.M.", "Estado"
                 ].map((h) => (
@@ -428,40 +432,9 @@ export default function CatalogoMarcas() {
               />
             </div>
 
-            {/* Pagination */}
-            {productsData.total_pages > 1 && (
-              <div className="flex items-center justify-between px-2 pt-2 border-t border-slate-100">
-                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                  Total: {productsData.total} Productos
-                </span>
-                
-                <div className="flex items-center gap-1.5">
-                  <Button
-                    onClick={() => setProductPage(prev => Math.max(prev - 1, 1))}
-                    disabled={productPage === 1}
-                    variant="ghost"
-                    className="h-8 w-8 p-0"
-                  >
-                    <ChevronLeft size={16} />
-                  </Button>
-                  <span className="text-[11px] font-black text-slate-600 uppercase tracking-widest">
-                    {productPage} / {productsData.total_pages}
-                  </span>
-                  <Button
-                    onClick={() => setProductPage(prev => Math.min(prev + 1, productsData.total_pages))}
-                    disabled={productPage === productsData.total_pages}
-                    variant="ghost"
-                    className="h-8 w-8 p-0"
-                  >
-                    <ChevronRight size={16} />
-                  </Button>
-                </div>
-              </div>
-            )}
-
           </div>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-slate-400 italic">
+          <div className="flex-1 flex flex-col items-center justify-center text-slate-400 bg-white rounded-xl border border-slate-200 p-8 italic">
             Seleccione o cree una marca para comenzar a gestionar sus productos.
           </div>
         )}

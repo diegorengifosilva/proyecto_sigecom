@@ -21,6 +21,10 @@ urlpatterns = [
     path('apertura_detalle/<int:id_apertura>/', views.apertura_detalle, name='apertura_detalle'),
     path('apertura_detalle/<int:id_apertura>/subir_oc/', views.subir_oc_apertura, name='subir_oc_apertura'),
     path('apertura_detalle/<int:id_apertura>/reprocesar_oc/', views.reprocesar_oc_apertura, name='reprocesar_oc_apertura'),
+    path('apertura_detalle/<int:id_apertura>/vincular_suministro/', views.vincular_suministro_apertura, name='vincular_suministro_apertura'),
+    path('apertura_detalle/<int:id_apertura>/desvincular_suministro/', views.desvincular_suministro_apertura, name='desvincular_suministro_apertura'),
+    path('apertura_detalle/<int:id_apertura>/vincular_servicio/', views.vincular_servicio_apertura, name='vincular_servicio_apertura'),
+    path('apertura_detalle/<int:id_apertura>/desvincular_servicio/', views.desvincular_servicio_apertura, name='desvincular_servicio_apertura'),
     path('ocfiles/ver/<int:id_apertura>/', views.ver_oc_pdf, name='ver_oc_pdf'),
     path('aperturas_por_registro/<int:id_registro>/', views.aperturas_por_registro, name='aperturas_por_registro'),
     path('aperturas_por_registro/<int:id_registro>/nueva_oc/', views.crear_nueva_oc, name='crear_nueva_oc'),
@@ -31,6 +35,8 @@ urlpatterns = [
     path('periodos/', views.periodos_registrados, name='periodos_registrados'),
     path('lista_suministros/<int:id_registro>/', views.listar_suministros, name='listar_suministros'),
     path("lista_servicios/<int:id_registro>/", views.listar_servicios, name="listar_servicios"),
+    path('adjuntos/descargar/<path:nombre_fisico>/', views.descargar_adjunto_cotizacion, name='descargar_adjunto_cotizacion'),
+    path('adjuntos/<int:id_registro>/archivo/<int:id_adjunto>/', views.descargar_adjunto_por_id, name='descargar_adjunto_por_id'),
     path('adjuntos/<int:id_registro>/', views.gestionar_adjuntos, name='gestionar_adjuntos'),
     path('mensajes/<int:id_registro>/', views.gestionar_mensajes, name='gestionar_mensajes'),
     path("seguimientos/<int:id_registro>/", views.listar_seguimientos, name="listar_seguimiento"),
@@ -79,7 +85,7 @@ urlpatterns = [
 
     # (Las rutas de notificaciones se trasladaron a su propio módulo api/notificaciones/)
 
-    # DB_VC
+    # db_vc
     path("alm-articulos/", views.lista_alm_articulos, name="lista_alm_articulos"),
     
     # GUARDAR COTIZACIÓN

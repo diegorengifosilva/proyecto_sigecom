@@ -5,6 +5,7 @@ from caja_chica_api.models import Solicitud as CajaChicaSolicitud
 # 1. SERIALIZADOR DE ÓRDENES DE COMPRA
 class SolicitudOrdenCompraSerializer(serializers.ModelSerializer):
     id_registro = serializers.SerializerMethodField()
+    id_apertura = serializers.IntegerField(source='nivel_grupo', required=False, allow_null=True)
     area = serializers.SerializerMethodField()
     regus = serializers.SerializerMethodField()
     fecha = serializers.SerializerMethodField()
@@ -102,6 +103,7 @@ class SolicitudOrdenCompraSerializer(serializers.ModelSerializer):
 # 2. SERIALIZADOR DE PASAJES (TRAVEL REQUESTS)
 class SolicitudPasajesSerializer(serializers.ModelSerializer):
     id_registro = serializers.SerializerMethodField()
+    id_apertura = serializers.IntegerField(source='nivel_grupo', required=False, allow_null=True)
     area = serializers.SerializerMethodField()
     regus = serializers.SerializerMethodField()
     fecha = serializers.SerializerMethodField()

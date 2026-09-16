@@ -15,7 +15,7 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))
     # Waitress corre de forma nativa en Windows en modo multi-hilo.
     # Por defecto usaremos 8 hilos para procesar hasta 8 peticiones concurrentemente.
-    threads = int(os.environ.get('THREADS', 8))
+    threads = int(os.environ.get('THREADS', 32))
     
     print("=" * 70)
     print("   SERVIDOR DE PRODUCCIÓN WAITRESS ACTIVO (SIGECOM 5.0)")
@@ -24,4 +24,4 @@ if __name__ == '__main__':
     print("=" * 70)
     print("Presiona Ctrl+C para detener el servidor.")
     
-    serve(application, host='0.0.0.0', port=port, threads=threads)
+    serve(application, host='0.0.0.0', port=port, threads=threads, channel_timeout=120)
