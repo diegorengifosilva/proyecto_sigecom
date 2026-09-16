@@ -26,10 +26,16 @@ import TablaAtencion from "./tablas/TablaAtencion";
 import TablaLiquidaciones from "./tablas/TablaLiquidaciones";
 
 // FUNCIONES DE FETCHING CON REACT QUERY
-const fetchProgramacionData = async () => {
+const fetchProgramacionData = async ({ queryKey }) => {
+  const [_, anno, mes] = queryKey;
   const token = localStorage.getItem("access_token");
+  const params = {};
+  if (anno && anno !== "%") params.anno = anno;
+  if (mes && mes !== "%") params.mes = mes;
+
   const { data } = await api.get("compras/lista_programacion/", {
     headers: { Authorization: `Bearer ${token}` },
+    params,
   });
   return data;
 };
@@ -48,10 +54,16 @@ const fetchAtencionData = async ({ queryKey }) => {
   return data;
 };
 
-const fetchLiquidacionesData = async () => {
+const fetchLiquidacionesData = async ({ queryKey }) => {
+  const [_, anno, mes] = queryKey;
   const token = localStorage.getItem("access_token");
+  const params = {};
+  if (anno && anno !== "%") params.anno = anno;
+  if (mes && mes !== "%") params.mes = mes;
+
   const { data } = await api.get("compras/lista_liquidaciones/", {
     headers: { Authorization: `Bearer ${token}` },
+    params,
   });
   return data;
 };
@@ -82,9 +94,9 @@ export default function Compras({ defaultTab = "programacion" }) {
     isLoading: isLoadingProg, 
     isFetching: isFetchingProg 
   } = useQuery({
-    queryKey: ["compras-programacion"],
+    queryKey: ["compras-programacion", selectedAnno, selectedMes],
     queryFn: fetchProgramacionData,
-    enabled: currentTab === "programacion",
+    staleTime: 30000,
     keepPreviousData: true
   });
 
@@ -95,19 +107,18 @@ export default function Compras({ defaultTab = "programacion" }) {
   } = useQuery({
     queryKey: ["compras-atencion", selectedAnno, selectedMes],
     queryFn: fetchAtencionData,
-    enabled: currentTab === "atencion",
+    staleTime: 30000,
     keepPreviousData: true
   });
-
 
   const { 
     data: dataLiquidaciones, 
     isLoading: isLoadingLiq, 
     isFetching: isFetchingLiq 
   } = useQuery({
-    queryKey: ["compras-liquidaciones"],
+    queryKey: ["compras-liquidaciones", selectedAnno, selectedMes],
     queryFn: fetchLiquidacionesData,
-    enabled: currentTab === "liquidaciones",
+    staleTime: 30000,
     keepPreviousData: true
   });
 
@@ -131,18 +142,18 @@ export default function Compras({ defaultTab = "programacion" }) {
     if (currentTab === "atencion" || currentTab === "liquidaciones") {
       if (categoriaFilter !== "Todas") {
         if (categoriaFilter === "Compras") {
-          result = result.filter(item => item.tipo_gasto === "03");
+          result = result.filter(item => item.tipo_movimiento === "03" || item.tipo_gasto === "03" || String(item.id_registro).startsWith("compra_"));
         } else if (categoriaFilter === "Aereo") {
           result = result.filter(item => {
             const trans = String(item.transporte || "").toUpperCase();
             const tipo = String(item.tipo || "").toLowerCase();
-            return item.tipo_gasto === "02" && (trans === "A" || tipo.includes("aéreo") || tipo.includes("aero"));
+            return (item.tipo_movimiento === "02" || item.tipo_gasto === "02" || String(item.id_registro).startsWith("pasaje_")) && (trans === "A" || tipo.includes("aéreo") || tipo.includes("aero"));
           });
         } else if (categoriaFilter === "Terrestre") {
           result = result.filter(item => {
             const trans = String(item.transporte || "").toUpperCase();
             const tipo = String(item.tipo || "").toLowerCase();
-            return item.tipo_gasto === "02" && (trans === "T" || tipo.includes("terrestre"));
+            return (item.tipo_movimiento === "02" || item.tipo_gasto === "02" || String(item.id_registro).startsWith("pasaje_")) && (trans === "T" || tipo.includes("terrestre"));
           });
         }
       }
@@ -270,10 +281,12 @@ export default function Compras({ defaultTab = "programacion" }) {
 
             <div>
               <h3 className="text-3xl font-[950] text-gray-950 tracking-tight leading-none">
-                {currentTab === "programacion" && isLoading ? (
+                {isLoadingProg ? (
                   <div className="h-8 w-16 bg-gray-100 animate-pulse rounded-lg" />
                 ) : (
-                  currentTab === "programacion" ? activeStats.total || 0 : 3
+                  currentTab === "programacion" && (globalSearch || categoriaFilter !== "Todas")
+                    ? activeStats.total || 0
+                    : dataProgramacion?.dashboard?.total ?? (dataProgramacion?.tabla?.length || 0)
                 )}
               </h3>
             </div>
@@ -282,13 +295,21 @@ export default function Compras({ defaultTab = "programacion" }) {
               <div className="flex flex-col">
                 <span className="text-gray-900 font-bold uppercase tracking-wider text-[9px] opacity-60">Presupuesto USD</span>
                 <span className="text-gray-950 text-xs mt-0.5">
-                  ${Number(currentTab === "programacion" ? activeStats.montoTotalDolares || 0 : 28290).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                  ${Number(
+                    currentTab === "programacion" && (globalSearch || categoriaFilter !== "Todas")
+                      ? activeStats.montoTotalDolares || 0
+                      : dataProgramacion?.dashboard?.montoTotalDolares || 0
+                  ).toLocaleString('en-US', { maximumFractionDigits: 0 })}
                 </span>
               </div>
               <div className="text-right bg-emerald-50/70 text-emerald-700 px-2 py-1 rounded-lg flex flex-col items-end border border-emerald-100/50">
                 <span className="text-[8px] font-black uppercase tracking-wider leading-none mb-0.5">Total PEN</span>
                 <span className="font-bold text-[10px]">
-                  S/. {Number(currentTab === "programacion" ? activeStats.montoTotalSoles || 0 : 3500).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                  S/. {Number(
+                    currentTab === "programacion" && (globalSearch || categoriaFilter !== "Todas")
+                      ? activeStats.montoTotalSoles || 0
+                      : dataProgramacion?.dashboard?.montoTotalSoles || 0
+                  ).toLocaleString('en-US', { maximumFractionDigits: 0 })}
                 </span>
               </div>
             </div>
@@ -318,10 +339,12 @@ export default function Compras({ defaultTab = "programacion" }) {
 
             <div>
               <h3 className="text-3xl font-[950] text-gray-950 tracking-tight leading-none">
-                {currentTab === "atencion" && isLoading ? (
+                {isLoadingAtencion ? (
                   <div className="h-8 w-16 bg-gray-100 animate-pulse rounded-lg" />
                 ) : (
-                  currentTab === "atencion" ? activeStats.total || 0 : 3
+                  currentTab === "atencion" && (globalSearch || categoriaFilter !== "Todas")
+                    ? activeStats.total || 0
+                    : dataAtencion?.dashboard?.total ?? (dataAtencion?.tabla?.length || 0)
                 )}
               </h3>
             </div>
@@ -330,13 +353,21 @@ export default function Compras({ defaultTab = "programacion" }) {
               <div className="flex flex-col">
                 <span className="text-gray-900 font-bold uppercase tracking-wider text-[9px] opacity-60">Monto USD</span>
                 <span className="text-gray-950 text-xs mt-0.5">
-                  ${Number(currentTab === "atencion" ? activeStats.montoTotalDolares || 0 : 12300).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                  ${Number(
+                    currentTab === "atencion" && (globalSearch || categoriaFilter !== "Todas")
+                      ? activeStats.montoTotalDolares || 0
+                      : dataAtencion?.dashboard?.montoTotalDolares || 0
+                  ).toLocaleString('en-US', { maximumFractionDigits: 0 })}
                 </span>
               </div>
               <div className="text-right bg-indigo-50/70 text-indigo-700 px-2 py-1 rounded-lg flex flex-col items-end border border-indigo-100/50">
                 <span className="text-[8px] font-black uppercase tracking-wider leading-none mb-0.5">Total PEN</span>
                 <span className="font-bold text-[10px]">
-                  S/. {Number(currentTab === "atencion" ? activeStats.montoTotalSoles || 0 : 4500).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                  S/. {Number(
+                    currentTab === "atencion" && (globalSearch || categoriaFilter !== "Todas")
+                      ? activeStats.montoTotalSoles || 0
+                      : dataAtencion?.dashboard?.montoTotalSoles || 0
+                  ).toLocaleString('en-US', { maximumFractionDigits: 0 })}
                 </span>
               </div>
             </div>
@@ -366,10 +397,12 @@ export default function Compras({ defaultTab = "programacion" }) {
 
             <div>
               <h3 className="text-3xl font-[950] text-gray-950 tracking-tight leading-none">
-                {currentTab === "liquidaciones" && isLoading ? (
+                {isLoadingLiq ? (
                   <div className="h-8 w-16 bg-gray-100 animate-pulse rounded-lg" />
                 ) : (
-                  currentTab === "liquidaciones" ? activeStats.total || 0 : 3
+                  currentTab === "liquidaciones" && (globalSearch || categoriaFilter !== "Todas")
+                    ? activeStats.total || 0
+                    : dataLiquidaciones?.dashboard?.total ?? (dataLiquidaciones?.tabla?.length || 0)
                 )}
               </h3>
             </div>
@@ -378,13 +411,21 @@ export default function Compras({ defaultTab = "programacion" }) {
               <div className="flex flex-col">
                 <span className="text-gray-900 font-bold uppercase tracking-wider text-[9px] opacity-60">Monto USD</span>
                 <span className="text-gray-950 text-xs mt-0.5">
-                  ${Number(currentTab === "liquidaciones" ? activeStats.montoTotalDolares || 0 : 350).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                  ${Number(
+                    currentTab === "liquidaciones" && (globalSearch || categoriaFilter !== "Todas")
+                      ? activeStats.montoTotalDolares || 0
+                      : dataLiquidaciones?.dashboard?.montoTotalDolares || 0
+                  ).toLocaleString('en-US', { maximumFractionDigits: 0 })}
                 </span>
               </div>
               <div className="text-right bg-violet-50/70 text-violet-700 px-2 py-1 rounded-lg flex flex-col items-end border border-violet-100/50">
                 <span className="text-[8px] font-black uppercase tracking-wider leading-none mb-0.5">Total PEN</span>
                 <span className="font-bold text-[10px]">
-                  S/. {Number(currentTab === "liquidaciones" ? activeStats.montoTotalSoles || 0 : 1790).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                  S/. {Number(
+                    currentTab === "liquidaciones" && (globalSearch || categoriaFilter !== "Todas")
+                      ? activeStats.montoTotalSoles || 0
+                      : dataLiquidaciones?.dashboard?.montoTotalSoles || 0
+                  ).toLocaleString('en-US', { maximumFractionDigits: 0 })}
                 </span>
               </div>
             </div>
@@ -503,10 +544,16 @@ export default function Compras({ defaultTab = "programacion" }) {
               totalPages={Math.max(1, Math.ceil(filteredData.length / 10))}
               onPageChange={setCurrentPage}
               onRowClick={(row) => {
-                if (row.tipo_gasto === "03") {
-                  navigate(`/compras/atencion/${row.id_solicitud}`);
+                if (row.tipo_movimiento === "03" || row.tipo_gasto === "03" || String(row.id_registro).startsWith("compra_")) {
+                  navigate(`/compras/atencion/${row.id_solicitud || (String(row.id_registro).includes('_') ? row.id_registro.split('_')[1] : row.id_registro)}`);
+                } else if (row.tipo_movimiento === "02" || row.tipo_gasto === "02" || String(row.id_registro).startsWith("pasaje_") || String(row.tipo || "").toLowerCase().includes("pasaje")) {
+                  const pasajeId = row.id_registro_directo || row.id_pasaje || (String(row.id_registro).includes('_') ? row.id_registro.split('_')[1] : (row.id_solicitud || row.id_registro));
+                  navigate(`/compras/pasajes/${pasajeId}`);
+                } else if (row.tipo_movimiento === "01" || row.tipo_gasto === "01" || String(row.id_registro).startsWith("caja_") || String(row.tipo || "").toLowerCase().includes("caja")) {
+                  const cajaId = row.id_registro_directo || row.id_caja_chica || (String(row.id_registro).includes('_') ? row.id_registro.split('_')[1] : (row.id_solicitud || row.id_registro));
+                  navigate(`/compras/caja-chica/${cajaId}`);
                 } else {
-                  toast.success(`Seleccionado solicitud: ${row.codigo}`);
+                  toast.info(`Seleccionado solicitud: ${row.codigo || row.id_registro}`);
                 }
               }}
             />
@@ -521,10 +568,16 @@ export default function Compras({ defaultTab = "programacion" }) {
               totalPages={Math.max(1, Math.ceil(filteredData.length / 10))}
               onPageChange={setCurrentPage}
               onRowClick={(row) => {
-                if (row.tipo_gasto === "03") {
-                  navigate(`/compras/atencion/${row.id_solicitud}`);
+                if (row.tipo_movimiento === "03" || row.tipo_gasto === "03" || String(row.id_registro).startsWith("compra_")) {
+                  navigate(`/compras/atencion/${row.id_solicitud || (String(row.id_registro).includes('_') ? row.id_registro.split('_')[1] : row.id_registro)}`);
+                } else if (row.tipo_movimiento === "02" || row.tipo_gasto === "02" || String(row.id_registro).startsWith("pasaje_") || String(row.tipo || "").toLowerCase().includes("pasaje")) {
+                  const pasajeId = row.id_registro_directo || row.id_pasaje || (String(row.id_registro).includes('_') ? row.id_registro.split('_')[1] : (row.id_solicitud || row.id_registro));
+                  navigate(`/compras/pasajes/${pasajeId}`);
+                } else if (row.tipo_movimiento === "01" || row.tipo_gasto === "01" || String(row.id_registro).startsWith("caja_") || String(row.tipo || "").toLowerCase().includes("caja")) {
+                  const cajaId = row.id_registro_directo || row.id_caja_chica || (String(row.id_registro).includes('_') ? row.id_registro.split('_')[1] : (row.id_solicitud || row.id_registro));
+                  navigate(`/compras/caja-chica/${cajaId}`);
                 } else {
-                  toast.success(`Seleccionado liquidación: ${row.codigo}`);
+                  toast.info(`Seleccionado liquidación: ${row.codigo || row.id_registro}`);
                 }
               }}
             />

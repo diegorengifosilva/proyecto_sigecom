@@ -77,7 +77,9 @@ from .models import (
     Liquidacion,
     SolicitudGastoEstadoHistorial,
     RazonSocial,
+    SolicitudCajaChica,
     )
+from core.models import EstadoSolicitud
 from .serializers import (
     SolicitudGastoSerializer,
     SolicitudGastoSimpleSerializer, 
@@ -93,6 +95,7 @@ from .serializers import (
     MisSolicitudesDetalleSerializer,
     MisSolicitudesTablaSerializer,
     SolicitudGastoEstadoHistorialSerializer,
+    SolicitudCajaChicaSerializer,
 )
 
 from caja_chica_api.extraccion import (
@@ -2211,5 +2214,199 @@ def caja_chica_home_stats(request):
         return Response(data)
     except Exception as e:
         return Response({"error": str(e)}, status=500)
+
+
+class SolicitudCajaChicaViewSet(viewsets.ModelViewSet):
+    queryset = SolicitudCajaChica.objects.all().select_related(
+        'id_apertura', 'id_area', 'id_solicitante', 'id_destinatario', 'id_banco', 'id_estado', 'tipo_gasto'
+    ).order_by('-id_registro')
+    serializer_class = SolicitudCajaChicaSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        lookup = self.kwargs.get(self.lookup_field or 'pk')
+        if isinstance(lookup, str) and lookup.startswith('caja_'):
+            lookup = lookup.replace('caja_', '')
+        try:
+            return self.get_queryset().get(id_registro=lookup)
+        except (SolicitudCajaChica.DoesNotExist, ValueError):
+            return super().get_object()
+
+    def create(self, request, *args, **kwargs):
+        data = request.data.copy()
+
+        # 1. Asignar solicitante si no viene
+        if 'id_solicitante' not in data or not data['id_solicitante']:
+            user_id = getattr(request.user, 'id_usuario', None) or getattr(request.user, 'id', None)
+            if user_id:
+                data['id_solicitante'] = user_id
+
+        # 2. Asignar estado por defecto si no viene
+        if 'id_estado' not in data or not data['id_estado']:
+            estado_default = EstadoSolicitud.objects.filter(activo=1).order_by('id_estado').first()
+            if estado_default:
+                data['id_estado'] = estado_default.id_estado
+
+        # 3. Asignar fecha actual si no viene
+        if 'fecha' not in data or not data['fecha']:
+            data['fecha'] = timezone.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # 4. Vincular apertura, código y área si viene id_apertura
+        if data.get('id_apertura'):
+            try:
+                from cotizaciones_api.models import Apertura
+                ap = Apertura.objects.filter(id_apertura=data['id_apertura']).first()
+                if ap:
+                    if not data.get('codigo'):
+                        data['codigo'] = ap.id_registro.codigo if getattr(ap, 'id_registro', None) and getattr(ap.id_registro, 'codigo', None) else (getattr(ap, 'codigo', '') or '')
+                    if not data.get('id_area') and getattr(ap, 'id_area_id', None):
+                        data['id_area'] = ap.id_area_id
+                    data['nivel_grupo'] = 1
+            except Exception as err:
+                logger.warning(f"Error vinculando apertura en CajaChica: {err}")
+
+        # 5. Tipo movimiento = '01' para caja chica y tipo_gasto como FK (partida)
+        data['tipo_movimiento'] = '01'
+        tipo_gasto_id = data.get('tipo_gasto') or data.get('tipo_movimiento_id')
+        if tipo_gasto_id:
+            try:
+                data['tipo_gasto'] = int(tipo_gasto_id)
+            except (ValueError, TypeError):
+                pass
+
+        # 6. Generar id_registro secuencial unificado
+        from core.id_generator import obtener_siguiente_id_registro
+        nuevo_id = int(data.get('id_registro') or obtener_siguiente_id_registro())
+        data['id_registro'] = nuevo_id
+
+        # 7. Generar correlativo codigo/cog si no viene
+        codigo_val = data.get('codigo') or data.get('cog')
+        if not codigo_val:
+            codigo_val = f"CCH-{timezone.now().strftime('%Y%m')}-{str(nuevo_id).zfill(4)}"
+        data['codigo'] = codigo_val
+        data['cog'] = codigo_val
+
+        # 8. Calcular montos complementarios según tipo_moneda
+        try:
+            tc = Decimal(str(data.get('tipo_cambio') or '3.75'))
+            tipo_mon = str(data.get('tipo_moneda') or 'S').upper()
+            if tipo_mon == 'S' and data.get('monto_soles') and not data.get('monto_dolares'):
+                ms = Decimal(str(data['monto_soles']))
+                data['monto_dolares'] = round(ms / tc, 2) if tc > 0 else Decimal('0.00')
+            elif tipo_mon == 'D' and data.get('monto_dolares') and not data.get('monto_soles'):
+                md = Decimal(str(data['monto_dolares']))
+                data['monto_soles'] = round(md * tc, 2)
+        except Exception as err:
+            logger.warning(f"No se pudo calcular conversión de moneda en SolicitudCajaChica: {err}")
+
+        # 9. Validar disponibilidad presupuestal antes de crear
+        if data.get('id_apertura'):
+            from compras_api.presupuesto_service import validar_monto_disponible
+            m_usd = float(data.get('monto_dolares') or 0.0)
+            tg = int(data.get('tipo_gasto') or 3)
+            valido, disponible, err_msg, _ = validar_monto_disponible(
+                data.get('id_apertura'),
+                tipo_gasto_id=tg,
+                nuevo_monto_dolares=m_usd
+            )
+            if not valido:
+                return Response({"error": err_msg, "disponible": disponible}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+
+        save_kwargs = {
+            'id_registro': nuevo_id,
+            'codigo': codigo_val,
+            'cog': codigo_val,
+        }
+        if data.get('fecha'):
+            save_kwargs['fecha'] = data['fecha']
+
+        instance = serializer.save(**save_kwargs)
+        result_serializer = self.get_serializer(instance)
+        headers = self.get_success_headers(result_serializer.data)
+        return Response(result_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        data = serializer.data
+        if instance.id_apertura_id:
+            from compras_api.presupuesto_service import obtener_resumen_presupuesto
+            resumen = obtener_resumen_presupuesto(
+                instance.id_apertura_id,
+                tipo_gasto_id=instance.tipo_gasto_id or 3,
+                exclude_id=instance.id_registro,
+                exclude_tipo='caja'
+            )
+            if resumen:
+                monto_actual = float(instance.monto_dolares or 0.0)
+                resumen["monto_actual"] = monto_actual
+                resumen["disponible_maximo"] = round(resumen["disponible_rubro"] + monto_actual, 2)
+                data["presupuesto_info"] = resumen
+        return Response(data)
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        data = request.data
+        if 'monto_dolares' in data or 'monto_soles' in data:
+            tc = float(data.get('tipo_cambio') or instance.tipo_cambio or 3.75)
+            if tc <= 0:
+                tc = 3.75
+            if 'monto_dolares' in data:
+                nuevo_usd = float(data.get('monto_dolares') or 0.0)
+            else:
+                nuevo_pen = float(data.get('monto_soles') or 0.0)
+                nuevo_usd = round(nuevo_pen / tc, 2)
+
+            if instance.id_apertura_id:
+                from compras_api.presupuesto_service import validar_monto_disponible
+                valido, disponible, err_msg, _ = validar_monto_disponible(
+                    instance.id_apertura_id,
+                    tipo_gasto_id=instance.tipo_gasto_id or 3,
+                    nuevo_monto_dolares=nuevo_usd,
+                    exclude_id=instance.id_registro,
+                    exclude_tipo='caja'
+                )
+                if not valido:
+                    return Response({"error": err_msg, "disponible": disponible}, status=status.HTTP_400_BAD_REQUEST)
+
+        return super().update(request, *args, **kwargs)
+
+    def perform_create(self, serializer):
+        from core.id_generator import obtener_siguiente_id_registro
+        id_reg = int(self.request.data.get('id_registro') or obtener_siguiente_id_registro())
+        serializer.save(id_registro=id_reg)
+
+    @action(detail=True, methods=['post', 'patch'], url_path='cambiar_estado')
+    def cambiar_estado(self, request, pk=None):
+        instance = self.get_object()
+        nuevo_estado_id = request.data.get('id_estado') or request.data.get('estado_id')
+        if not nuevo_estado_id:
+            return Response({"error": "Debe especificar id_estado"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            from core.models import EstadoSolicitud
+            estado_obj = EstadoSolicitud.objects.get(id_estado=nuevo_estado_id)
+            instance.id_estado = estado_obj
+            instance.save(update_fields=['id_estado'])
+            return Response({
+                "message": f"Estado actualizado a {estado_obj.nombre}",
+                "estado_nombre": estado_obj.nombre,
+                "id_estado": estado_obj.id_estado,
+                "data": SolicitudCajaChicaSerializer(instance).data
+            })
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        id_apertura = instance.id_apertura_id
+        instance.delete()
+        return Response({
+            "message": "Solicitud de caja chica eliminada con éxito.",
+            "id_apertura": id_apertura
+        }, status=status.HTTP_200_OK)
+
 
 

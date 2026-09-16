@@ -895,15 +895,12 @@ class CotizacionCompletaSerializer(serializers.ModelSerializer):
 
     def get_area_nombre(self, obj):
         if not obj.id_area:
-            return "Otros"
-        mapping = {
-            1: "Industria", 
-            2: "Minería", 
-            3: "Mantenimiento", 
-            4: "Petroquímica", 
-            8: "Seguridad de Maquinaria"
-        }
-        return mapping.get(obj.id_area, "Otros")
+            return ""
+        from users.models import Area
+        area_obj = Area.objects.filter(id_area=obj.id_area).first()
+        if area_obj:
+            return area_obj.nombre
+        return ""
 
 def fetch_orden_su_by_apertura(apertura_ids):
     """
@@ -1063,6 +1060,10 @@ class CotizacionAperturaSerializer(serializers.ModelSerializer):
     # Datos heredados directo en la raíz (Mapeos existentes)
     cotizacion_codigo = serializers.CharField(source="id_registro.codigo", read_only=True)
     cotizacion_referencia = serializers.CharField(source="id_registro.referencia", read_only=True)
+    id_area = serializers.SerializerMethodField()
+    area_nombre = serializers.SerializerMethodField()
+    id_cliente = serializers.SerializerMethodField()
+    cliente_nombre = serializers.SerializerMethodField()
 
     # ── CAMPOS CON LÓGICA DE MAPEO (LECTURA) ────────────────────
     estado_orden_nombre = serializers.SerializerMethodField()
@@ -1079,7 +1080,6 @@ class CotizacionAperturaSerializer(serializers.ModelSerializer):
             "uti_des"
         ]
 
-    # ── LÓGICA DE REPRESENTACIÓN ────────────────────────────────
     def get_suministros_orden_su(self, obj):
         if not obj.id_apertura:
             return []
@@ -1099,6 +1099,38 @@ class CotizacionAperturaSerializer(serializers.ModelSerializer):
             cache.update(fetch_orden_mo_by_apertura([key]))
             cache.setdefault(key, [])
         return cache.get(key, [])
+
+    def get_id_cliente(self, obj):
+        if obj.id_registro:
+            return getattr(obj.id_registro, 'id_cliente_id', None)
+        return None
+
+    def get_cliente_nombre(self, obj):
+        if obj.id_registro:
+            if obj.id_registro.id_cliente:
+                return obj.id_registro.id_cliente.nombre
+            return getattr(obj.id_registro, 'representante_nombre', '') or ""
+        return ""
+
+    def get_id_area(self, obj):
+        if obj.id_registro and hasattr(obj.id_registro, 'id_area'):
+            coti_area = obj.id_registro.id_area
+            if hasattr(coti_area, 'id_area'):
+                return coti_area.id_area
+            return coti_area
+        return None
+
+    def get_area_nombre(self, obj):
+        if obj.id_registro and hasattr(obj.id_registro, 'id_area'):
+            coti_area = obj.id_registro.id_area
+            area_id = coti_area.id_area if hasattr(coti_area, 'id_area') else coti_area
+            if area_id:
+                from users.models import Area
+                area_obj = Area.objects.filter(id_area=area_id).first()
+                if area_obj:
+                    return area_obj.nombre
+        return ""
+
 
     def get_estado_orden_nombre(self, obj):
         if obj.estado_orden:
@@ -1153,14 +1185,13 @@ class CotizacionCompactaSerializer(serializers.ModelSerializer):
         return obj.representante_nombre or "S/N"
 
     def get_area_nombre(self, obj):
-        mapping = {
-            1: "Industria", 
-            2: "Minería", 
-            3: "Mantenimiento", 
-            4: "Petroquímica", 
-            8: "Seguridad"
-        }
-        return mapping.get(obj.id_area, "Otros")
+        if not obj.id_area:
+            return ""
+        from users.models import Area
+        area_obj = Area.objects.filter(id_area=obj.id_area).first()
+        if area_obj:
+            return area_obj.nombre
+        return ""
 
 class CotizacionAperturaTablaSerializer(serializers.ModelSerializer):
     # ── DATOS ASOCIADOS A LA APERTURA (REVISADOS SIN 'SOURCE') ──

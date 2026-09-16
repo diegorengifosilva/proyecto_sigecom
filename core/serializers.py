@@ -3,6 +3,8 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import (
     Cliente,
+    Proveedor,
+    EmpresaTransporte,
     Representante,
     Estado,
     TipoCotizacion,
@@ -13,7 +15,8 @@ from .models import (
     TipoPersonal,
     TipoGastoDetalle,
     Producto,
-    Nota
+    Nota,
+    TipoSolicitud
 )
 from django.utils.timezone import localtime
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -53,6 +56,42 @@ class ClienteSerializer(serializers.ModelSerializer):
             resource_data['activo'] = "1" if val is True or val == "1" else "0"
             
         return super().to_internal_value(resource_data)
+
+class ProveedorSerializer(serializers.ModelSerializer):
+    activo = serializers.CharField(max_length=1, required=False)
+
+    class Meta:
+        model = Proveedor
+        fields = "__all__"
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation['id_proveedor_formateado'] = str(instance.id_proveedor).zfill(5)
+        representation['activo'] = instance.activo == "1"
+        return representation
+
+    def to_internal_value(self, data):
+        resource_data = data.copy()
+        if 'activo' in resource_data:
+            val = resource_data['activo']
+            resource_data['activo'] = "1" if val is True or val == "1" else "0"
+        return super().to_internal_value(resource_data)
+
+class EmpresaTransporteSerializer(serializers.ModelSerializer):
+    tipo_nombre = serializers.SerializerMethodField()
+
+    class Meta:
+        model = EmpresaTransporte
+        fields = "__all__"
+
+    def get_tipo_nombre(self, obj):
+        return "Aéreo" if obj.tipo == "A" else "Terrestre"
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation['id_empresa_formateado'] = str(instance.id_empresa).zfill(5)
+        representation['activo'] = bool(instance.activo)
+        return representation
 
 class RepresentanteSerializer(serializers.ModelSerializer):
     # Campo calculado para mostrar el ID con ceros (ej: 00012)
@@ -223,4 +262,10 @@ class NotaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Nota
         fields = ['id_nota', 'codigo', 'descripcion', 'activo']
+
+class TipoSolicitudSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TipoSolicitud
+        fields = ['id_tipo', 'nombre', 'activo']
+
     

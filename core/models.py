@@ -50,6 +50,41 @@ class Cliente(models.Model):
     def __str__(self):
         return f"{self.ruc} - {self.nombre}"
 
+class Proveedor(models.Model):
+    id_proveedor = models.AutoField(primary_key=True)
+    nombre = models.CharField(max_length=255)
+    iniciales = models.CharField(max_length=50, blank=True, null=True)
+    ruc = models.CharField(max_length=11, blank=True, null=True)
+    direccion = models.CharField(max_length=255, blank=True, null=True)
+    forma_pago = models.CharField(max_length=50, blank=True, null=True)
+    fecha_ingreso = models.DateTimeField(blank=True, null=True)
+    correo = models.CharField(max_length=150, blank=True, null=True)
+    telefono = models.CharField(max_length=30, blank=True, null=True)
+    activo = models.CharField(max_length=1, default='1')
+
+    class Meta:
+        managed = False
+        db_table = 'proveedores'
+        ordering = ['nombre']
+
+    def __str__(self):
+        return f"{self.ruc or ''} - {self.nombre}".strip(" -")
+
+class EmpresaTransporte(models.Model):
+    id_empresa = models.AutoField(primary_key=True)
+    ruc = models.BigIntegerField(blank=True, null=True)
+    nombre = models.CharField(max_length=255)
+    tipo = models.CharField(max_length=1)  # 'A'=Aéreo, 'T'=Terrestre
+    activo = models.IntegerField(default=1, blank=True, null=True)
+
+    class Meta:
+        managed = False
+        db_table = 'empresa_transporte'
+        ordering = ['nombre']
+
+    def __str__(self):
+        return f"{self.nombre} ({self.tipo})"
+
 class Representante(models.Model):
     # Campo primario autoincremental
     id_representante = models.AutoField(primary_key=True)
@@ -98,7 +133,7 @@ class Estado(models.Model):
         return self.nombre
 
 class EstadoSolicitud(models.Model):
-    id_estado = models.AutoField(primary_key=True)
+    id_estado = models.IntegerField(primary_key=True)
     nombre = models.CharField(max_length=255)
     activo = models.IntegerField(default=1, null=True, blank=True)
 
@@ -407,5 +442,20 @@ class Gerencia(models.Model):
 
     def __str__(self):
         return self.nombre
+
+
+class TipoSolicitud(models.Model):
+    id_tipo = models.AutoField(primary_key=True)
+    nombre = models.CharField(max_length=100)
+    activo = models.BooleanField(default=True)
+
+    class Meta:
+        managed = False
+        db_table = 'tipo_solicitud'
+        ordering = ['id_tipo']
+
+    def __str__(self):
+        return self.nombre
+
 
 

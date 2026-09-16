@@ -64,8 +64,8 @@ const TablaProgramacion = ({
               </div>
               <div className="flex justify-between font-black text-gray-900">
                 <span>Ejecutado: {formatCurrency(item.ejecutado)}</span>
-                <span className={item.saldo < 0 ? "text-rose-600" : "text-emerald-600"}>
-                  Saldo: {formatCurrency(item.saldo)}
+                <span className="text-emerald-600">
+                  Saldo: {formatCurrency(Math.max(0, item.saldo))}
                 </span>
               </div>
             </div>
@@ -143,10 +143,8 @@ const TablaProgramacion = ({
               </td>
 
               {/* Saldo */}
-              <td className={`px-4 py-2 whitespace-nowrap text-sm font-black text-right ${
-                item.saldo < 0 ? "text-rose-600" : "text-emerald-700"
-              }`}>
-                {formatCurrency(item.saldo)}
+              <td className="px-4 py-2 whitespace-nowrap text-sm font-black text-right text-emerald-700">
+                {formatCurrency(Math.max(0, item.saldo))}
               </td>
             </tr>
           );

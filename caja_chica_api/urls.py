@@ -31,7 +31,8 @@ from .views import (
     EstadoCajaViewSet,
     GuiaSalidaViewSet,
     ActividadListView,
-    SolicitudDetailView
+    SolicitudDetailView,
+    SolicitudCajaChicaViewSet
 )
 from caja_chica_api.views_debug import tesseract_debug
 
@@ -41,6 +42,7 @@ router.register(r'solicitudes', SolicitudGastoViewSetCRUD, basename="solicitud")
 router.register(r'arqueos', ArqueoCajaViewSet, basename="arqueo")
 router.register(r'estado_caja', EstadoCajaViewSet, basename="estado_caja")
 router.register(r'guias', GuiaSalidaViewSet, basename="guia")
+router.register(r'solicitudes_caja_chica', SolicitudCajaChicaViewSet, basename="solicitud_caja_chica")
 
 urlpatterns = [
     path('csrf/', get_csrf_token, name='get_csrf_token'),

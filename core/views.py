@@ -76,6 +76,8 @@ from django.db.models import Q
 from rest_framework.decorators import api_view, parser_classes, permission_classes, action, authentication_classes
 from .models import (
     Cliente,
+    Proveedor,
+    EmpresaTransporte,
     Representante,
     Estado,
     TipoGasto,
@@ -85,9 +87,12 @@ from .models import (
     Producto,
     Nota,
     UnidadMedida,
+    TipoSolicitud,
 )
 from .serializers import (
     ClienteSerializer,
+    ProveedorSerializer,
+    EmpresaTransporteSerializer,
     RepresentanteSerializer,
     EstadoSerializer,
     TipoGastoSerializer,
@@ -97,6 +102,7 @@ from .serializers import (
     ProductoSerializer,
     NotaSerializer,
     UnidadMedidaSerializer,
+    TipoSolicitudSerializer,
 )
 
 # CLIENTE
@@ -244,6 +250,178 @@ def buscar_clientes_inline(request):
         print(f"❌ Error en buscar_clientes_inline: {str(e)}")
         return Response(
             {"error": "Error interno al buscar clientes", "detail": str(e)}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+# PROVEEDOR
+@api_view(["GET", "POST", "PUT", "DELETE"])
+@permission_classes([IsAuthenticated])
+def lista_proveedores(request):
+    # 1. GET:
+    if request.method == "GET":
+        id_proveedor = request.query_params.get("id_proveedor")
+        if id_proveedor:
+            try:
+                proveedor = Proveedor.objects.get(pk=id_proveedor)
+                serializer = ProveedorSerializer(proveedor)
+                return Response(serializer.data)
+            except Proveedor.DoesNotExist:
+                return Response({"error": "Proveedor no encontrado"}, status=status.HTTP_404_NOT_FOUND)
+        
+        proveedores = Proveedor.objects.all()
+        serializer = ProveedorSerializer(proveedores, many=True)
+        return Response(serializer.data)
+
+    # 2. POST:
+    if request.method == "POST":
+        data = request.data.copy()
+        if not data.get("iniciales") and data.get("nombre"):
+            data["iniciales"] = generar_iniciales(data.get("nombre"))
+
+        serializer = ProveedorSerializer(data=data)
+        if serializer.is_valid():
+            proveedor = serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    # 3. PUT:
+    if request.method == "PUT":
+        codigo = request.data.get("id_proveedor")
+        try:
+            proveedor = Proveedor.objects.get(pk=codigo)
+            serializer = ProveedorSerializer(proveedor, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Proveedor.DoesNotExist:
+            return Response({"error": "Proveedor no encontrado"}, status=status.HTTP_404_NOT_FOUND)
+
+    # 4. DELETE:
+    if request.method == "DELETE":
+        codigo = request.data.get("id_proveedor") or request.query_params.get("id_proveedor")
+        if not codigo:
+            return Response({"error": "ID de proveedor no proporcionado"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            proveedor = Proveedor.objects.get(pk=codigo)
+            proveedor.delete()
+            return Response({"message": "Proveedor eliminado correctamente"}, status=status.HTTP_200_OK)
+        except Proveedor.DoesNotExist:
+            return Response({"error": "Proveedor no encontrado"}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def buscar_proveedores_inline(request):
+    try:
+        query = request.query_params.get('q', '').strip()
+        proveedores_qs = Proveedor.objects.exclude(activo="0")
+
+        if query:
+            # Búsqueda por RUC exacto o parcial, iniciales o palabras en el nombre
+            words = query.split()
+            for word in words:
+                proveedores_qs = proveedores_qs.filter(
+                    Q(nombre__icontains=word) | 
+                    Q(ruc__icontains=word) |
+                    Q(iniciales__icontains=word) |
+                    Q(id_proveedor__icontains=word)
+                )
+
+        resultados = proveedores_qs.order_by('nombre').values(
+            'id_proveedor', 'nombre', 'ruc', 'iniciales', 'direccion', 'forma_pago', 'correo', 'telefono'
+        )[:25]
+        return Response(list(resultados), status=status.HTTP_200_OK)
+    except Exception as e:
+        print(f"❌ Error en buscar_proveedores_inline: {str(e)}")
+        return Response(
+            {"error": "Error interno al buscar proveedores", "detail": str(e)}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+# EMPRESA TRANSPORTE (AÉREO / TERRESTRE)
+@api_view(["GET", "POST", "PUT", "DELETE"])
+@permission_classes([IsAuthenticated])
+def lista_empresas_transporte(request):
+    # 1. GET:
+    if request.method == "GET":
+        id_empresa = request.query_params.get("id_empresa")
+        tipo = request.query_params.get("tipo")
+        if id_empresa:
+            try:
+                empresa = EmpresaTransporte.objects.get(pk=id_empresa)
+                serializer = EmpresaTransporteSerializer(empresa)
+                return Response(serializer.data)
+            except EmpresaTransporte.DoesNotExist:
+                return Response({"error": "Empresa de transporte no encontrada"}, status=status.HTTP_404_NOT_FOUND)
+        
+        empresas = EmpresaTransporte.objects.all()
+        if tipo:
+            empresas = empresas.filter(tipo=tipo.upper())
+        serializer = EmpresaTransporteSerializer(empresas, many=True)
+        return Response(serializer.data)
+
+    # 2. POST:
+    if request.method == "POST":
+        serializer = EmpresaTransporteSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    # 3. PUT:
+    if request.method == "PUT":
+        codigo = request.data.get("id_empresa")
+        try:
+            empresa = EmpresaTransporte.objects.get(pk=codigo)
+            serializer = EmpresaTransporteSerializer(empresa, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except EmpresaTransporte.DoesNotExist:
+            return Response({"error": "Empresa de transporte no encontrada"}, status=status.HTTP_404_NOT_FOUND)
+
+    # 4. DELETE:
+    if request.method == "DELETE":
+        codigo = request.data.get("id_empresa") or request.query_params.get("id_empresa")
+        if not codigo:
+            return Response({"error": "ID de empresa no proporcionado"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            empresa = EmpresaTransporte.objects.get(pk=codigo)
+            empresa.delete()
+            return Response({"message": "Empresa de transporte eliminada correctamente"}, status=status.HTTP_200_OK)
+        except EmpresaTransporte.DoesNotExist:
+            return Response({"error": "Empresa de transporte no encontrada"}, status=status.HTTP_404_NOT_FOUND)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def buscar_empresas_transporte_inline(request):
+    try:
+        query = request.query_params.get('q', '').strip()
+        tipo = request.query_params.get('tipo', '').strip().upper()
+        empresas_qs = EmpresaTransporte.objects.exclude(activo=0)
+
+        if tipo:
+            empresas_qs = empresas_qs.filter(tipo=tipo)
+
+        if query:
+            words = query.split()
+            for word in words:
+                empresas_qs = empresas_qs.filter(
+                    Q(nombre__icontains=word) | 
+                    Q(ruc__icontains=word) |
+                    Q(id_empresa__icontains=word)
+                )
+
+        resultados = empresas_qs.order_by('nombre').values(
+            'id_empresa', 'nombre', 'ruc', 'tipo', 'activo'
+        )[:25]
+        return Response(list(resultados), status=status.HTTP_200_OK)
+    except Exception as e:
+        print(f"❌ Error en buscar_empresas_transporte_inline: {str(e)}")
+        return Response(
+            {"error": "Error interno al buscar empresas de transporte", "detail": str(e)}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
@@ -1225,5 +1403,14 @@ def lista_unidades_medida(request):
         nueva_unidad = UnidadMedida.objects.create(codigo=codigo, nombre=nombre, activo=1)
         serializer = UnidadMedidaSerializer(nueva_unidad)
         return Response({"ok": True, "registro": serializer.data}, status=status.HTTP_201_CREATED)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def lista_tipo_solicitud(request):
+    tipos = TipoSolicitud.objects.filter(activo=1).order_by("id_tipo")
+    serializer = TipoSolicitudSerializer(tipos, many=True)
+    return Response(serializer.data)
+
 
 

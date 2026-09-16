@@ -539,7 +539,7 @@ class ArqueoCajaSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         # Genera número de operación si no viene
         if not validated_data.get('numero_operacion'):
-            from .utils import generar_numero_operacion
+            from .extraccion import generar_numero_operacion
             validated_data['numero_operacion'] = generar_numero_operacion()
         return super().create(validated_data)
 
@@ -629,36 +629,61 @@ class ActividadSerializer(serializers.ModelSerializer):
 
 class SolicitudCajaChicaSerializer(serializers.ModelSerializer):
     id_registro = serializers.SerializerMethodField()
+    id_registro_numero = serializers.IntegerField(source="id_registro", read_only=True)
     area = serializers.SerializerMethodField()
+    area_nombre = serializers.SerializerMethodField()
     regus = serializers.SerializerMethodField()
     fecha = serializers.SerializerMethodField()
     
-    # Aliases para compatibilidad con el frontend
+    # Aliases y campos formateados para compatibilidad y detalle ejecutivo
     nro_solicitud = serializers.CharField(source="cog", read_only=True, default="")
     codigo = serializers.CharField(read_only=True, default="")
-    nombre = serializers.CharField(source="id_solicitante.nombre_completo", read_only=True, default="")
+    nombre = serializers.SerializerMethodField()
+    solicitante_nombre = serializers.SerializerMethodField()
+    solicitante_email = serializers.SerializerMethodField()
+    destinatario_nombre = serializers.SerializerMethodField()
+    destinatario_dni = serializers.SerializerMethodField()
     monto_usd = serializers.SerializerMethodField()
     monto_pen = serializers.SerializerMethodField()
     estado_nombre = serializers.CharField(source="id_estado.nombre", read_only=True, default="")
+    banco_nombre = serializers.CharField(source="id_banco.nombre", read_only=True, default="")
+    tipo_gasto_nombre = serializers.CharField(source="tipo_gasto.nombre", read_only=True, default="")
     tipo = serializers.SerializerMethodField()
     referencia = serializers.SerializerMethodField()
+    hora = serializers.SerializerMethodField()
+    fecha_corta = serializers.SerializerMethodField()
+    fecha_transferencia_corta = serializers.SerializerMethodField()
+    fecha_liquidacion_corta = serializers.SerializerMethodField()
+    tipo_solicitud_nombre = serializers.SerializerMethodField()
 
     class Meta:
         model = SolicitudCajaChica
         fields = [
             'id_caja_chica',
             'id_registro',
+            'id_registro_numero',
+            'id_apertura',
             'nivel_grupo',
             'cog',
             'codigo',
             'nro_solicitud',
             'num',
             'fecha',
+            'hora',
+            'fecha_corta',
             'id_area',
             'area',
+            'area_nombre',
             'id_solicitante',
+            'solicitante_nombre',
+            'solicitante_email',
             'regus',
             'id_destinatario',
+            'destinatario_nombre',
+            'destinatario_dni',
+            'id_banco',
+            'banco_nombre',
+            'numero_cuenta',
             'referencia',
             'tipo',
             'tipo_moneda',
@@ -669,15 +694,19 @@ class SolicitudCajaChicaSerializer(serializers.ModelSerializer):
             'monto_pen',
             'concepto',
             'fecha_transferencia',
+            'fecha_transferencia_corta',
             'fecha_liquidacion',
+            'fecha_liquidacion_corta',
             'observacion',
             'id_estado',
             'estado_nombre',
-            'luo',
+            'tipo_solicitud',
             'lud',
+            'tipo_solicitud_nombre',
             'fecha_salida',
             'tipo_movimiento',
             'tipo_gasto',
+            'tipo_gasto_nombre',
             'nombre',
         ]
 
@@ -687,14 +716,85 @@ class SolicitudCajaChicaSerializer(serializers.ModelSerializer):
     def get_area(self, obj):
         return obj.id_area.nombre if obj.id_area else ""
 
+    def get_area_nombre(self, obj):
+        return obj.id_area.nombre if obj.id_area else ""
+
     def get_regus(self, obj):
         return obj.id_solicitante.usuario if obj.id_solicitante else ""
+
+    def get_nombre(self, obj):
+        if obj.id_solicitante:
+            return getattr(obj.id_solicitante, 'nombre_completo', None) or f"{obj.id_solicitante.first_name} {obj.id_solicitante.last_name}".strip() or obj.id_solicitante.username
+        return ""
+
+    def get_solicitante_nombre(self, obj):
+        if obj.id_solicitante:
+            return getattr(obj.id_solicitante, 'nombre_completo', None) or f"{obj.id_solicitante.first_name} {obj.id_solicitante.last_name}".strip() or obj.id_solicitante.username
+        return ""
+
+    def get_solicitante_email(self, obj):
+        return getattr(obj.id_solicitante, 'correo', '') if obj.id_solicitante else ""
+
+    def get_destinatario_nombre(self, obj):
+        if obj.id_destinatario:
+            return getattr(obj.id_destinatario, 'nombre_completo', None) or f"{obj.id_destinatario.first_name} {obj.id_destinatario.last_name}".strip() or obj.id_destinatario.username
+        return ""
+
+    def get_destinatario_dni(self, obj):
+        return getattr(obj.id_destinatario, 'dni', '') if obj.id_destinatario else ""
 
     def get_fecha(self, obj):
         val = obj.fecha or obj.fecha_transferencia or obj.fecha_salida
         if not val:
             return None
+        if isinstance(val, str):
+            return val.split(" ")[0].split("T")[0]
         return val.strftime("%Y-%m-%d")
+
+    def get_hora(self, obj):
+        if obj.fecha:
+            if isinstance(obj.fecha, str):
+                parts = obj.fecha.split(" ")
+                return parts[1][:5] if len(parts) > 1 else ""
+            return obj.fecha.strftime("%I:%M %p")
+        return ""
+
+    def get_fecha_corta(self, obj):
+        val = obj.fecha or obj.fecha_transferencia or obj.fecha_salida
+        if not val:
+            return ""
+        if isinstance(val, str):
+            d = val.split(" ")[0].split("T")[0].split("-")
+            return f"{d[2]}-{d[1]}-{d[0]}" if len(d) == 3 else val
+        return val.strftime("%d-%m-%Y")
+
+    def get_fecha_transferencia_corta(self, obj):
+        if not obj.fecha_transferencia:
+            return ""
+        val = obj.fecha_transferencia
+        if isinstance(val, str):
+            d = val.split(" ")[0].split("T")[0].split("-")
+            return f"{d[2]}-{d[1]}-{d[0]}" if len(d) == 3 else val
+        return val.strftime("%d-%m-%Y")
+
+    def get_fecha_liquidacion_corta(self, obj):
+        if not obj.fecha_liquidacion:
+            return ""
+        val = obj.fecha_liquidacion
+        if isinstance(val, str):
+            d = val.split(" ")[0].split("T")[0].split("-")
+            return f"{d[2]}-{d[1]}-{d[0]}" if len(d) == 3 else val
+        return val.strftime("%d-%m-%Y")
+
+    def get_tipo_solicitud_nombre(self, obj):
+        if obj.tipo_solicitud:
+            if hasattr(obj.tipo_solicitud, 'nombre'):
+                return obj.tipo_solicitud.nombre
+            from core.models import TipoSolicitud
+            t = TipoSolicitud.objects.filter(pk=obj.tipo_solicitud).first()
+            if t:
+                return t.nombre
+        return ""
 
     def get_referencia(self, obj):
         return f"Caja Chica: {obj.observacion or ''}".strip().upper()

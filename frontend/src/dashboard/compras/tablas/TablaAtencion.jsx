@@ -32,11 +32,12 @@ const TablaAtencion = ({
   const paginatedItems = data.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const getRequestIcon = (item) => {
+    const tipoMov = String(item.tipo_movimiento || "");
     const tipoGasto = String(item.tipo_gasto || "");
     const transporte = String(item.transporte || "");
     const tipo = String(item.tipo || "").toLowerCase();
 
-    if (tipoGasto === "02" || tipo.includes("pasajes") || tipo.includes("viaje")) {
+    if (tipoMov === "02" || tipoGasto === "02" || tipo.includes("pasajes") || tipo.includes("viaje")) {
       if (transporte === "A" || tipo.includes("aéreo") || tipo.includes("aero")) {
         return (
           <div className="p-1.5 rounded-lg bg-sky-50 text-sky-600 border border-sky-100/50 flex items-center justify-center w-8 h-8" title="Pasajes Aéreos">

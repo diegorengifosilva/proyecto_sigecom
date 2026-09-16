@@ -33,6 +33,8 @@ import LogisticaDetallePage from "./dashboard/logistica/LogisticaDetallePage";
 import LogisticaTablas from "./dashboard/logistica/LogisticaTablas";
 import Compras from "./dashboard/compras/Compras";
 import CompraDetallePage from "./dashboard/compras/CompraDetallePage";
+import PasajeDetallePage from "./dashboard/compras/PasajeDetallePage";
+import CajaChicaDetallePage from "./dashboard/compras/CajaChicaDetallePage";
 import ProgramacionDetallePage from "./dashboard/compras/ProgramacionDetallePage";
 
 // CAJA CHICA
@@ -155,6 +157,8 @@ export default function App() {
                 <Route path="programacion/:id_apertura" element={<ProgramacionDetallePage />} />
                 <Route path="atencion" element={<Compras defaultTab="atencion" />} />
                 <Route path="atencion/:id_solicitud" element={<CompraDetallePage />} />
+                <Route path="pasajes/:id_pasaje" element={<PasajeDetallePage />} />
+                <Route path="caja-chica/:id_caja_chica" element={<CajaChicaDetallePage />} />
                 <Route path="liquidaciones" element={<Compras defaultTab="liquidaciones" />} />
               </Route>
 
@@ -164,7 +168,8 @@ export default function App() {
                 <Route path="solicitud" element={<SolicitudDashboard />} />
                 <Route path="solicitud/nueva" element={<NuevaSolicitud />} />
                 <Route path="solicitud/mis-solicitudes" element={<MisSolicitudes />} />
-                <Route path="solicitudes/:nro_solicitud" element={<DetallesSolicitud />} />
+                <Route path="solicitudes/:nro_solicitud" element={<CajaChicaDetallePage />} />
+                <Route path="solicitud/:nro_solicitud" element={<CajaChicaDetallePage />} />
                 <Route path="atencion-solicitudes" element={<AtencionSolicitudes />} />
                 <Route path="liquidaciones/presentar" element={<LiquidacionesPendientes />} />
                 <Route path="liquidaciones/presentar/:id" element={<PresentarDocumentacionModal />} />

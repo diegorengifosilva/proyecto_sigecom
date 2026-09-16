@@ -4,6 +4,10 @@ from . import views
 urlpatterns = [
     path('clientes/', views.lista_clientes, name='lista_clientes'),
     path('clientes/buscar/', views.buscar_clientes_inline, name='buscar_clientes_inline'),
+    path('proveedores/', views.lista_proveedores, name='lista_proveedores'),
+    path('proveedores/buscar/', views.buscar_proveedores_inline, name='buscar_proveedores_inline'),
+    path('empresas-transporte/', views.lista_empresas_transporte, name='lista_empresas_transporte'),
+    path('empresas-transporte/buscar/', views.buscar_empresas_transporte_inline, name='buscar_empresas_transporte_inline'),
     path('representantes/', views.lista_representantes, name='lista_representantes'),
     path('representantes/buscar/', views.buscar_representantes_inline, name='buscar_representantes_inline'),
     path("estados/", views.lista_estados, name="lista_estados"),
@@ -16,4 +20,5 @@ urlpatterns = [
     path("productos/", views.lista_productos, name="lista_productos"),
     path("notas/", views.lista_notas, name="lista_notas"),
     path("unidades_medida/", views.lista_unidades_medida, name="lista_unidades_medida"),
+    path("tipo_solicitud/", views.lista_tipo_solicitud, name="lista_tipo_solicitud"),
 ]

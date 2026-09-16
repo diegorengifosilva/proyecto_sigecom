@@ -2758,6 +2758,40 @@ def lista_aperturas(request):
         logger.error(f"Error en Dashboard Aperturas: {str(e)}", exc_info=True)
         return Response({"error": f"Error en Dashboard Aperturas: {str(e)}"}, status=500)
 
+def sincronizar_items_apertura(apertura):
+    """
+    Garantiza que todos los suministros y servicios de la cotización base
+    estén presentes en cotizaciones_apertura_suministros y cotizaciones_apertura_servicios.
+    """
+    if not apertura or not apertura.id_registro_id:
+        return
+    coti_id = apertura.id_registro_id
+    from .models import CotizacionAperturaSuministro, CotizacionAperturaServicio, CotizacionSuministro, CotizacionServicio
+
+    # 1. Suministros
+    existing_sum_ids = set(CotizacionAperturaSuministro.objects.filter(id_apertura=apertura.id_apertura).values_list('id_suministro_id', flat=True))
+    coti_suministros = CotizacionSuministro.objects.filter(id_registro=coti_id)
+    missing_sums = [s for s in coti_suministros if s.id_suministro not in existing_sum_ids]
+    if missing_sums:
+        CotizacionAperturaSuministro.objects.bulk_create([
+            CotizacionAperturaSuministro(
+                id_apertura=apertura,
+                id_suministro=s
+            ) for s in missing_sums
+        ])
+
+    # 2. Servicios
+    existing_serv_ids = set(CotizacionAperturaServicio.objects.filter(id_apertura=apertura.id_apertura).values_list('id_servicio_id', flat=True))
+    coti_servicios = CotizacionServicio.objects.filter(id_registro=coti_id)
+    missing_servs = [s for s in coti_servicios if s.id_servicio not in existing_serv_ids]
+    if missing_servs:
+        CotizacionAperturaServicio.objects.bulk_create([
+            CotizacionAperturaServicio(
+                id_apertura=apertura,
+                id_servicio=s
+            ) for s in missing_servs
+        ])
+
 @api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def apertura_detalle(request, id_apertura):
@@ -2781,13 +2815,23 @@ def apertura_detalle(request, id_apertura):
         except CotizacionApertura.DoesNotExist:
             return Response({"error": "Apertura no encontrada"}, status=404)
 
+        # Garantizar que los suministros y servicios estén sincronizados
+        sincronizar_items_apertura(apertura)
+
         if request.method == 'GET':
             serializer = CotizacionAperturaSerializer(apertura)
             from compras_api.models import SolicitudOrdenCompra, SolicitudPasajes
+            from caja_chica_api.models import SolicitudCajaChica
             from django.db.models import Q
             
-            solicitudes_qs = SolicitudOrdenCompra.objects.filter(Q(nivel_grupo=id_apertura) | Q(nivel_grupo=str(id_apertura)))
-            pasajes_qs = SolicitudPasajes.objects.filter(Q(nivel_grupo=id_apertura) | Q(nivel_grupo=str(id_apertura)))
+            coti_codigo = apertura.id_registro.codigo if (apertura.id_registro and hasattr(apertura.id_registro, 'codigo')) else None
+            
+            base_q = Q(id_apertura=id_apertura) | Q(nivel_grupo=id_apertura) | Q(nivel_grupo=str(id_apertura))
+            query_filter = (base_q | Q(codigo=coti_codigo)) if coti_codigo else base_q
+            
+            solicitudes_qs = SolicitudOrdenCompra.objects.filter(query_filter).distinct()
+            pasajes_qs = SolicitudPasajes.objects.filter(query_filter).distinct()
+            caja_chica_qs = SolicitudCajaChica.objects.select_related('id_destinatario', 'id_estado').filter(query_filter).distinct()
             
             rel_solicitudes = []
             for s in solicitudes_qs:
@@ -2799,46 +2843,179 @@ def apertura_detalle(request, id_apertura):
                     "concepto": s.concepto or s.referencia or "Solicitud de Compra",
                     "num": s.num or 1,
                     "nivel_grupo": s.nivel_grupo,
-                    "tipo_movimiento": s.tipo_movimiento_id,
+                    "tipo_gasto": s.tipo_gasto_id or 2,
+                    "id_tipo_gasto": s.tipo_gasto_id or 2,
+                    "tipo_movimiento": "03",
                     "monto_soles": float(s.monto_soles or 0.00),
                     "monto_dolares": float(s.monto_dolares or 0.00),
                     "tipo_moneda": s.tipo_moneda or "S",
+                    "id_estado": s.id_estado_id,
                     "estado_nombre": s.id_estado.nombre if s.id_estado else "Pendiente",
-                    "tipo_gasto": s.tipo_gasto or "03",
-                    "tipo": s.tipo or "Suministro"
+                    "tipo": s.tipo or "Suministro",
+                    "categoria_solicitud": "compra",
+                    "es_caja_chica": False
                 })
                 
             for p in pasajes_qs:
+                trans_p = (p.transporte or "A").upper()
+                prefix_p = "Pasaje Aéreo" if trans_p == "A" else "Pasaje Terrestre"
+                concepto_p = (p.concepto or "").strip()
+                obs_p = (p.observacion or "").strip()
+
+                if not concepto_p or concepto_p in ("Pasaje Aereo / Terrestre", "Pasaje Aereo/Terrestre", "Pasaje"):
+                    concepto_p = f"{prefix_p} - {obs_p}" if obs_p else prefix_p
+                elif trans_p == "A" and concepto_p.startswith("Pasaje Aereo / Terrestre"):
+                    concepto_p = concepto_p.replace("Pasaje Aereo / Terrestre", "Pasaje Aéreo")
+                    if obs_p and obs_p not in concepto_p:
+                        concepto_p = f"{concepto_p} - {obs_p}"
+                elif trans_p == "T" and concepto_p.startswith("Pasaje Aereo / Terrestre"):
+                    concepto_p = concepto_p.replace("Pasaje Aereo / Terrestre", "Pasaje Terrestre")
+                    if obs_p and obs_p not in concepto_p:
+                        concepto_p = f"{concepto_p} - {obs_p}"
+                elif obs_p and obs_p not in concepto_p and concepto_p in (prefix_p, "Pasaje Aéreo", "Pasaje Terrestre"):
+                    concepto_p = f"{prefix_p} - {obs_p}"
+
                 rel_solicitudes.append({
                     "id_registro": p.id_pasaje,
                     "id_solicitud": p.id_pasaje,
+                    "id_pasaje": p.id_pasaje,
                     "codigo": p.codigo or p.cog,
                     "fecha": p.fecha.strftime("%Y-%m-%d") if p.fecha else None,
-                    "concepto": p.concepto or f"Pasaje {p.lugar_origen} a {p.lugar_destino}",
+                    "concepto": concepto_p,
+                    "observacion": obs_p,
+                    "referencia": obs_p,
                     "num": 5, # Map to Otros
                     "nivel_grupo": p.nivel_grupo or 5,
-                    "tipo_movimiento": p.tipo_movimiento_id or 5,
+                    "tipo_gasto": p.tipo_gasto_id or 4,
+                    "id_tipo_gasto": p.tipo_gasto_id or 4,
+                    "tipo_movimiento": "02",
                     "monto_soles": float(p.monto_soles or 0.00),
                     "monto_dolares": float(p.monto_dolares or 0.00),
                     "tipo_moneda": p.tipo_moneda or "S",
+                    "id_estado": p.id_estado_id if p.id_estado else 0,
                     "estado_nombre": p.id_estado.nombre if p.id_estado else "Pendiente",
-                    "tipo_gasto": p.tipo_gasto or "02",
                     "transporte": p.transporte or "",
-                    "tipo": p.transporte or "Pasaje"
+                    "tipo": p.transporte or "Pasaje",
+                    "empresa": p.empresa or "S/N",
+                    "categoria_solicitud": "pasaje",
+                    "es_caja_chica": False
+                })
+
+            for c in caja_chica_qs:
+                concepto_c = (c.concepto or c.observacion or "").strip()
+                if not concepto_c or concepto_c.lower() in ("solicitud de caja chica", "solicitud caja chica", "caja chica"):
+                    concepto_c = "Caja Chica"
+                elif not concepto_c.lower().startswith("caja chica"):
+                    concepto_c = f"Caja Chica - {concepto_c}"
+
+                destinatario_nombre = ""
+                if c.id_destinatario:
+                    destinatario_nombre = getattr(c.id_destinatario, 'nombre_completo', None) or getattr(c.id_destinatario, 'usuario', '')
+
+                rel_solicitudes.append({
+                    "id_registro": c.id_registro,
+                    "id_solicitud": c.id_registro,
+                    "id_caja_chica": c.id_registro,
+                    "codigo": c.codigo or c.cog or f"CCH-{c.id_registro}",
+                    "fecha": c.fecha.strftime("%Y-%m-%d") if c.fecha else None,
+                    "concepto": concepto_c,
+                    "destinatario_nombre": destinatario_nombre,
+                    "id_destinatario": c.id_destinatario_id,
+                    "num": c.num or 1,
+                    "nivel_grupo": c.nivel_grupo,
+                    "tipo_gasto": c.tipo_gasto_id or 1,
+                    "id_tipo_gasto": c.tipo_gasto_id or 1,
+                    "tipo_movimiento": "01",
+                    "monto_soles": float(c.monto_soles or 0.00),
+                    "monto_dolares": float(c.monto_dolares or 0.00),
+                    "tipo_moneda": c.tipo_moneda or "S",
+                    "id_estado": c.id_estado_id if c.id_estado else 0,
+                    "estado_nombre": c.id_estado.nombre if c.id_estado else "Pendiente",
+                    "tipo": "Caja Chica",
+                    "categoria_solicitud": "caja_chica",
+                    "es_caja_chica": True
                 })
                 
             rel_solicitudes.sort(key=lambda x: (x["fecha"] or "", x["id_registro"] or 0))
 
+            from .models import CotizacionAperturaSuministro, CotizacionAperturaServicio, CotizacionSuministro, CotizacionServicio
+
+            # Cargar suministros de la apertura
+            apertura_suministros_qs = CotizacionAperturaSuministro.objects.filter(
+                id_apertura=id_apertura
+            ).select_related('id_suministro').order_by('id_suministro__orden', 'id_registro')
+
+            ap_suministros_data = []
+            for item in apertura_suministros_qs:
+                sum_obj = item.id_suministro
+                ap_suministros_data.append({
+                    "id_registro": item.id_registro,
+                    "id_apertura": item.id_apertura_id,
+                    "id_suministro": item.id_suministro_id,
+                    "codigo_item": (sum_obj.codigo_item or "").strip() if sum_obj else "",
+                    "descripcion": (sum_obj.descripcion or "").strip() if sum_obj else "",
+                    "nombre_grupo": (sum_obj.nombre_grupo or "").strip() if sum_obj else "",
+                    "codigo_grupo": sum_obj.codigo_grupo if sum_obj else None,
+                    "nivel": sum_obj.nivel if sum_obj else 0,
+                    "cantidad": float(sum_obj.cantidad or 0) if sum_obj else 0,
+                    "tipo_unidad": (sum_obj.tipo_unidad or "").strip() if sum_obj else "",
+                    "costo_precio": float(sum_obj.costo_precio or 0.0) if sum_obj else 0.0,
+                    "costo_total": float(sum_obj.costo_total or 0.0) if sum_obj else 0.0,
+                    "venta_total": float(sum_obj.venta_total or 0.0) if sum_obj else 0.0,
+                    "id_tipo_gasto": sum_obj.id_tipo_gasto_id if sum_obj else 1,
+                    "proveedor": (sum_obj.proveedor or "").strip() if sum_obj else "",
+                    "fini": item.fini.strftime("%Y-%m-%d") if item.fini else None,
+                    "fmax": item.fmax.strftime("%Y-%m-%d") if item.fmax else None,
+                    "avan": item.avan.strftime("%Y-%m-%d") if item.avan else None,
+                    "efis": item.efis or "",
+                    "efin": item.efin or "",
+                    "ead": item.ead or "",
+                    "een": item.een or "",
+                    "nreg": item.nreg or "",
+                })
+
+            # Cargar servicios de la apertura
+            apertura_servicios_qs = CotizacionAperturaServicio.objects.filter(
+                id_apertura=id_apertura
+            ).select_related('id_servicio').order_by('id_servicio__orden', 'id_registro')
+
+            ap_servicios_data = []
+            for item in apertura_servicios_qs:
+                serv_obj = item.id_servicio
+                ap_servicios_data.append({
+                    "id_registro": item.id_registro,
+                    "id_apertura": item.id_apertura_id,
+                    "id_servicio": item.id_servicio_id,
+                    "codigo_servicio": (serv_obj.codigo_servicio or "").strip() if serv_obj else "",
+                    "codigo_item": (serv_obj.codigo_item or "").strip() if serv_obj else "",
+                    "descripcion_item": (serv_obj.descripcion_item or serv_obj.nombre_servicio or "").strip() if serv_obj else "",
+                    "nombre_servicio": (serv_obj.nombre_servicio or "").strip() if serv_obj else "",
+                    "nivel": serv_obj.nivel if serv_obj else 0,
+                    "cantidad_hombres": serv_obj.cantidad_hombres if serv_obj else 0,
+                    "horas": serv_obj.horas if serv_obj else 0,
+                    "costo_total": float(serv_obj.costo_total or 0.0) if serv_obj else 0.0,
+                    "cotizado_total": float(serv_obj.cotizado_total or 0.0) if serv_obj else 0.0,
+                    "id_tipo_gasto": serv_obj.id_tipo_gasto_id if serv_obj else 4,
+                    "fini": item.fini.strftime("%Y-%m-%d") if item.fini else None,
+                    "fmax": item.fmax.strftime("%Y-%m-%d") if item.fmax else None,
+                    "avan": float(item.avan or 0.0),
+                    "efis": item.efis or "",
+                    "efin": item.efin or "",
+                    "nreg": item.nreg or "",
+                })
+
             cotizacion_id = apertura.id_registro_id
             tipos_gasto_presentes = []
             if cotizacion_id:
-                from .models import CotizacionSuministro, CotizacionServicio
-                suministros_gastos = set(CotizacionSuministro.objects.filter(id_registro_id=cotizacion_id).values_list('id_tipo_gasto_id', flat=True))
-                servicios_gastos = set(CotizacionServicio.objects.filter(id_registro_id=cotizacion_id).values_list('id_tipo_gasto_id', flat=True))
-                tipos_gasto_presentes = [tg for tg in list(suministros_gastos.union(servicios_gastos)) if tg is not None]
+                suministros_gastos = set(item['id_tipo_gasto'] for item in ap_suministros_data if item.get('id_tipo_gasto'))
+                servicios_gastos = set(item['id_tipo_gasto'] for item in ap_servicios_data if item.get('id_tipo_gasto'))
+                solicitudes_gastos = set(s['tipo_gasto'] for s in rel_solicitudes if s.get('tipo_gasto'))
+                tipos_gasto_presentes = [tg for tg in list(suministros_gastos.union(servicios_gastos).union(solicitudes_gastos)) if tg is not None]
 
             data = serializer.data
             data["solicitudes"] = rel_solicitudes
+            data["apertura_suministros"] = ap_suministros_data
+            data["apertura_servicios"] = ap_servicios_data
             data["tipos_gasto_presentes"] = tipos_gasto_presentes
             return Response(data)
 
@@ -3206,6 +3383,8 @@ def crear_nueva_oc(request, id_registro):
             sugerencias = {"sugeridas": {}, "aplicadas": [], "pendientes": []}
             recalculate_apertura_costs(nueva_apertura, preserve_total=True)
             nueva_apertura.save()
+
+        sincronizar_items_apertura(nueva_apertura)
 
         cleanup_duplicate_aperturas(id_registro)
         try:

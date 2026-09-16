@@ -55,7 +55,28 @@ def usuarios_activos(request):
     serializer = UsuarioSerializer(usuarios, many=True)
     return Response(serializer.data)
 
-# Login db_vc
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def buscar_usuarios(request):
+    """
+    Búsqueda rápida de usuarios por DNI, nombre completo o usuario.
+    Retorna hasta 20 resultados priorizando usuarios activos.
+    """
+    q = request.GET.get("dni", "").strip() or request.GET.get("q", "").strip()
+    if not q:
+        return Response([])
+
+    usuarios = Usuario.objects.using("default").select_related('id_area', 'id_cargo').filter(
+        Q(dni__icontains=q) |
+        Q(nombre_completo__icontains=q) |
+        Q(usuario__icontains=q)
+    ).order_by('-activo', 'nombre_completo')[:20]
+
+    serializer = UsuarioSerializer(usuarios, many=True)
+    return Response(serializer.data)
+
+# Login DB_VC
+
 @csrf_exempt
 @api_view(['POST'])
 def login_usuario(request):

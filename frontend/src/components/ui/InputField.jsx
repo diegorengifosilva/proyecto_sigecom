@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
-export default function InputField({
+const InputField = React.forwardRef(function InputField({
   label,
   icon,
   inline = false,
@@ -15,7 +15,7 @@ export default function InputField({
   trailingIcon,
   as = "input",
   ...props
-}) {
+}, ref) {
   const [isFocused, setIsFocused] = useState(false);
   const [localValue, setLocalValue] = useState("");
 
@@ -129,6 +129,7 @@ export default function InputField({
       <div className="relative w-full">
         {as === "textarea" ? (
           <textarea
+            ref={ref}
             value={value || ""}
             onChange={onChange}
             readOnly={readOnly}
@@ -141,6 +142,7 @@ export default function InputField({
           />
         ) : (
           <Input
+            ref={ref}
             type={type === "currency" ? "text" : type}
             value={type === "currency" ? localValue : (value || "")}
             onChange={type === "currency" ? handleInputChange : onChange}
@@ -173,5 +175,7 @@ export default function InputField({
       )}
     </div>
   );
-}
+});
+
+export default InputField;
 

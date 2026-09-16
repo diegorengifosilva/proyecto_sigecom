@@ -389,7 +389,7 @@ export default function RegisterPage() {
 
       {/* Footer */}
       <div className="absolute bottom-4 text-center text-xs text-white w-full z-10 px-4">
-        © 2025 Producto desarrollado por V&C Corporation SAC
+        © 2026 Producto desarrollado por V&C Corporation SAC
       </div>
     </div>
   );

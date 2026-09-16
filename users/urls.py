@@ -8,6 +8,7 @@ urlpatterns = [
     path("refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     path('usuario-actual/', views.usuario_actual, name='usuario_actual'),
     path('usuarios-activos/', views.usuarios_activos, name='usuarios_activos'),
+    path('buscar/', views.buscar_usuarios, name='buscar_usuarios'),
     path('areas/', views.lista_areas, name='lista_areas'),
     path('areas/<int:id_area>/', views.lista_areas, name='lista_areas_detail'),
     path('cargos/', views.lista_cargos, name='lista_cargos'),

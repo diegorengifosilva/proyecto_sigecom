@@ -693,19 +693,38 @@ class EstadoCaja(models.Model):
 
 
 class SolicitudCajaChica(models.Model):
-    id_caja_chica = models.AutoField(primary_key=True)
-    id_registro = models.IntegerField()
+    id_registro = models.AutoField(primary_key=True)
+    id_apertura = models.ForeignKey(
+        'cotizaciones_api.CotizacionApertura',
+        on_delete=models.SET_NULL,
+        db_column='id_apertura',
+        null=True,
+        blank=True,
+        related_name='solicitudes_caja_chica'
+    )
+    codigo = models.CharField(max_length=100, null=True, blank=True)
     nivel_grupo = models.IntegerField(null=True, blank=True)
     cog = models.CharField(max_length=100, null=True, blank=True)
     num = models.IntegerField(null=True, blank=True)
     fecha = models.DateTimeField(null=True, blank=True)
-    id_area = models.ForeignKey('users.Area', on_delete=models.PROTECT, db_column='id_area', null=True, blank=True)
-    codigo = models.CharField(max_length=100, null=True, blank=True)
+    id_area = models.ForeignKey(
+        'users.Area', 
+        on_delete=models.PROTECT, 
+        db_column='id_area', 
+        null=True, 
+        blank=True
+    )
     id_solicitante = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, db_column='id_solicitante', related_name='solicitudes_caja_creadas', null=True, blank=True)
     id_destinatario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, db_column='id_destinatario', related_name='solicitudes_caja_destinadas', null=True, blank=True)
-    banco = models.CharField(max_length=255, null=True, blank=True)
+    id_banco = models.ForeignKey(
+        'users.Banco', 
+        on_delete=models.PROTECT, 
+        db_column='id_banco', 
+        null=True, 
+        blank=True
+    )
     numero_cuenta = models.CharField(max_length=100, null=True, blank=True)
-    tipo_moneda = models.CharField(max_length=45, null=True, blank=True)
+    tipo_moneda = models.CharField(max_length=1, default='S', null=True, blank=True)
     monto_soles = models.DecimalField(max_digits=12, decimal_places=2, default=0.00, null=True, blank=True)
     tipo_cambio = models.DecimalField(max_digits=10, decimal_places=4, default=0.0000, null=True, blank=True)
     monto_dolares = models.DecimalField(max_digits=12, decimal_places=2, default=0.00, null=True, blank=True)
@@ -713,17 +732,47 @@ class SolicitudCajaChica(models.Model):
     fecha_transferencia = models.DateTimeField(null=True, blank=True)
     fecha_liquidacion = models.DateTimeField(null=True, blank=True)
     observacion = models.CharField(max_length=500, null=True, blank=True)
-    id_estado = models.ForeignKey('core.Estado', on_delete=models.PROTECT, db_column='id_estado', null=True, blank=True)
-    luo = models.CharField(max_length=255, null=True, blank=True)
+    id_estado = models.ForeignKey(
+        'core.EstadoSolicitud', 
+        on_delete=models.PROTECT, 
+        db_column='id_estado', 
+        null=True, 
+        blank=True
+    )
+    tipo_solicitud = models.ForeignKey(
+        'core.TipoSolicitud', 
+        on_delete=models.SET_NULL, 
+        db_column='tipo_solicitud', 
+        null=True, 
+        blank=True, 
+        related_name='solicitudes_caja'
+    )
     lud = models.CharField(max_length=255, null=True, blank=True)
     fecha_salida = models.DateTimeField(null=True, blank=True)
-    tipo_movimiento = models.CharField(max_length=45, null=True, blank=True)
-    tipo_gasto = models.CharField(max_length=45, null=True, blank=True)
+    tipo_gasto = models.ForeignKey(
+        'core.TipoGasto', 
+        on_delete=models.SET_NULL, 
+        db_column='tipo_gasto', 
+        null=True, 
+        blank=True, 
+        related_name='solicitudes_caja'
+    )
+    tipo_movimiento = models.CharField(
+        max_length=45, 
+        null=True, 
+        blank=True, 
+        db_column='tipo_movimiento'
+    )
 
     class Meta:
         managed = False
         db_table = 'solicitud_caja_chica'
 
+    @property
+    def id_caja_chica(self):
+        return self.id_registro
+
     def __str__(self):
-        return f"Solicitud Caja Chica {self.cog or self.codigo or self.id_caja_chica} - {self.concepto or ''}"
+        return f"Solicitud Caja Chica {self.cog or self.codigo or self.id_registro} - {self.concepto or ''}"
+
 
