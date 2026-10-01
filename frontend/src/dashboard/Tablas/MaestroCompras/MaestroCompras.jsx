@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { useOutletContext } from "react-router-dom";
 import { motion } from "framer-motion";
 import { 
   Building2, 
@@ -11,6 +12,16 @@ import TablaRepresentantes from "../EstructuraComercial/Tabla/TablaRepresentante
 
 export default function MaestroCompras() {
   const [tabActiva, setTabActiva] = useState("clientes");
+  const { setCustomBreadcrumbs } = useOutletContext() || {};
+
+  useEffect(() => {
+    if (setCustomBreadcrumbs) {
+      setCustomBreadcrumbs([
+        { label: "MAESTRO COMPRAS", path: "/maestro/compras" },
+        { label: tabActiva.toUpperCase() }
+      ]);
+    }
+  }, [tabActiva, setCustomBreadcrumbs]);
 
   const TABS = [
     { id: "clientes", label: "Clientes", icon: <Users size={16} />, desc: "Empresas clientes asociadas" },
@@ -90,3 +101,5 @@ export default function MaestroCompras() {
     </motion.div>
   );
 }
+
+

@@ -2,16 +2,28 @@ import React from 'react';
 import { Icon } from "@iconify/react";
 import { CompactField } from './CompactField';
 
+const toTiempoCero = (raw) => {
+  if (raw === "" || raw === null || raw === undefined) return 0;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : 0;
+};
+
 export const CompactTiempoUnidad = ({ label, value, onValueChange, unitValue, onUnitChange, options, isReadOnly }) => {
+  const handleBlur = (e) => {
+    const n = toTiempoCero(e.target.value);
+    e.target.value = String(n);
+    onValueChange?.(e);
+  };
+
   return (
     <CompactField label={label} className="group relative">
       <div className="flex items-center flex-nowrap whitespace-nowrap">
         {/* Valor Numérico */}
         <input
           type="number"
-          defaultValue={value || "0"}
+          defaultValue={toTiempoCero(value)}
           key={value}
-          onBlur={onValueChange}
+          onBlur={handleBlur}
           onKeyDown={(e) => e.key === 'Enter' && e.target.blur()}
           readOnly={isReadOnly}
           className="bg-transparent border-none p-0 h-auto w-8 font-black text-[11px] text-gray-900 focus:ring-0 outline-none"
@@ -22,9 +34,9 @@ export const CompactTiempoUnidad = ({ label, value, onValueChange, unitValue, on
         {/* Selector de Unidad (Días/Semanas/etc) */}
         <div className="relative flex items-center shrink-0">
           <select
-            value={unitValue}
+            value={unitValue || "1"}
             onChange={onUnitChange}
-            disabled={isReadOnly || !value || value === "0"}
+            disabled={isReadOnly}
             className="bg-transparent border-none p-0 h-auto font-black text-[11px] text-gray-600 focus:ring-0 cursor-pointer w-auto appearance-none pr-3"
           >
             {options.map(o => (

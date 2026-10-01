@@ -5,6 +5,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body {
             font-family: "Times New Roman", Times, serif;
@@ -94,8 +95,10 @@
             line-height: 1.2;
             color: #000000;
             margin: 0 auto;
-            max-width: 85%;
+            max-width: 92%;
             text-align: center;
+            overflow-wrap: anywhere;
+            word-break: break-word;
         }
 
         .preparado-seccion {
@@ -251,12 +254,7 @@
         }
 
         .footer-info {
-            position: absolute;
-            bottom: 30px;
-            width: 100%;
-            text-align: center;
-            font-size: 9px;
-            color: var(--text-gray);
+            display: none !important;
         }
 
         /* --- ESTILOS PARA LA SEGUNDA PÁGINA (RESUMEN) --- */
@@ -278,17 +276,18 @@
         .summary-grid {
             display: table;
             width: 100%;
+            table-layout: fixed;
             border-spacing: 10px 0;
             margin-left: -10px;
-            margin-bottom: 0px !important; /* Fuerza a que no haya espacio abajo */
+            margin-bottom: 0px !important;
             padding-bottom: 0px !important;
         }
 
         .summary-item {
-            flex: 1; 
             display: table-cell;
             width: 50%;
             vertical-align: top;
+            overflow: hidden;
         }
 
         .data-card {
@@ -296,7 +295,12 @@
             border: 1px solid rgb(221, 221, 229); 
             padding: 12px 15px;
             border-radius: 2px;
-            margin-bottom: 10px; /* <--- Cambiado de 10px a 5px */
+            margin-bottom: 10px;
+            overflow: hidden;
+            max-width: 100%;
+            box-sizing: border-box;
+            position: relative;
+            z-index: 2;
         }
 
         .data-card .label {
@@ -326,9 +330,11 @@
         }
 
         .data-card .value .line {
-            font-weight: 400; /* Normal */
+            font-weight: 400;
             display: block;
-            margin-bottom: 2px; /* Espacio entre líneas */
+            margin-bottom: 2px;
+            overflow-wrap: anywhere;
+            word-break: break-word;
         }
 
         .data-card .value .line.strong {
@@ -393,9 +399,9 @@
         /* --- CONFIGURACIÓN DE COLORES (Variables actualizadas) --- */
         :root {
             --primary-rgb: rgb(35, 117, 115);
-            --border-tabla: rgb(209, 213, 222);
+            --border-tabla: rgb(198, 204, 214);
             --text-filas: rgb(68, 68, 68);
-            --bg-filas: rgb(254, 254, 255);
+            --bg-filas: #ffffff;
             --bg-totales: rgb(247, 249, 251);
         }
 
@@ -416,12 +422,35 @@
         }
 
         .bloque-seccion {
-            page-break-inside: auto;
-            break-inside: auto;
+            page-break-inside: avoid;
+            break-inside: avoid-page;
         }
 
         .bloque-seccion > .subtit {
             margin-bottom: 14pt;
+        }
+
+        .grupo-detalle {
+            page-break-inside: avoid !important;
+            break-inside: avoid-page !important;
+        }
+
+        table.bloque-grupo-keep {
+            width: 100%;
+            border: none !important;
+            border-collapse: collapse;
+            margin: 20px 0 0 0;
+            page-break-inside: avoid !important;
+            break-inside: avoid-page !important;
+            page-break-before: auto;
+            break-before: auto;
+        }
+        table.bloque-grupo-keep > tbody > tr,
+        table.bloque-grupo-keep > tbody > tr > td {
+            border: none !important;
+            padding: 0 !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid-page !important;
         }
 
         /* --- TABLA UNIFICADA (tabla-moderna) --- */
@@ -429,12 +458,12 @@
             width: 100%;
             border-collapse: collapse;
             margin-bottom: 20px;
-            background-color: var(--bg-filas);
+            background-color: #ffffff;
             color: var(--text-filas);
             table-layout: auto;
             page-break-before: avoid;
             break-before: avoid-page;
-            border-bottom: 0.5pt solid var(--border-tabla);
+            border: 0.5pt solid var(--border-tabla);
         }
 
         .tabla-moderna thead {
@@ -449,45 +478,26 @@
         }
 
         /* --- EXCEPCIÓN PARA SERVICIOS (Permitir ruptura y cierre visual) --- */
-        /* 1. Permitir que la fila se rompa */
         .seccion-servicios .tabla-moderna tr {
             page-break-inside: auto !important;
             break-inside: auto !important;
         }
-
-        /* 2. Forzar el dibujo del borde en cada fragmento de la celda cortada */
-        .seccion-servicios .tabla-moderna td {
-            /* Al usar border-bottom en el td, algunos motores cierran el borde al final de la página */
-            border-bottom: 0.5pt solid var(--border-tabla) !important;
-            /* Este ajuste ayuda a que el borde se mantenga en la base del área visible */
-            background-clip: padding-box; 
-        }
-
-        /* 3. El truco del "Cierre de Emergencia" */
-        /* Si el borde del td no aparece, este borde en la tabla servirá de cierre en cada salto */
-        .seccion-servicios .tabla-moderna {
-            border-bottom: 0.5pt solid var(--border-tabla) !important;
-        }
-
-        /* 4. Asegurar flujo de texto */
-        .seccion-servicios .rich-text {
+        .seccion-servicios .celda-descripcion .rich-text {
             page-break-inside: auto !important;
-            display: block; /* Ayuda al cálculo del borde inferior */
         }
 
         /* 1. RESET DE TEXTO INTERNO (Clave para que se vea como Word) */
         .tabla-moderna th, 
         .tabla-moderna td {
-            /* Márgenes exactos de tu imagen de Word */
             padding-top: 0.2cm;      
             padding-bottom: 0.2cm;   
             padding-left: 0.19cm;    
             padding-right: 0.19cm;   
-            /* Elimina el espacio extra entre líneas de la web */
             line-height: 1.1; 
             word-wrap: break-word;
             overflow-wrap: break-word;
-            border-bottom: 0.5pt solid var(--border-tabla);
+            border: 0.5pt solid var(--border-tabla);
+            background-clip: padding-box;
         }
 
         /* Elimina márgenes si usas etiquetas <p> dentro de las celdas */
@@ -497,29 +507,53 @@
             padding: 0;
         }
 
-        .tabla-moderna td.rich-text,
-        .tabla-moderna td.rich-text p,
-        .tabla-moderna td.rich-text li {
+        .tabla-moderna td.celda-descripcion,
+        .tabla-moderna td.celda-descripcion p,
+        .tabla-moderna td.celda-descripcion li {
             line-height: 1.15 !important;
+        }
+
+        .tabla-moderna td.celda-descripcion {
+            background-color: #ffffff !important;
+            vertical-align: top;
+        }
+        .tabla-moderna td.celda-descripcion .rich-text,
+        .tabla-moderna td.celda-descripcion .rich-text * {
+            background: transparent !important;
+            background-color: transparent !important;
+            color: var(--text-filas);
         }
 
         /* 1. CABECERA */
         .tabla-moderna thead th {
             background-color: var(--primary-rgb);
-            color: #ffffff; /* Negrita blanco */
+            color: #ffffff;
             font-weight: 700;
-            font-size: 11pt;
+            font-size: 9pt;
             text-align: center;
-            border: 0.5pt solid #000000; /* Borde negro */
-            border-bottom: none; /* Sin borde inferior como pediste */
+            border: 0.5pt solid var(--border-tabla);
             white-space: nowrap;
+        }
+
+        .tabla-detalle-suministro {
+            table-layout: fixed;
+            width: 100%;
+        }
+        .tabla-detalle-suministro thead th.th-monto {
+            white-space: normal !important;
+            line-height: 1.2;
+            font-size: 8.5pt;
+            padding-left: 0.08cm;
+            padding-right: 0.08cm;
         }
 
         /* 2. FILAS Y BORDES */
         .tabla-moderna tbody td {
-            border: 0.5pt solid var(--border-tabla); /* Borde gris claro */
+            border: 0.5pt solid var(--border-tabla);
             font-size: 9pt;
             vertical-align: middle;
+            background-color: #ffffff;
+            color: var(--text-filas);
         }
 
         /* 3. FILAS DE TOTALES (SUBTOTAL, DESCUENTO, TOTAL) */
@@ -532,8 +566,10 @@
             page-break-before: avoid;
         }
 
-        .tabla-moderna tfoot td {
-            border: 0.5pt solid var(--border-tabla);
+        .tabla-moderna tfoot td,
+        .tabla-moderna .total-fila td {
+            border: 0.5pt solid var(--border-tabla) !important;
+            background-color: var(--bg-totales);
         }
 
         /* Clases de utilidad para alineación */
@@ -733,9 +769,9 @@
 
         /* ===== TEXTO ENRIQUECIDO SERVICIOS ===== */
         .rich-text {
-            font-size: 10px;
+            font-size: 9pt;
             line-height: 1.15;
-            color: #444;
+            color: var(--text-filas);
             text-align: left;
         }
 
@@ -784,21 +820,112 @@
             display: table-footer-group;
         }
 
+        /* Unión de precios por grupo (Total por grupo) — tabla anidada para caber en A4 */
+        .tabla-moderna.tabla-total-por-grupo {
+            table-layout: fixed;
+            width: 100%;
+            max-width: 100%;
+        }
+        .tabla-moderna.tabla-total-por-grupo thead th {
+            font-size: 9pt;
+            line-height: 1.15;
+        }
+        .tabla-moderna.tabla-total-por-grupo thead th.th-monto {
+            white-space: normal !important;
+        }
+        .tabla-moderna td.celda-codigo {
+            font-size: 8pt;
+            word-break: break-word;
+            overflow-wrap: anywhere;
+        }
+        .tabla-moderna td.celda-union-items {
+            padding: 0 !important;
+            vertical-align: top !important;
+        }
+        .tabla-items-anidada {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+        .tabla-items-anidada td {
+            border-top: none !important;
+            border-left: none !important;
+            border-right: 0.5pt solid var(--border-tabla) !important;
+            border-bottom: 0.5pt solid var(--border-tabla) !important;
+            padding-top: 0.2cm;
+            padding-bottom: 0.2cm;
+            padding-left: 0.19cm;
+            padding-right: 0.19cm;
+            font-size: 9pt;
+            vertical-align: middle;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            background-color: #ffffff;
+        }
+        .tabla-items-anidada td:last-child {
+            border-right: none !important;
+        }
+        .tabla-items-anidada tr:last-child td {
+            border-bottom: none !important;
+        }
+        .tabla-items-anidada td.celda-um {
+            white-space: nowrap;
+        }
+        .tabla-moderna td.celda-precio-unificado {
+            vertical-align: middle !important;
+            font-weight: 700;
+            font-size: 10pt;
+            white-space: nowrap;
+        }
+
+        .tabla-moderna td.celda-monto,
+        .tabla-moderna td.celda-precio-unificado,
+        .tabla-moderna .total-value {
+            text-align: center !important;
+            white-space: nowrap !important;
+            word-break: keep-all !important;
+            overflow-wrap: normal !important;
+        }
+
+        .tabla-moderna td.text-right,
+        .tabla-moderna tfoot td.text-right,
+        .tabla-moderna .total-label {
+            white-space: nowrap !important;
+            word-break: keep-all !important;
+            overflow-wrap: normal !important;
+        }
+
+        .seccion-servicios .tabla-moderna {
+            table-layout: fixed;
+            width: 100%;
+        }
+        .seccion-servicios .tabla-moderna thead th {
+            white-space: nowrap;
+            overflow: hidden;
+        }
+
         /* Contenido */
         .contenido-pdf{
             width:100%;
         }
 
-        /* --- ESTILOS PARA VISTA PREVIA (PANTALLA COMPLETA) --- */
+        /* --- ESTILOS PARA VISTA PREVIA: mismo layout A4, se escala al iframe --- */
         @media screen {
+            html {
+                background-color: #f1f5f9;
+                overflow-x: hidden;
+            }
             body {
                 background-color: #ffffff;
                 display: block;
                 padding: 0;
-                margin: 0;
+                margin: 0 auto;
+                width: 210mm;
+                max-width: 210mm;
+                box-sizing: border-box;
+                transform-origin: top left;
             }
 
-            /* Contenedor de botones flotantes */
             .no-print-controls {
                 position: fixed;
                 top: 20px;
@@ -806,10 +933,9 @@
                 z-index: 1000;
             }
 
-            /* Estilo específico para el botón de Word */
             .word-blue {
                 padding: 12px 24px;
-                background: #2b579a; /* Azul oficial de Word */
+                background: #2b579a;
                 color: white;
                 border: none;
                 border-radius: 8px;
@@ -817,30 +943,86 @@
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.2);
                 cursor: pointer;
-                transition: all 0.3s ease;
                 display: flex;
                 align-items: center;
                 gap: 8px;
             }
 
-            .word-blue:hover {
-                background: #1e3e6d;
-                transform: translateY(-2px);
-                box-shadow: 0 6px 15px rgba(0,0,0,0.3);
-            }
-
-            /* Contenedores de página fluidos para el sistema */
             .page, .page-dynamic {
                 background: white;
                 margin: 0 auto;
                 box-shadow: none;
-                width: 100%;
-                max-width: 1300px; /* Un poco más ancho para aprovechar el monitor */
+                width: 210mm;
+                max-width: 210mm;
                 height: auto;
-                min-height: 100vh;
-                padding: 60px; /* Más aire a los costados para legibilidad */
+                min-height: 0;
+                padding: 10mm 12mm;
                 box-sizing: border-box;
                 border-bottom: 2px solid #f0f0f0;
+                overflow: hidden;
+                isolation: isolate;
+                position: relative;
+            }
+
+            .footer-info,
+            .footer-bg {
+                display: none !important;
+            }
+
+            .summary-grid {
+                table-layout: fixed;
+                width: 100%;
+                max-width: 100%;
+            }
+            .summary-item {
+                max-width: 50%;
+                overflow: hidden;
+            }
+            .data-card {
+                overflow: hidden;
+                max-width: 100%;
+                box-sizing: border-box;
+            }
+            .data-card .value,
+            .data-card .value .line {
+                overflow-wrap: anywhere;
+                word-break: break-word;
+            }
+
+            .content, .content-padding {
+                padding-left: 0 !important;
+                padding-right: 0 !important;
+            }
+
+            .tabla-moderna {
+                width: 100%;
+                max-width: 100%;
+                table-layout: fixed;
+            }
+            .tabla-moderna th,
+            .tabla-moderna td {
+                overflow-wrap: normal;
+                word-wrap: normal;
+                word-break: normal;
+            }
+            .tabla-moderna td.celda-codigo {
+                overflow-wrap: anywhere;
+                word-break: break-word;
+            }
+            .tabla-moderna thead th {
+                white-space: nowrap !important;
+            }
+            .tabla-detalle-suministro thead th.th-monto {
+                white-space: normal !important;
+            }
+            .tabla-moderna td.text-right,
+            .tabla-moderna tfoot td.text-right,
+            .tabla-moderna td.celda-monto,
+            .tabla-moderna td.celda-precio-unificado,
+            .tabla-moderna .total-value {
+                white-space: nowrap !important;
+                overflow-wrap: normal !important;
+                word-break: keep-all !important;
             }
         }
 
@@ -873,7 +1055,6 @@
 </div>
 
 <div class="page">
-    <div class="footer-bg"></div>
     <div class="content">
         <div style="text-align: right; margin-bottom: 10px;">
             <div class="quote-badge">
@@ -910,7 +1091,7 @@
                     <div class="value">
                         <strong>{{ cabecera.cliente|upper }}</strong><br>
                         {% if cabecera.atencion.nombre %}
-                        <div class="line"><strong>Representante:</strong> {{ cabecera.atencion.nombre }}</div>
+                        <div class="line"><strong>Representante:</strong> {{ cabecera.atencion.nombre }}{% if cabecera.atencion.cargo %} | {{ cabecera.atencion.cargo }}{% endif %}</div>
                         {% endif %}
                         {% if cabecera.atencion.telefono %}
                         <div class="line"><strong>• Teléfono:</strong> {{ cabecera.atencion.telefono }}</div>
@@ -1052,10 +1233,6 @@
     </div>
 
     </div>
-        <div style="position: absolute; left: 0; top: 20%; width: 4px; height: 60%; background: linear-gradient(to bottom, transparent, var(--primary), transparent); opacity: 0.3;"></div>
-    </div>
-
-    <div class="footer-info">V&C Corporation SAC - Propuesta Económica</div>
 </div>
 
 <div class="page-dynamic">
@@ -1064,6 +1241,8 @@
         <img src="{{ header_path }}" class="header-img">
     </div>
     <div class="content-padding" style="padding-top: 0;" >
+        <table class="bloque-grupo-keep">
+            <tr><td>
         <p class="subtit" style="margin-top: 0; padding-top: 0;">
             PRESUPUESTO GENERAL
         </p>
@@ -1083,8 +1262,8 @@
                     <td class="text-center">{{ forloop.counter|stringformat:"02d" }}</td>
                     <td class="font-bold">{{ grupo.titulo }}</td>
                     <td class="text-center">{{ grupo.cantidad|floatformat:0 }}</td>
-                    <td class="text-right">{{ grupo.total|moneda:totales.moneda }}</td>
-                    <td class="text-right font-bold">{{ grupo.total_grupo|moneda:totales.moneda }}</td>
+                    <td class="text-center celda-monto">{{ grupo.total|moneda:totales.moneda }}</td>
+                    <td class="text-center celda-monto font-bold">{{ grupo.total_grupo|moneda:totales.moneda }}</td>
                 </tr>
                 {% endfor %}
 
@@ -1094,8 +1273,8 @@
                         <td class="text-center">{{ forloop.counter|add:offset|stringformat:"02d" }}</td>
                         <td class="font-bold">{{ grupo.titulo }}</td>
                         <td class="text-center">{{ grupo.cantidad|floatformat:0 }}</td>
-                        <td class="text-right">{{ grupo.total|moneda:totales.moneda }}</td>
-                        <td class="text-right font-bold">{{ grupo.total_servicio|moneda:totales.moneda }}</td>
+                        <td class="text-center celda-monto">{{ grupo.total|moneda:totales.moneda }}</td>
+                        <td class="text-center celda-monto font-bold">{{ grupo.total_servicio|moneda:totales.moneda }}</td>
                     </tr>
                     {% endfor %}
                 {% endwith %}
@@ -1104,47 +1283,88 @@
                 {% if totales.descuento and totales.descuento > 0 %}
                 <tr class="total-fila soft">
                     <td colspan="4" class="text-right total-label">DESCUENTO:</td>
-                    <td class="text-right total-value muted">{{ totales.descuento|moneda:totales.moneda }}</td>
+                    <td class="text-center total-value muted">{{ totales.descuento|moneda:totales.moneda }}</td>
                 </tr>
                 {% endif %}
                 <tr class="total-fila main-total">
                     <td colspan="4" class="text-right total-label">COSTO TOTAL:</td>
-                    <td class="text-right total-value main">{{ totales.total_cotizacion|moneda:totales.moneda }}</td>
+                    <td class="text-center total-value main">{{ totales.total_cotizacion|moneda:totales.moneda }}</td>
                 </tr>
             </tfoot>
+        </table>
+            </td></tr>
         </table>
 
         {% if suministros %}
             {% for grupo in suministros %}
-            <div class="grupo-detalle bloque-seccion" style="margin-top: 20px;">
+            <table class="bloque-grupo-keep grupo-detalle">
+            <tr><td>
                 <p class="subtit">{{ grupo.seccion }}.- DETALLE SUMINISTRO: {{ grupo.titulo }}</p>
-                <table class="tabla-moderna">
+                <table class="tabla-moderna tabla-detalle-suministro{% if grupo.total_por_grupo %} tabla-total-por-grupo{% endif %}">
+                    <colgroup>
+                        <col style="width: 5%">
+                        <col style="width: 14%">
+                        <col style="width: 24%">
+                        <col style="width: 6%">
+                        <col style="width: 9%">
+                        <col style="width: 12%">
+                        <col style="width: 15%">
+                        <col style="width: 15%">
+                    </colgroup>
                     <thead>
                         <tr>
-                            <th style="width: 6%;" class="text-center">Ítem</th>
-                            <th style="width: {% if grupo.total_por_grupo %}61%{% else %}50%{% endif %};" class="text-center">Descripción del Grupo</th>
-                            <th style="width: 5%;" class="text-center">Cant.</th>
-                            <th style="width: 7%;" class="text-center">U.M</th>
-                            {% if not grupo.total_por_grupo %}
-                            <th style="width: 11%;" class="text-center">Unitario ({{ totales.moneda_simbolo }})</th>
-                            {% endif %}
-                            <th style="width: 9%;" class="text-center">Total ({{ totales.moneda_simbolo }})</th>
-                            <th style="width: 12%;" class="text-center">Entrega</th>
+                            <th class="text-center">Ítem</th>
+                            <th class="text-center">Código</th>
+                            <th class="text-center">Descripción</th>
+                            <th class="text-center">Cant.</th>
+                            <th class="text-center">U.M</th>
+                            <th class="text-center">Entrega</th>
+                            <th class="text-center th-monto">Unitario<br>({{ totales.moneda_simbolo }})</th>
+                            <th class="text-center th-monto">Total<br>({{ totales.moneda_simbolo }})</th>
                         </tr>
                     </thead>
                     <tbody>
+                    {% if grupo.total_por_grupo %}
+                        <tr class="fila-union-grupo">
+                            <td colspan="6" class="celda-union-items">
+                                <table class="tabla-items-anidada">
+                                    <colgroup>
+                                        <col style="width: 7.1%">
+                                        <col style="width: 20.0%">
+                                        <col style="width: 34.3%">
+                                        <col style="width: 8.6%">
+                                        <col style="width: 12.9%">
+                                        <col style="width: 17.1%">
+                                    </colgroup>
+                                    {% for item in grupo.items %}
+                                    <tr>
+                                        <td class="text-center">{{ forloop.counter }}</td>
+                                        <td class="text-center celda-codigo">{{ item.codigo|default:"" }}</td>
+                                        <td class="text-length">{{ item.descripcion|linebreaksbr }}</td>
+                                        <td class="text-center">{{ item.cantidad|floatformat:0 }}</td>
+                                        <td class="text-center celda-um">{{ item.unidad|default:"" }}</td>
+                                        <td class="text-center celda-um">
+                                            {% if item.entrega > 0 %}
+                                                {{ item.entrega }} {{ item.unidad_entrega }}
+                                            {% else %}
+                                                0 Días
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </table>
+                            </td>
+                            <td class="text-center celda-precio-unificado">{{ grupo.subtotal_pu_items|moneda:totales.moneda }}</td>
+                            <td class="text-center font-bold celda-precio-unificado">{{ grupo.subtotal_tot_items|moneda:totales.moneda }}</td>
+                        </tr>
+                    {% else %}
                         {% for item in grupo.items %}
                         <tr>
                             <td class="text-center">{{ forloop.counter }}</td>
-                            <td class="text-length">{{ item.descripcion|linebreaksbr }}</td>                            
+                            <td class="text-center celda-codigo">{{ item.codigo|default:"" }}</td>
+                            <td class="text-length">{{ item.descripcion|linebreaksbr }}</td>
                             <td class="text-center">{{ item.cantidad|floatformat:0 }}</td>
                             <td class="text-center">{{ item.unidad|default:"" }}</td>
-                            {% if not grupo.total_por_grupo %}
-                            <td class="text-right">{{ item.precio_unitario|moneda:totales.moneda }}</td>
-                            <td class="text-right font-bold">{{ item.total|moneda:totales.moneda }}</td>
-                            {% else %}
-                            <td class="text-right font-bold"></td>
-                            {% endif %}
                             <td class="text-center">
                                 {% if item.entrega > 0 %}
                                     {{ item.entrega }} {{ item.unidad_entrega }}
@@ -1152,8 +1372,11 @@
                                     0 Días
                                 {% endif %}
                             </td>
+                            <td class="text-center celda-monto">{{ item.precio_unitario|moneda:totales.moneda }}</td>
+                            <td class="text-center celda-monto font-bold">{{ item.total|moneda:totales.moneda }}</td>
                         </tr>
                         {% endfor %}
+                    {% endif %}
                     </tbody>
                     
                     {# Usamos un tbody adicional para que el subtotal NO se repita al partirse la tabla #}
@@ -1161,55 +1384,68 @@
                     <tbody style="page-break-inside: avoid;">
                         {% if grupo.cantidad <= 1.01 %}
                         <tr class="total-fila">
-                            <td colspan="{% if grupo.total_por_grupo %}4{% else %}5{% endif %}" class="text-right" style="font-weight: bold; border-top: 1px solid #eee;">TOTAL GRUPO:</td>
-                            <td class="text-right font-bold" style="border-top: 1px solid #eee;">{{ grupo.subtotal_tot_items|moneda:totales.moneda }}</td>
-                            <td style="border-top: 1px solid #eee;"></td>
+                            <td colspan="7" class="text-right" style="font-weight: bold;">TOTAL GRUPO:</td>
+                            <td class="text-center celda-monto font-bold">{{ grupo.subtotal_tot_items|moneda:totales.moneda }}</td>
                         </tr>
                         {% else %}
                         <tr class="total-fila">
-                            <td colspan="{% if grupo.total_por_grupo %}4{% else %}5{% endif %}" class="text-right" style="font-weight: bold; border-top: 1px solid #eee;">SUBTOTAL GRUPO:</td>
-                            <td class="text-right font-bold" style="border-top: 1px solid #eee;">{{ grupo.subtotal_tot_items|moneda:totales.moneda }}</td>
-                            <td style="border-top: 1px solid #eee;"></td>
+                            <td colspan="7" class="text-right" style="font-weight: bold;">SUBTOTAL GRUPO:</td>
+                            <td class="text-center celda-monto font-bold">{{ grupo.subtotal_tot_items|moneda:totales.moneda }}</td>
                         </tr>
                         <tr class="total-fila">
-                            <td colspan="{% if grupo.total_por_grupo %}4{% else %}5{% endif %}" class="text-right" style="font-weight: bold; border-top: 1px solid #eee;">TOTAL GRUPO (x{{ grupo.cantidad|floatformat:0 }}):</td>
-                            <td class="text-right font-bold" style="border-top: 1px solid #eee;">{{ grupo.total_grupo|moneda:totales.moneda }}</td>
-                            <td style="border-top: 1px solid #eee;"></td>
+                            <td colspan="7" class="text-right" style="font-weight: bold;">TOTAL GRUPO (x{{ grupo.cantidad|floatformat:0 }}):</td>
+                            <td class="text-center celda-monto font-bold">{{ grupo.total_grupo|moneda:totales.moneda }}</td>
                         </tr>
                         {% endif %}
                     </tbody>
                     {% endif %}
                 </table>
-            </div>
+            </td></tr>
+            </table>
             {% endfor %}
         {% endif %}
 
         {% if servicios %}
             <div class="seccion-servicios"> 
                 {% for grupo in servicios %}
-                    <div class="bloque-seccion" style="margin-top: 10px;">
+                    <table class="bloque-grupo-keep bloque-seccion">
+                    <tr><td>
                         <p class="subtit">{{ grupo.seccion }}.- DETALLE SERVICIO: {{ grupo.titulo }}</p>
                         <table class="tabla-moderna">
+                            <colgroup>
+                                <col style="width: 6%">
+                                <col style="width: 52%">
+                                <col style="width: 8%">
+                                <col style="width: 17%">
+                                <col style="width: 17%">
+                            </colgroup>
                             <thead>
                                 <tr>
-                                    <th style="width: 6%;" class="text-center">Ítem</th>
-                                    <th style="width: 55%;">Descripción del Servicio</th>
-                                    <th style="width: 10%;" class="text-center">Cant.</th>
-                                    <th style="width: 9%;" class="text-center">Unitario ({{ totales.moneda_simbolo }})</th>
-                                    <th style="width: 20%;" class="text-center">Total ({{ totales.moneda_simbolo }})</th>
+                                    <th class="text-center">Ítem</th>
+                                    <th>Descripción del Servicio</th>
+                                    <th class="text-center">Cant.</th>
+                                    <th class="text-center">Unitario ({{ totales.moneda_simbolo }})</th>
+                                    <th class="text-center">Total ({{ totales.moneda_simbolo }})</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr>
                                     <td class="text-center">01</td>
-                                    <td class="rich-text">{{ grupo.detalle|safe }}</td>
+                                    <td class="celda-descripcion"><div class="rich-text">{{ grupo.detalle|safe }}</div></td>
                                     <td class="text-center">{{ grupo.cantidad|floatformat:0 }}</td>
-                                    <td class="text-right">{{ grupo.total|moneda:totales.moneda }}</td>
-                                    <td class="text-right font-bold">{{ grupo.total_servicio|moneda:totales.moneda }}</td>
+                                    <td class="text-center celda-monto">{{ grupo.total|moneda:totales.moneda }}</td>
+                                    <td class="text-center celda-monto font-bold">{{ grupo.total_servicio|moneda:totales.moneda }}</td>
                                 </tr>
                             </tbody>
+                            <tfoot>
+                                <tr class="total-fila">
+                                    <td colspan="4" class="text-right total-label">COSTO TOTAL:</td>
+                                    <td class="text-center total-value">{{ grupo.total_servicio|moneda:totales.moneda }}</td>
+                                </tr>
+                            </tfoot>
                         </table>
-                    </div>
+                    </td></tr>
+                    </table>
                 {% endfor %}
             </div>
         {% endif %}
@@ -1233,5 +1469,30 @@
       window.parent.postMessage({ type: 'close-report-modal' }, '*');
     }
   });
+
+  (function fitPreviewToFrame() {
+    var PAGE_PX = 210 * 96 / 25.4;
+    function apply() {
+      var avail = window.innerWidth || document.documentElement.clientWidth || PAGE_PX;
+      var scale = Math.min(1, avail / PAGE_PX);
+      var body = document.body;
+      body.style.width = '210mm';
+      body.style.maxWidth = '210mm';
+      body.style.transformOrigin = 'top left';
+      body.style.margin = '0';
+      if (Math.abs(scale - 1) < 0.01) {
+        body.style.transform = 'none';
+        body.style.margin = '0 auto';
+        body.style.marginBottom = '0';
+        return;
+      }
+      body.style.transform = 'scale(' + scale + ')';
+      var layoutH = body.scrollHeight;
+      body.style.marginBottom = ((scale - 1) * layoutH) + 'px';
+    }
+    apply();
+    window.addEventListener('resize', apply);
+    window.addEventListener('load', apply);
+  })();
 </script>
 </html>

@@ -504,6 +504,15 @@ class CotizacionApertura(models.Model):
         managed = False  # Mantenlo en False si la base de datos ya maneja la estructura real
         db_table = 'cotizaciones_apertura'
 
+    def __setattr__(self, name, value):
+        if name == "estado_orden" and value is not None and not hasattr(value, "_meta"):
+            try:
+                super().__setattr__("estado_orden_id", int(value))
+                return
+            except (TypeError, ValueError):
+                pass
+        super().__setattr__(name, value)
+
     def clean_fk_fields(self):
         if self.id_registro_id in (0, '0', ''):
             self.id_registro_id = None

@@ -3,8 +3,14 @@ import { createPortal } from 'react-dom';
 import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
 import * as LucideIcons from 'lucide-react';
 import api from '@/services/api';
-import ReportIframe from '@/components/ReportIframe';
 import { toast } from '@/utils/toast';
+import {
+  buildCorreoApertura,
+  buildOutlookProtocolUri,
+  descargarAbridorOutlookVbs,
+  isOutlookProtocolReady,
+  marcarOutlookProtocoloListo,
+} from '@/utils/outlookCompose';
 import DatePicker, { registerLocale } from "react-datepicker";
 import es from 'date-fns/locale/es';
 import "react-datepicker/dist/react-datepicker.css";
@@ -20,6 +26,14 @@ const Icon = ({ name, className }) => {
   const iconName = name.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('');
   const LucideIcon = LucideIcons[iconName] || LucideIcons.HelpCircle;
   return <LucideIcon className={className} />;
+};
+
+const labelUnidadTiempo = (nombre, id) => {
+  const n = String(nombre || "").trim();
+  if (n) return n;
+  if (Number(id) === 3) return "Meses";
+  if (Number(id) === 2) return "Semanas";
+  return "Días";
 };
 
 const MONEY_EPS = 0.051;
@@ -256,10 +270,11 @@ export default function AperturasDetalle({ idRegistro }) {
   const [isTotalFocused, setIsTotalFocused] = useState({});
   const [totalInputState, setTotalInputState] = useState({});
   const [deletedOcIds, setDeletedOcIds] = useState(new Set());
+  const [assignedResponsables, setAssignedResponsables] = useState("");
   const [isProcessingNewOc, setIsProcessingNewOc] = useState(false);
   const [uploadingOcId, setUploadingOcId] = useState(null);
-  const [pdfSuggestions, setPdfSuggestions] = useState({});
   const [descuentoModalOpen, setDescuentoModalOpen] = useState(false);
+  const [outlookHelpOpen, setOutlookHelpOpen] = useState(false);
 
   const handleSaveDescuento = async (descuentoData) => {
     try {
@@ -440,6 +455,13 @@ export default function AperturasDetalle({ idRegistro }) {
         const syncedList = list.map(a => ({ ...a, responsables: sharedResponsibles }));
         
         setAperturas(syncedList);
+        if (sharedResponsibles) setAssignedResponsables(sharedResponsibles);
+        try {
+          const asg = await api.get(`cotizaciones/aperturas_por_registro/${activeIdRegistro}/asignar/`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (asg.data?.responsables) setAssignedResponsables(asg.data.responsables);
+        } catch (_) { /* sin asignados aún */ }
         
         const initialForms = {};
         syncedList.forEach(ap => {
@@ -495,8 +517,8 @@ export default function AperturasDetalle({ idRegistro }) {
     try {
       const token = localStorage.getItem("access_token");
       const res = await api.post(
-        `cotizaciones/aperturas_por_registro/${activeIdRegistro}/nueva_oc/`,
-        {},
+        `cotizaciones/aperturas_por_registro/${activeIdRegistro}/nueva_oc/`, 
+        { responsables: assignedResponsables || "" },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
@@ -504,7 +526,7 @@ export default function AperturasDetalle({ idRegistro }) {
       const list = Array.isArray(payload) ? payload : (payload.aperturas || []);
       const sharedResponsibles = list.find(a => a.responsables)?.responsables || "";
       const syncedList = list.map(a => ({ ...a, responsables: sharedResponsibles }));
-
+      
       setAperturas(syncedList);
       const newForms = {};
       syncedList.forEach(ap => {
@@ -516,7 +538,7 @@ export default function AperturasDetalle({ idRegistro }) {
       if (newId) {
         setOcExpanded(prev => ({ ...prev, [newId]: true }));
       }
-      toast.success("Orden de Compra creada. Todas las partidas quedaron marcadas; desmarque si la OC es parcial.");
+      toast.success("OC creada con fecha de emisión de hoy.");
     } catch (err) {
       console.error("Error al crear nueva OC:", err);
       toast.error(err.response?.data?.error || "No se pudo crear la Orden de Compra.");
@@ -526,7 +548,7 @@ export default function AperturasDetalle({ idRegistro }) {
   };
 
   // Manejar cambios de input
-  const handleChange = (idApertura, field, val) => {
+  const handleChange = (idApertura, field, val, opts = {}) => {
     let updatedFormRef = null;
     setFormsState(prev => {
       const current = prev[idApertura];
@@ -582,7 +604,7 @@ export default function AperturasDetalle({ idRegistro }) {
     });
 
     if (updatedFormRef) {
-      autoSaveForm(idApertura, updatedFormRef);
+      autoSaveForm(idApertura, updatedFormRef, opts);
     }
   };
 
@@ -855,15 +877,6 @@ export default function AperturasDetalle({ idRegistro }) {
         mapped.push(alt);
       }
     });
-    let slots = itemLines.length - mapped.length;
-    items.forEach((it) => {
-      if (slots <= 0) return;
-      const id = String(it.id_suministro);
-      if (used.has(id)) return;
-      used.add(id);
-      mapped.push(it);
-      slots -= 1;
-    });
     return mapped;
   };
 
@@ -908,15 +921,6 @@ export default function AperturasDetalle({ idRegistro }) {
         mapped.push(alt);
       }
     });
-    let slots = itemLines.length - mapped.length;
-    items.forEach((it) => {
-      if (slots <= 0) return;
-      const id = String(it.id_servicio);
-      if (used.has(id)) return;
-      used.add(id);
-      mapped.push(it);
-      slots -= 1;
-    });
     return mapped;
   };
 
@@ -956,8 +960,8 @@ export default function AperturasDetalle({ idRegistro }) {
 
   const ownSuministroLinks = (ap) => {
     const apObj = (ap && typeof ap === 'object' && ap.id_apertura) ? ap : null;
-    const raw = apObj && Array.isArray(apObj.suministros_apertura) ? apObj.suministros_apertura : null;
-    if (!raw || raw.length === 0) return null;
+    if (!apObj || !Array.isArray(apObj.suministros_apertura)) return null;
+    const raw = apObj.suministros_apertura;
     const quoteIds = quoteSuministroIdSet();
     if (quoteIds.size === 0) return raw;
     return raw.filter((s) => quoteIds.has(String(s.id_suministro)));
@@ -965,8 +969,8 @@ export default function AperturasDetalle({ idRegistro }) {
 
   const ownServicioLinks = (ap) => {
     const apObj = (ap && typeof ap === 'object' && ap.id_apertura) ? ap : null;
-    const raw = apObj && Array.isArray(apObj.servicios_apertura) ? apObj.servicios_apertura : null;
-    if (!raw || raw.length === 0) return null;
+    if (!apObj || !Array.isArray(apObj.servicios_apertura)) return null;
+    const raw = apObj.servicios_apertura;
     const quoteIds = quoteServicioIdSet();
     if (quoteIds.size === 0) return raw;
     return raw.filter((s) => quoteIds.has(String(s.id_servicio)));
@@ -974,11 +978,12 @@ export default function AperturasDetalle({ idRegistro }) {
 
   const isSuministroChecked = (ap, f, groupCode) => {
     const apObj = (ap && typeof ap === 'object' && ap.id_apertura) ? ap : null;
-    if (ordenSuLines(ap)) {
-      return grupoTieneOrdenSu(ap, groupCode);
+    const su = ordenSuLines(ap);
+    if (su !== null && su.length > 0 && grupoTieneOrdenSu(ap, groupCode)) {
+      return true;
     }
     const own = ownSuministroLinks(ap);
-    if (own) {
+    if (own !== null) {
       const code = String(groupCode);
       const grupo = sortedGruposSuministros.find((g) => String(g.codigo_grupo) === code);
       const headerId = grupo ? String(grupo.id || grupo.id_suministro || '') : '';
@@ -992,19 +997,22 @@ export default function AperturasDetalle({ idRegistro }) {
       });
     }
     const docVal = apObj ? apObj.doc : (typeof ap === 'string' ? ap : f?.doc);
-    if (docVal === null || docVal === undefined) return true;
+    if (docVal === null || docVal === undefined) return false;
     if (String(docVal).trim() === '') return false;
     const codes = String(docVal).split(',').map(s => s.trim()).filter(Boolean);
     return codes.includes(String(groupCode));
   };
 
   const itemsDeGrupoEnOc = (ap, grupo) => {
-    if (ordenSuLines(ap)) {
-      return itemsDesdeOrdenSu(ap, grupo) || [];
+    const su = ordenSuLines(ap);
+    if (su !== null && su.length > 0) {
+      const mapped = itemsDesdeOrdenSu(ap, grupo);
+      if (mapped && mapped.length > 0) return mapped;
     }
 
     const own = ownSuministroLinks(ap);
-    if (!own) return grupo.items || [];
+    if (own === null) return grupo.items || [];
+    if (own.length === 0) return [];
 
     const items = grupo.items || [];
     if (items.length === 0) return [];
@@ -1036,37 +1044,32 @@ export default function AperturasDetalle({ idRegistro }) {
       }
     });
 
-    pending.forEach((s) => {
-      const src = itemById.get(String(s.id_suministro));
-      const code = normCode(src?.codigo_item || s.codigo_item);
-      const alt = items.find((it) => (
-        !used.has(String(it.id_suministro)) && normCode(it.codigo_item) === code
-      ));
-      if (alt) used.add(String(alt.id_suministro));
-    });
-
-    let slots = itemLinks.length - used.size;
-    if (slots > 0) {
-      items.forEach((it) => {
-        if (slots <= 0) return;
-        const id = String(it.id_suministro);
-        if (used.has(id)) return;
-        used.add(id);
-        slots -= 1;
+      pending.forEach((s) => {
+        const src = itemById.get(String(s.id_suministro));
+        const code = normCode(src?.codigo_item || s.codigo_item);
+        const alt = items.find((it) => (
+          !used.has(String(it.id_suministro)) && normCode(it.codigo_item) === code
+        ));
+        if (alt) used.add(String(alt.id_suministro));
       });
-    }
 
     return items.filter((it) => used.has(String(it.id_suministro)));
+  };
+
+  const itemsDeGrupoFueraDeOc = (ap, grupo) => {
+    const inOc = new Set(itemsDeGrupoEnOc(ap, grupo).map((it) => String(it.id_suministro)));
+    return (grupo.items || []).filter((it) => it.id_suministro != null && !inOc.has(String(it.id_suministro)));
   };
 
   const isServicioChecked = (ap, f, serviceId) => {
     const apObj = (ap && typeof ap === 'object' && ap.id_apertura) ? ap : null;
     const grupo = sortedGruposServicios.find((g) => String(g.id_servicio) === String(serviceId));
-    if (ordenMoLines(ap)) {
-      return Boolean(grupo && grupoTieneOrdenMo(ap, grupo));
+    const mo = ordenMoLines(ap);
+    if (mo !== null && mo.length > 0 && grupo && grupoTieneOrdenMo(ap, grupo)) {
+      return true;
     }
     const own = ownServicioLinks(ap);
-    if (own) {
+    if (own !== null) {
       const grupo = sortedGruposServicios.find((g) => String(g.id_servicio) === String(serviceId));
       if (!grupo) return false;
       const treeIds = new Set(collectServicioTreeIds(grupo));
@@ -1080,24 +1083,28 @@ export default function AperturasDetalle({ idRegistro }) {
       return (grupoOc.subgrupos || []).some((sub) => (sub.items || []).length > 0);
     }
     const ti1Val = apObj ? apObj.ti1 : (typeof ap === 'string' ? ap : f?.ti1);
-    if (ti1Val === null || ti1Val === undefined) return true;
+    if (ti1Val === null || ti1Val === undefined) return false;
     if (String(ti1Val).trim() === '') return false;
     const ids = String(ti1Val).split(',').map(s => s.trim()).filter(Boolean);
     return ids.includes(String(serviceId));
   };
 
   const servicioGrupoEnOc = (ap, grupo) => {
-    if (ordenMoLines(ap)) {
-      return servicioGrupoDesdeOrdenMo(ap, grupo) || { ...grupo, subgrupos: [] };
+    const mo = ordenMoLines(ap);
+    if (mo !== null && mo.length > 0) {
+      const fromMo = servicioGrupoDesdeOrdenMo(ap, grupo);
+      if (fromMo && (fromMo.subgrupos || []).some((sub) => (sub.items || []).length > 0)) {
+        return fromMo;
+      }
     }
 
     const own = ownServicioLinks(ap);
-    if (!own) return grupo;
+    if (own === null) return grupo;
+    if (own.length === 0) return { ...grupo, subgrupos: [] };
 
     const linkedIds = new Set(
       own.map((s) => s.id_servicio).filter((id) => id != null).map(String)
     );
-    if (linkedIds.has(String(grupo.id_servicio))) return grupo;
 
     const prefix = servicioPrefix(grupo);
     const treeIds = new Set(collectServicioTreeIds(grupo));
@@ -1111,7 +1118,9 @@ export default function AperturasDetalle({ idRegistro }) {
       const items = sub.items || [];
       const subHeaderLinked = linkedIds.has(String(sub.id_servicio));
       const anyItemLinked = items.some((it) => linkedIds.has(String(it.id_servicio)));
-      if (subHeaderLinked && !anyItemLinked && items.length > 0) return sub;
+      if (subHeaderLinked && !anyItemLinked && items.length > 0) {
+        return { ...sub, items: [] };
+      }
 
       const itemById = new Map(items.map((it) => [String(it.id_servicio), it]));
       const normCode = (c) => String(c || '').trim();
@@ -1142,6 +1151,26 @@ export default function AperturasDetalle({ idRegistro }) {
     return { ...grupo, subgrupos: nextSubs };
   };
 
+  const itemsServicioFueraDeOc = (ap, grupoOriginal) => {
+    const oc = servicioGrupoEnOc(ap, grupoOriginal);
+    const ocIds = new Set();
+    (oc.subgrupos || []).forEach((sub) => {
+      (sub.items || []).forEach((it) => ocIds.add(String(it.id_servicio)));
+    });
+    const missing = [];
+    (grupoOriginal.subgrupos || []).forEach((sub) => {
+      (sub.items || []).forEach((it) => {
+        if (it.id_servicio != null && !ocIds.has(String(it.id_servicio))) {
+          missing.push({
+            ...it,
+            subLabel: sub.tipoNombre || sub.titulo || '',
+          });
+        }
+      });
+    });
+    return missing;
+  };
+
   const recalculateCostsForForm = (f, ap) => {
     let equiposCost = 0;
     let equiposSale = 0;
@@ -1150,11 +1179,13 @@ export default function AperturasDetalle({ idRegistro }) {
 
     sortedGruposSuministros.forEach(grupo => {
       if (isSuministroChecked(ap, f, grupo.codigo_grupo)) {
-        const isMateriales = String(grupo.codigo_grupo).includes('MT') || grupo.id_tipo_gasto === 2;
         const qty = Number(grupo.cantidad || 1);
         itemsDeGrupoEnOc(ap, grupo).forEach(item => {
-          const cost = Number(item.costo_total || 0) * qty;
-          const sale = Number(item.venta_total || 0) * qty;
+          const lineCost = Number(item.costo_total || 0) || (Number(item.cantidad || 0) * Number(item.costo_precio || 0));
+          const lineSale = Number(item.venta_total || 0) || (Number(item.cantidad || 0) * Number(item.precio_venta || 0));
+          const cost = lineCost * qty;
+          const sale = lineSale * qty;
+          const isMateriales = String(grupo.codigo_grupo).includes('MT') || grupo.id_tipo_gasto === 2 || item.id_tipo_gasto === 2;
           if (isMateriales) {
             materialesCost += cost;
             materialesSale += sale;
@@ -1178,13 +1209,15 @@ export default function AperturasDetalle({ idRegistro }) {
         const qty = Number(grupo.cantidad || 1);
         const grupoOc = servicioGrupoEnOc(ap, grupo);
         (grupoOc.subgrupos || []).forEach(sub => {
-          const isMO = sub.tipoCodigo?.endsWith('04') || sub.id_tipo_gasto === 4 || sub.id_tipo_gasto === 3;
-          const isGastos = sub.tipoCodigo?.endsWith('05') || sub.id_tipo_gasto === 5 || sub.id_tipo_gasto === 4;
-          const isOtros = sub.tipoCodigo?.endsWith('06') || sub.id_tipo_gasto === 6 || sub.id_tipo_gasto === 5;
+          const isMO = sub.tipoCodigo?.endsWith('04') || sub.id_tipo_gasto === 3;
+          const isGastos = sub.tipoCodigo?.endsWith('05') || sub.id_tipo_gasto === 4;
+          const isOtros = sub.tipoCodigo?.endsWith('06') || sub.id_tipo_gasto === 5 || (!isMO && !isGastos);
 
           (sub.items || []).forEach(item => {
-            const itemCost = Number(item.costo_total || 0) * qty;
-            const itemSale = Number(item.cotizado_total || 0) * qty;
+            const lineCost = Number(item.costo_total || 0) || (Number(item.cantidad_hombres || 1) * Number(item.costo_hombre_dia || 0));
+            const lineSale = Number(item.cotizado_total || 0) || (Number(item.cantidad_hombres || 1) * Number(item.cotizado_hombre_dia || 0));
+            const itemCost = lineCost * qty;
+            const itemSale = lineSale * qty;
 
             if (isMO) {
               hhCost += itemCost;
@@ -1273,7 +1306,7 @@ export default function AperturasDetalle({ idRegistro }) {
   const applyAperturaUpdate = (idApertura, updatedAp) => {
     setAperturas(prev => prev.map(a => a.id_apertura === idApertura ? updatedAp : a));
     setFormsState(prev => ({
-      ...prev,
+        ...prev,
       [idApertura]: initialFormState(updatedAp)
     }));
   };
@@ -1312,6 +1345,40 @@ export default function AperturasDetalle({ idRegistro }) {
     }
   };
 
+  const handleLinkSuministroItem = async (idApertura, idSuministro) => {
+    try {
+      const token = localStorage.getItem("access_token");
+      const res = await api.post(
+        `cotizaciones/apertura_detalle/${idApertura}/vincular_suministro/`,
+        { id_suministro: idSuministro },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const updatedAp = res.data?.apertura || res.data;
+      applyAperturaUpdate(idApertura, updatedAp);
+      toast.success("Ítem vinculado a esta OC.");
+    } catch (err) {
+      console.error("Error al vincular suministro:", err);
+      toast.error(err.response?.data?.error || "Error al vincular el ítem.");
+    }
+  };
+
+  const handleLinkServicioItem = async (idApertura, idServicio) => {
+    try {
+      const token = localStorage.getItem("access_token");
+      const res = await api.post(
+        `cotizaciones/apertura_detalle/${idApertura}/vincular_servicio/`,
+        { id_servicio: idServicio },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const updatedAp = res.data?.apertura || res.data;
+      applyAperturaUpdate(idApertura, updatedAp);
+      toast.success("Ítem vinculado a esta OC.");
+    } catch (err) {
+      console.error("Error al vincular servicio:", err);
+      toast.error(err.response?.data?.error || "Error al vincular el ítem.");
+    }
+  };
+
   // Subir Orden de Compra PDF/Excel/Word para una OC específica
   const handleFileUpload = async (event, idApertura) => {
     const file = event.target.files[0];
@@ -1346,18 +1413,12 @@ export default function AperturasDetalle({ idRegistro }) {
           [idApertura]: initialFormState(updatedAp)
         }));
         setAperturas(prev => prev.map(a => a.id_apertura === idApertura ? updatedAp : a));
-
-        const sug = res.data.sugerencias || {};
-        if ((sug.pendientes || []).length > 0) {
-          setPdfSuggestions(prev => ({ ...prev, [idApertura]: sug }));
+        const aplicadas = res.data?.sugerencias?.aplicadas || [];
+        if (aplicadas.includes("numero_orden") || aplicadas.includes("fecha_orden")) {
+          toast.success("PDF adjuntado. Se tomó el N° de orden del archivo y la fecha de emisión del PDF.");
         } else {
-          setPdfSuggestions(prev => {
-            const next = { ...prev };
-            delete next[idApertura];
-            return next;
-          });
+          toast.success(res.data.message || "PDF adjuntado. Las partidas no se modificaron.");
         }
-        toast.success(res.data.message || "PDF adjuntado. Las partidas no se modificaron.");
       } else if (res.data.ok) {
         setFormsState(prev => ({
           ...prev,
@@ -1386,43 +1447,6 @@ export default function AperturasDetalle({ idRegistro }) {
     }
   };
 
-  const handleReprocesarOc = async (idApertura) => {
-    setUploadingOcId(idApertura);
-    const procToast = toast.info("Leyendo sugerencias del PDF...", { autoClose: false });
-    try {
-      const token = localStorage.getItem("access_token");
-      const res = await api.post(`cotizaciones/apertura_detalle/${idApertura}/reprocesar_oc/`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      toast.dismiss(procToast);
-      if (res.data.ok && res.data.apertura) {
-        const updatedAp = res.data.apertura;
-        setFormsState(prev => ({
-          ...prev,
-          [idApertura]: initialFormState(updatedAp)
-        }));
-        setAperturas(prev => prev.map(a => a.id_apertura === idApertura ? updatedAp : a));
-        const sug = res.data.sugerencias || {};
-        if ((sug.pendientes || []).length > 0) {
-          setPdfSuggestions(prev => ({ ...prev, [idApertura]: sug }));
-        } else {
-          setPdfSuggestions(prev => {
-            const next = { ...prev };
-            delete next[idApertura];
-            return next;
-          });
-        }
-        toast.success(res.data.message || "Se leyeron sugerencias del PDF. Las partidas no se modificaron.");
-      }
-    } catch (err) {
-      toast.dismiss(procToast);
-      console.error("Error al re-procesar OC:", err);
-      toast.error(err.response?.data?.error || "Error al intentar re-procesar la Orden de Compra.");
-    } finally {
-      setUploadingOcId(null);
-    }
-  };
-
   const ocHasPdf = (form) => Boolean(form?.tiene_archivo_fisico || String(form?.orden_adjunta || "").trim());
 
   const handleEstadoOrdenChange = (idApertura, value) => {
@@ -1431,25 +1455,7 @@ export default function AperturasDetalle({ idRegistro }) {
       toast.error("Adjunte el PDF de la Orden de Compra para marcarla como Aprobada o Facturada.");
       return;
     }
-    handleChange(idApertura, "estado_orden", value);
-  };
-
-  const applyPdfSuggestions = (idApertura, sug) => {
-    const s = sug?.sugeridas || {};
-    const current = formsState[idApertura];
-    if (!current) return;
-    const updated = { ...current };
-    if (s.numero_orden) updated.numero_orden = s.numero_orden;
-    if (s.total_orden != null) updated.total_orden = Number(s.total_orden);
-    if (s.fecha_orden) updated.fecha_orden = new Date(`${s.fecha_orden}T00:00:00`);
-    setFormsState(prev => ({ ...prev, [idApertura]: updated }));
-    autoSaveForm(idApertura, updated);
-    setPdfSuggestions(prev => {
-      const next = { ...prev };
-      delete next[idApertura];
-      return next;
-    });
-    toast.success("Se aplicaron las sugerencias del PDF.");
+    handleChange(idApertura, "estado_orden", value, { notify: true });
   };
 
   const handleVerOrden = (idApertura, tieneFisico, urlAdjunta) => {
@@ -1458,7 +1464,6 @@ export default function AperturasDetalle({ idRegistro }) {
     let extension = "";
     const f = formsState[idApertura] || {};
     const apiBase = (api.defaults.baseURL || "/api/").replace(/\/+$/, "");
-    const apiViewer = `${apiBase}/cotizaciones/ocfiles/ver/${idApertura}/`;
 
     const adj = String(urlAdjunta || "").trim();
     const looksLikeStoredFile =
@@ -1467,10 +1472,10 @@ export default function AperturasDetalle({ idRegistro }) {
       /^\d+$/.test(adj);
 
     if (looksLikeStoredFile) {
-      url = apiViewer;
       extension = (f.extension_archivo_fisico || ".pdf").toLowerCase();
       if (!extension.startsWith(".")) extension = `.${extension}`;
       name = `${idApertura}${extension}`;
+      url = `${apiBase}/cotizaciones/ocfiles/ver/${idApertura}/${encodeURIComponent(name)}`;
     } else if (urlAdjunta) {
       if (urlAdjunta.startsWith('http://') || urlAdjunta.startsWith('https://')) {
         url = urlAdjunta;
@@ -1497,22 +1502,37 @@ export default function AperturasDetalle({ idRegistro }) {
 
   const saveTimeoutRef = useRef({});
 
-  const autoSaveForm = (idApertura, updatedForm) => {
+  const OC_FIELD_LABELS = {
+    numero_orden: "Número de orden",
+    fecha_orden: "Fecha de emisión",
+    fecha_factura: "Fecha de recepción",
+    fecha_entrega: "Fecha de entrega",
+    total_orden: "Total de la orden",
+    orden_plazo_valor: "Plazo de entrega",
+    orden_plazo_unidad: "Unidad de plazo",
+    mes_entrega: "Mes de devengo",
+    estado_orden: "Estado de la OC",
+    prio: "Prioridad",
+    orden_compra_equipos: "Costo de equipos",
+    orden_compra_materiales: "Costo de materiales",
+    orden_compra_hh: "Costo de H.H. propios",
+    orden_compra_entrega: "Costo de H.H. otras áreas",
+    orden_compra_costo_servicios: "Costo de servicios",
+    orden_compra_otros: "Otros costos",
+  };
+
+  const autoSaveForm = (idApertura, updatedForm, opts = {}) => {
+    const { notify = false, field = null } = opts;
     if (saveTimeoutRef.current[idApertura]) {
       clearTimeout(saveTimeoutRef.current[idApertura]);
     }
     saveTimeoutRef.current[idApertura] = setTimeout(async () => {
       try {
         const token = localStorage.getItem("access_token");
-        const costSumObj = 
-          Number(updatedForm.orden_compra_equipos) +
-          Number(updatedForm.orden_compra_materiales) +
-          Number(updatedForm.orden_compra_hh) +
-          Number(updatedForm.orden_compra_entrega) +
-          Number(updatedForm.orden_compra_costo_servicios) +
-          Number(updatedForm.orden_compra_otros);
 
-        const calculatedUtility = Number(updatedForm.total_orden) - costSumObj;
+        if (!updatedForm.fecha_orden) {
+          toast.warning("La fecha de emisión es obligatoria para sincronizar la OC.");
+        }
 
         const payload = {
           numero_orden: updatedForm.numero_orden || "",
@@ -1533,13 +1553,6 @@ export default function AperturasDetalle({ idRegistro }) {
           envio: updatedForm.envio || 1,
           doc: updatedForm.doc !== undefined ? updatedForm.doc : null,
           ti1: updatedForm.ti1 !== undefined ? updatedForm.ti1 : null,
-          orden_compra_equipos: Number(updatedForm.orden_compra_equipos || 0),
-          orden_compra_materiales: Number(updatedForm.orden_compra_materiales || 0),
-          orden_compra_hh: Number(updatedForm.orden_compra_hh || 0),
-          orden_compra_entrega: Number(updatedForm.orden_compra_entrega || 0),
-          orden_compra_costo_servicios: Number(updatedForm.orden_compra_costo_servicios || 0),
-          orden_compra_otros: Number(updatedForm.orden_compra_otros || 0),
-          uti_des: Number(calculatedUtility.toFixed(2))
         };
 
         const res = await api.patch(`cotizaciones/apertura_detalle/${idApertura}/`, payload, {
@@ -1549,12 +1562,16 @@ export default function AperturasDetalle({ idRegistro }) {
         if (res.data) {
           setAperturas(prev => prev.map(a => a.id_apertura === idApertura ? res.data : a));
         }
+        if (notify) {
+          const label = OC_FIELD_LABELS[field] || "Cambios";
+          toast.save(`${label} guardado.`);
+        }
       } catch (err) {
         console.error("Error al auto-guardar apertura:", err);
         const msg = err.response?.data?.error;
         if (msg) toast.error(msg);
       }
-    }, 800);
+    }, notify ? 0 : 800);
   };
 
   // Borrar toda la Orden de Compra confirmada
@@ -1622,10 +1639,62 @@ export default function AperturasDetalle({ idRegistro }) {
   }, []);
 
   const assignedEmails = useMemo(() => {
-    const firstAp = visibleAperturas[0] || aperturas[0];
-    if (!firstAp?.responsables) return [];
-    return firstAp.responsables.split(/[;,]/).map(s => s.trim().toLowerCase()).filter(Boolean);
-  }, [visibleAperturas, aperturas]);
+    const raw = assignedResponsables || visibleAperturas[0]?.responsables || aperturas[0]?.responsables || "";
+    if (!raw) return [];
+    return raw.split(/[;,]/).map(s => s.trim().toLowerCase()).filter(Boolean);
+  }, [assignedResponsables, visibleAperturas, aperturas]);
+
+  const getCorreoAperturaPayload = () => {
+    const emails = (assignedResponsables || visibleAperturas[0]?.responsables || aperturas[0]?.responsables || "")
+      .split(/[;,]/)
+      .map((s) => s.trim())
+      .filter((s) => s.includes("@"));
+    if (!emails.length) return null;
+
+    const ordenes = visibleAperturas
+      .map((ap) => formsState[ap.id_apertura]?.numero_orden || ap.numero_orden)
+      .map((n) => String(n || "").trim())
+      .filter(Boolean);
+
+    const esVenta = quote?.id_tipo === "V" || quote?.id_tipo_cotizacion === "V";
+    const { subject, body } = buildCorreoApertura({
+      codigo: quote?.codigo || quote?.numero,
+      area: quote?.area_nombre,
+      referencia: quote?.referencia,
+      cliente: quote?.cliente_nombre,
+      ordenes,
+      esVenta,
+    });
+    return { to: emails, subject, body };
+  };
+
+  const handleEnviarCorreoAperturaMouseDown = (e) => {
+    const payload = getCorreoAperturaPayload();
+    const uri = payload ? buildOutlookProtocolUri(payload) : "";
+    e.currentTarget.setAttribute("href", uri || "#");
+  };
+
+  const handleEnviarCorreoApertura = (e) => {
+    const payload = getCorreoAperturaPayload();
+    if (!payload) {
+      e.preventDefault();
+      toast.warning("Asigna al menos un colaborador para enviar el correo.");
+      return;
+    }
+
+    if (!isOutlookProtocolReady()) {
+      e.preventDefault();
+      try {
+        descargarAbridorOutlookVbs(payload);
+      } catch (err) {
+        if (err?.code === "NO_RECIPIENTS") {
+          toast.warning("Asigna al menos un colaborador para enviar el correo.");
+          return;
+        }
+      }
+      setOutlookHelpOpen(true);
+    }
+  };
 
   const filteredUsuarios = useMemo(() => {
     let list = usuariosActivos;
@@ -1640,10 +1709,10 @@ export default function AperturasDetalle({ idRegistro }) {
     list = list.filter(u => {
       const email = (u.correo || (u.usuario ? `${u.usuario}@vc-corporation.com` : '')).trim().toLowerCase();
       return (
-        (u.nombre_completo || '').toLowerCase().includes(query) ||
+      (u.nombre_completo || '').toLowerCase().includes(query) ||
         email.includes(query) ||
         (u.usuario || '').toLowerCase().includes(query)
-      );
+    );
     });
     list = list.sort((a, b) => (a.nombre_completo || '').localeCompare(b.nombre_completo || ''));
     return list;
@@ -1651,10 +1720,9 @@ export default function AperturasDetalle({ idRegistro }) {
 
   // Asignar/desasignar colaborador de la apertura administrativa
   const toggleResponsable = async (email) => {
-    const referenceAp = visibleAperturas.find(ap => ap.responsables) || visibleAperturas[0] || aperturas[0];
-    if (!referenceAp) return;
-
-    let currentList = referenceAp.responsables ? referenceAp.responsables.split(/[;,]/).map(s => s.trim()).filter(Boolean) : [];
+    let currentList = assignedResponsables
+      ? assignedResponsables.split(/[;,]/).map(s => s.trim()).filter(Boolean)
+      : [];
     const normalizedEmail = email.trim();
     
     const existsIndex = currentList.findIndex(e => e.toLowerCase() === normalizedEmail.toLowerCase());
@@ -1668,18 +1736,18 @@ export default function AperturasDetalle({ idRegistro }) {
 
     try {
       const token = localStorage.getItem("access_token");
-      const res = await api.patch(`cotizaciones/apertura_detalle/${referenceAp.id_apertura}/`, {
+      const res = await api.patch(`cotizaciones/aperturas_por_registro/${activeIdRegistro}/asignar/`, {
         responsables: newResponsables
       }, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      
-      // Update ALL OCs in the state array to ensure they stay synchronized
-      setAperturas(prev => prev.map(a => ({ ...a, responsables: res.data.responsables })));
+      const saved = res.data?.responsables || newResponsables;
+      setAssignedResponsables(saved);
+      setAperturas(prev => prev.map(a => ({ ...a, responsables: saved })));
       toast.success("Asignación de personal actualizada.");
     } catch (err) {
       console.error("Error al actualizar responsables:", err);
-      toast.error("No se pudo actualizar la asignación de personal.");
+      toast.error(err.response?.data?.error || "No se pudo actualizar la asignación de personal.");
     }
   };
 
@@ -1717,24 +1785,18 @@ export default function AperturasDetalle({ idRegistro }) {
 
       const updatePromises = dirtyAperturas.map(ap => {
         const f = formsState[ap.id_apertura];
-        const costSumObj = 
-          Number(f.orden_compra_equipos) +
-          Number(f.orden_compra_materiales) +
-          Number(f.orden_compra_hh) +
-          Number(f.orden_compra_entrega) +
-          Number(f.orden_compra_costo_servicios) +
-          Number(f.orden_compra_otros);
-        const utility = Number(f.total_orden) - costSumObj;
-
         const payload = {
-          ...f,
+          numero_orden: f.numero_orden || "",
           fecha_orden: f.fecha_orden ? (f.fecha_orden instanceof Date ? f.fecha_orden.toISOString() : f.fecha_orden) : null,
           fecha_entrega: f.fecha_entrega ? (f.fecha_entrega instanceof Date ? f.fecha_entrega.toISOString() : f.fecha_entrega) : null,
           fecha_factura: f.fecha_factura ? (f.fecha_factura instanceof Date ? f.fecha_factura.toISOString() : f.fecha_factura) : null,
           mes_entrega: f.mes_entrega ? parseInt(f.mes_entrega, 10) : null,
           orden_plazo_valor: f.orden_plazo_valor ? parseInt(f.orden_plazo_valor, 10) : 0,
           orden_plazo_unidad: f.orden_plazo_unidad ? parseInt(f.orden_plazo_unidad, 10) : 1,
-          uti_des: utility
+          total_orden: Number(f.total_orden || 0),
+          estado_orden: f.estado_orden || 1,
+          prio: f.prio || '0',
+          envio: f.envio || 1,
         };
 
         return api.put(`cotizaciones/apertura_detalle/${ap.id_apertura}/`, payload, {
@@ -1815,6 +1877,12 @@ export default function AperturasDetalle({ idRegistro }) {
         id: ap.id_apertura,
         storedImporte,
         storedUtility: storedImporte - costSum,
+        equipos,
+        materiales,
+        hh,
+        entrega,
+        servicios,
+        otros,
       });
     });
 
@@ -1859,6 +1927,12 @@ export default function AperturasDetalle({ idRegistro }) {
         discountShare: share,
         utility: roundMoney(utilityGross - share),
         importe: roundMoney(importeGross - share),
+        equipos: row.equipos,
+        materiales: row.materiales,
+        hh: row.hh,
+        servicios: row.servicios,
+        otros: row.otros,
+        suministros: roundMoney((row.equipos || 0) + (row.materiales || 0)),
       };
     });
 
@@ -1924,9 +1998,10 @@ export default function AperturasDetalle({ idRegistro }) {
               </div>
             </div>
 
-            {/* BOTÓN REPORTE DIRECTO A PDF/WORD */}
-            <div className="flex items-center gap-2">
+            {/* ACCIONES: REPORTE / ENVIAR CORREO / ELIMINAR */}
+            <div className="flex items-center gap-2 flex-wrap justify-end">
               <button
+                type="button"
                 onClick={() => {
                   setReporteLoading(true);
                   setReportePdfOpen(true);
@@ -1936,6 +2011,31 @@ export default function AperturasDetalle({ idRegistro }) {
               >
                 <Icon name="file-text" className="h-3.5 w-3.5 mr-2 text-sky-600 group-hover:scale-110 transition-transform" />
                 <span>Reporte</span>
+              </button>
+              <a
+                href="#"
+                onMouseDown={handleEnviarCorreoAperturaMouseDown}
+                onClick={handleEnviarCorreoApertura}
+                className="flex items-center px-4 py-2 bg-teal-50/80 border border-teal-200 rounded-xl text-[10px] font-black text-teal-700 hover:bg-teal-100 hover:border-teal-300 hover:shadow-sm transition-all h-[42px] uppercase group cursor-pointer"
+                title={assignedEmails.length
+                  ? `Abrir Outlook con ${assignedEmails.length} asignado${assignedEmails.length === 1 ? "" : "s"}`
+                  : "Asigna personal para enviar el correo"}
+              >
+                <Icon name="mail" className="h-3.5 w-3.5 mr-2 text-teal-600 group-hover:scale-110 transition-transform" />
+                <span>Enviar Correo</span>
+              </a>
+              <button
+                type="button"
+                onClick={handleConfirmarEliminacionRegistro}
+                disabled={eliminarCotizacion.isPending}
+                className="flex items-center px-4 py-2 bg-rose-50/80 border border-rose-200 rounded-xl text-[10px] font-black text-rose-700 hover:bg-rose-100 hover:border-rose-300 hover:shadow-sm transition-all h-[42px] uppercase group cursor-pointer disabled:opacity-50"
+              >
+                {eliminarCotizacion.isPending ? (
+                  <div className="h-3.5 w-3.5 mr-2 border-2 border-rose-500 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Icon name="trash-2" className="h-3.5 w-3.5 mr-2 text-rose-600 group-hover:scale-110 transition-transform" />
+                )}
+                <span>Eliminar</span>
               </button>
             </div>
           </div>
@@ -2077,8 +2177,8 @@ export default function AperturasDetalle({ idRegistro }) {
               </button>
 
               <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full">
-                {visibleAperturas.length} Registros Activos
-              </span>
+              {visibleAperturas.length} Registros Activos
+            </span>
             </div>
           </div>
 
@@ -2102,17 +2202,15 @@ export default function AperturasDetalle({ idRegistro }) {
                   if (!f) return null;
 
                   const display = totals.rowDisplay?.[ap.id_apertura];
-                  const costSum =
-                    Number(f.orden_compra_equipos || 0) +
-                    Number(f.orden_compra_materiales || 0) +
-                    Number(f.orden_compra_hh || 0) +
-                    Number(f.orden_compra_entrega || 0) +
-                    Number(f.orden_compra_costo_servicios || 0) +
-                    Number(f.orden_compra_otros || 0);
+                  const equiposRow = display?.equipos ?? Number(f.orden_compra_equipos || 0);
+                  const materialesRow = display?.materiales ?? Number(f.orden_compra_materiales || 0);
+                  const hhRow = display?.hh ?? Number(f.orden_compra_hh || 0);
+                  const servRow = display?.servicios ?? Number(f.orden_compra_costo_servicios || 0);
+                  const otrosRow = display?.otros ?? Number(f.orden_compra_otros || 0);
+                  const totalSuministrosRow = display?.suministros ?? (equiposRow + materialesRow);
+                  const costSum = totalSuministrosRow + hhRow + Number(f.orden_compra_entrega || 0) + servRow + otrosRow;
                   const utility = display?.utility ?? (Number(f.total_orden || 0) - costSum);
                   const importe = display?.importe ?? Number(f.total_orden || 0);
-
-                  const totalSuministrosRow = Number(f.orden_compra_equipos || 0) + Number(f.orden_compra_materiales || 0);
 
                   const renderAmount = (val) => {
                     const num = Number(val) || 0;
@@ -2136,13 +2234,13 @@ export default function AperturasDetalle({ idRegistro }) {
                           : '—'}
                       </td>
                       <td className="bg-indigo-50/15 font-extrabold">{renderAmount(totalSuministrosRow)}</td>
-                      <td>{renderAmount(f.orden_compra_hh)}</td>
-                      <td>{renderAmount(f.orden_compra_costo_servicios)}</td>
-                      <td>{renderAmount(f.orden_compra_otros)}</td>
+                      <td>{renderAmount(hhRow)}</td>
+                      <td>{renderAmount(servRow)}</td>
+                      <td>{renderAmount(otrosRow)}</td>
                       <td>
                         <span className={cn(
                           "inline-flex items-center px-2.5 py-0.5 rounded-md text-[10.5px] font-black tracking-tight border shadow-2xs",
-                          utility >= 0
+                          utility >= 0 
                             ? "bg-emerald-50 text-emerald-800 border-emerald-200"
                             : "bg-rose-50 text-rose-800 border-rose-200"
                         )}>
@@ -2155,7 +2253,7 @@ export default function AperturasDetalle({ idRegistro }) {
                     </tr>
                   );
                 })}
-
+                
                 {/* FILA DE DESCUENTO (SI EXISTE DESCUENTO ACTIVO > 0) */}
                 {totals.discountActive && totals.discountMonto > 0 && (
                   <tr className="bg-amber-50/80 border-y border-amber-300/80 text-amber-950 font-bold shadow-2xs">
@@ -2238,6 +2336,13 @@ export default function AperturasDetalle({ idRegistro }) {
             </button>
           </div>
 
+          {visibleAperturas.length === 0 && (
+            <div className="bg-white border border-dashed border-slate-300 rounded-2xl p-8 text-center space-y-2">
+              <p className="text-xs font-black text-slate-700 uppercase tracking-wider">Órdenes de Compra Vinculadas (0)</p>
+              <p className="text-[11px] text-slate-500">Agregue una OC, complete la fecha de emisión y vincule solo los suministros o servicios necesarios.</p>
+            </div>
+          )}
+
           {visibleAperturas.map((ap, index) => {
             const f = formsState[ap.id_apertura];
             if (!f) return null;
@@ -2292,8 +2397,8 @@ export default function AperturasDetalle({ idRegistro }) {
                     {estadoMeta && (
                       <div className={cn("flex items-center px-2 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-wider border", stateBadgeStyle)}>
                         <Icon name="refresh-cw" className="h-2 w-2 mr-1" />
-                        {currentEstadoOrdenNombre}
-                      </div>
+                      {currentEstadoOrdenNombre}
+                    </div>
                     )}
 
                     <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[9px] font-black tracking-wider border bg-emerald-50 text-emerald-800 border-emerald-200/80 shadow-2xs">
@@ -2361,38 +2466,6 @@ export default function AperturasDetalle({ idRegistro }) {
                   </div>
                 </div>
 
-                {pdfSuggestions[ap.id_apertura]?.sugeridas && (
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2">
-                    <p className="text-[10px] font-bold text-indigo-800 uppercase tracking-wide">
-                      El PDF sugiere
-                      {pdfSuggestions[ap.id_apertura].sugeridas.numero_orden ? ` Nº ${pdfSuggestions[ap.id_apertura].sugeridas.numero_orden}` : ""}
-                      {pdfSuggestions[ap.id_apertura].sugeridas.total_orden != null ? ` · Total ${Number(pdfSuggestions[ap.id_apertura].sugeridas.total_orden).toLocaleString("en-US", { minimumFractionDigits: 2 })}` : ""}
-                      {pdfSuggestions[ap.id_apertura].sugeridas.fecha_orden ? ` · Fecha ${pdfSuggestions[ap.id_apertura].sugeridas.fecha_orden}` : ""}
-                      . Los campos actuales son distintos.
-                    </p>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => applyPdfSuggestions(ap.id_apertura, pdfSuggestions[ap.id_apertura])}
-                        className="px-2.5 py-1 bg-indigo-600 text-white text-[9px] font-black uppercase rounded-lg"
-                      >
-                        Aplicar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPdfSuggestions(prev => {
-                          const next = { ...prev };
-                          delete next[ap.id_apertura];
-                          return next;
-                        })}
-                        className="px-2 py-1 text-[9px] font-black uppercase text-indigo-500"
-                      >
-                        Ignorar
-                      </button>
-                    </div>
-                  </div>
-                )}
-
                 {/* CONTENIDO DESPLEGABLE CON ANIMACIÓN */}
                 {isExpanded && (
                   <div className="space-y-5 animate-in fade-in slide-in-from-top-1 duration-200">
@@ -2407,6 +2480,13 @@ export default function AperturasDetalle({ idRegistro }) {
                             type="text"
                             value={f.numero_orden || ''}
                             onChange={(e) => handleChange(ap.id_apertura, 'numero_orden', e.target.value.toUpperCase())}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                e.currentTarget.blur();
+                              }
+                            }}
+                            onBlur={() => handleChange(ap.id_apertura, 'numero_orden', (f.numero_orden || '').toUpperCase(), { notify: true, field: 'numero_orden' })}
                             className="w-full bg-white border border-slate-200 rounded-xl pl-3 pr-8 py-1.5 text-[11px] font-bold uppercase focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all text-slate-900 shadow-sm"
                             placeholder="Ej. OC-2026-001"
                           />
@@ -2416,15 +2496,23 @@ export default function AperturasDetalle({ idRegistro }) {
 
                       {/* Fecha Orden */}
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Fecha Emisión</label>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                          Fecha Emisión <span className="text-rose-500">*</span>
+                        </label>
                         <DatePicker
                           selected={f.fecha_orden}
-                          onChange={(date) => handleChange(ap.id_apertura, 'fecha_orden', date)}
+                          onChange={(date) => handleChange(ap.id_apertura, 'fecha_orden', date, { notify: true, field: 'fecha_orden' })}
                           dateFormat="dd/MM/yyyy"
                           locale="es"
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-[11px] font-bold focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all text-slate-800 shadow-sm"
-                          placeholderText="Seleccionar fecha..."
+                          className={cn(
+                            "w-full bg-white rounded-xl px-3 py-1.5 text-[11px] font-bold focus:ring-1 focus:ring-indigo-500 outline-none transition-all text-slate-800 shadow-sm",
+                            f.fecha_orden ? "border border-slate-200 focus:border-indigo-500" : "border border-rose-300 focus:border-rose-500"
+                          )}
+                          placeholderText="Obligatoria..."
                         />
+                        {!f.fecha_orden && (
+                          <p className="text-[9px] font-bold text-rose-500 uppercase tracking-wide">Requerida para sincronizar a 4.0</p>
+                        )}
                       </div>
 
                       {/* Fecha Recepción */}
@@ -2432,7 +2520,7 @@ export default function AperturasDetalle({ idRegistro }) {
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Fecha Recepción</label>
                         <DatePicker
                           selected={f.fecha_factura}
-                          onChange={(date) => handleChange(ap.id_apertura, 'fecha_factura', date)}
+                          onChange={(date) => handleChange(ap.id_apertura, 'fecha_factura', date, { notify: true, field: 'fecha_factura' })}
                           dateFormat="dd/MM/yyyy"
                           locale="es"
                           className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-[11px] font-bold focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all text-slate-800 shadow-sm"
@@ -2461,7 +2549,13 @@ export default function AperturasDetalle({ idRegistro }) {
                               setIsTotalFocused(prev => ({ ...prev, [ap.id_apertura]: false }));
                               const cleanVal = (totalInputState[ap.id_apertura] || '').replace(/,/g, '');
                               const parsedVal = parseFloat(cleanVal) || 0;
-                              handleChange(ap.id_apertura, 'total_orden', parsedVal);
+                              handleChange(ap.id_apertura, 'total_orden', parsedVal, { notify: true, field: 'total_orden' });
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                e.currentTarget.blur();
+                              }
                             }}
                             onChange={(e) => {
                               const typedVal = e.target.value;
@@ -2485,12 +2579,19 @@ export default function AperturasDetalle({ idRegistro }) {
                             type="number"
                             value={f.orden_plazo_valor || ''}
                             onChange={(e) => handleChange(ap.id_apertura, 'orden_plazo_valor', parseInt(e.target.value) || 0)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                e.currentTarget.blur();
+                              }
+                            }}
+                            onBlur={(e) => handleChange(ap.id_apertura, 'orden_plazo_valor', parseInt(e.target.value) || 0, { notify: true, field: 'orden_plazo_valor' })}
                             className="w-1/2 bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-[11px] font-bold focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all text-slate-900 shadow-sm"
                             placeholder="0"
                           />
                           <select
                             value={f.orden_plazo_unidad || 1}
-                            onChange={(e) => handleChange(ap.id_apertura, 'orden_plazo_unidad', parseInt(e.target.value, 10))}
+                            onChange={(e) => handleChange(ap.id_apertura, 'orden_plazo_unidad', parseInt(e.target.value, 10), { notify: true, field: 'orden_plazo_unidad' })}
                             className="w-1/2 bg-white border border-slate-200 rounded-xl px-2 py-1.5 text-[10px] font-bold focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all cursor-pointer text-slate-700 shadow-sm"
                           >
                             <option value={1}>DÍAS</option>
@@ -2505,7 +2606,7 @@ export default function AperturasDetalle({ idRegistro }) {
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Fecha Entrega Real</label>
                         <DatePicker
                           selected={f.fecha_entrega}
-                          onChange={(date) => handleChange(ap.id_apertura, 'fecha_entrega', date)}
+                          onChange={(date) => handleChange(ap.id_apertura, 'fecha_entrega', date, { notify: true, field: 'fecha_entrega' })}
                           dateFormat="dd/MM/yyyy"
                           locale="es"
                           className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-[11px] font-bold focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all text-slate-800 shadow-sm"
@@ -2520,7 +2621,7 @@ export default function AperturasDetalle({ idRegistro }) {
                           value={f.mes_entrega ? parseInt(f.mes_entrega, 10) : ""}
                           onChange={(e) => {
                             const val = e.target.value;
-                            handleChange(ap.id_apertura, 'mes_entrega', val ? String(val).padStart(2, '0') : '');
+                            handleChange(ap.id_apertura, 'mes_entrega', val ? String(val).padStart(2, '0') : '', { notify: true, field: 'mes_entrega' });
                           }}
                           className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-[11px] font-bold focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all cursor-pointer text-slate-700 shadow-sm"
                         >
@@ -2607,7 +2708,7 @@ export default function AperturasDetalle({ idRegistro }) {
                                     return formatMoney(sale);
                                   })()}
                                 </span>
-                              </span>
+                            </span>
                             </div>
                           </div>
 
@@ -2625,6 +2726,7 @@ export default function AperturasDetalle({ idRegistro }) {
                                 const isChecked = true;
                                 const isExpanded = gruposExpandidos[grupo.codigo_grupo] !== false;
                                 const itemsOc = itemsDeGrupoEnOc(ap, grupo);
+                                const itemsFuera = itemsDeGrupoFueraDeOc(ap, grupo);
                                 const totalGrupo = itemsOc.reduce((acc, curr) => acc + (Number(curr.venta_total) || 0), 0) * (grupo.cantidad || 1);
                                 const costGrupo = itemsOc.reduce((acc, curr) => acc + (Number(curr.costo_total) || 0), 0) * (grupo.cantidad || 1);
 
@@ -2663,6 +2765,26 @@ export default function AperturasDetalle({ idRegistro }) {
                                         <span className="text-[9.5px] text-slate-500 font-bold">
                                           Total: <strong className="text-slate-700">{formatMoney(totalGrupo)}</strong>
                                         </span>
+                                        {itemsFuera.length > 0 && (
+                                          <select
+                                            value=""
+                                            onClick={(e) => e.stopPropagation()}
+                                            onChange={(e) => {
+                                              e.stopPropagation();
+                                              if (e.target.value) {
+                                                handleLinkSuministroItem(ap.id_apertura, e.target.value);
+                                              }
+                                            }}
+                                            className="max-w-[170px] sm:max-w-[220px] truncate px-2 py-1 bg-emerald-50 hover:bg-emerald-100/90 border border-emerald-300/80 text-emerald-800 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer shadow-2xs outline-none"
+                                          >
+                                            <option value="" disabled>+ Vincular ítem</option>
+                                            {itemsFuera.map((it) => (
+                                              <option key={it.id_suministro} value={it.id_suministro}>
+                                                {it.codigo_item || it.id_suministro} {(it.descripcion || '').slice(0, 36)}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        )}
                                         <button
                                           type="button"
                                           onClick={(e) => {
@@ -2717,6 +2839,13 @@ export default function AperturasDetalle({ idRegistro }) {
                                             ))}
                                           </tbody>
                                         </table>
+                                      </div>
+                                    )}
+                                    {isExpanded && itemsOc.length === 0 && (
+                                      <div className="text-center py-4 border-t border-slate-100">
+                                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                                          No hay ítems en esta OC. Use + Vincular ítem para agregarlos.
+                                        </span>
                                       </div>
                                     )}
                                   </div>
@@ -2778,15 +2907,13 @@ export default function AperturasDetalle({ idRegistro }) {
                                     return formatMoney(sale);
                                   })()}
                                 </span>
-                              </span>
+                            </span>
                             </div>
                           </div>
 
                           {(() => {
                             const checkedGruposServicios = sortedGruposServicios
-                              .filter(g => isServicioChecked(ap, f, g.id_servicio))
-                              .map(g => servicioGrupoEnOc(ap, g))
-                              .filter(g => (g.subgrupos || []).some(sub => (sub.items || []).length > 0));
+                              .filter(g => isServicioChecked(ap, f, g.id_servicio));
                             if (checkedGruposServicios.length === 0) {
                               return (
                                 <div className="text-center py-5 border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
@@ -2796,9 +2923,11 @@ export default function AperturasDetalle({ idRegistro }) {
                             }
                             return (
                               <div className="space-y-3">
-                                {checkedGruposServicios.map((grupo) => {
+                                {checkedGruposServicios.map((grupoOriginal) => {
+                                  const grupo = servicioGrupoEnOc(ap, grupoOriginal);
+                                  const itemsFuera = itemsServicioFueraDeOc(ap, grupoOriginal);
                                   const isChecked = true;
-                                  const isExpanded = gruposExpandidos[`srv-${grupo.id_servicio}`] !== false;
+                                  const isExpanded = gruposExpandidos[`srv-${grupoOriginal.id_servicio}`] !== false;
                                   
                                   let srvCost = 0;
                                   let srvSale = 0;
@@ -2854,6 +2983,26 @@ export default function AperturasDetalle({ idRegistro }) {
                                           <span className="text-[9.5px] text-slate-500 font-bold">
                                             Total: <strong className="text-slate-700">{formatMoney(srvSale)}</strong>
                                           </span>
+                                          {itemsFuera.length > 0 && (
+                                            <select
+                                              value=""
+                                              onClick={(e) => e.stopPropagation()}
+                                              onChange={(e) => {
+                                                e.stopPropagation();
+                                                if (e.target.value) {
+                                                  handleLinkServicioItem(ap.id_apertura, e.target.value);
+                                                }
+                                              }}
+                                              className="max-w-[170px] sm:max-w-[220px] truncate px-2 py-1 bg-emerald-50 hover:bg-emerald-100/90 border border-emerald-300/80 text-emerald-800 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer shadow-2xs outline-none"
+                                            >
+                                              <option value="" disabled>+ Vincular ítem</option>
+                                              {itemsFuera.map((it) => (
+                                                <option key={it.id_servicio} value={it.id_servicio}>
+                                                  {it.codigo_item || it.id_servicio} {(it.descripcion_item || it.descripcion_servicio || it.subLabel || '').slice(0, 36)}
+                                                </option>
+                                              ))}
+                                            </select>
+                                          )}
                                           <button
                                             type="button"
                                             onClick={(e) => {
@@ -3156,6 +3305,13 @@ export default function AperturasDetalle({ idRegistro }) {
                               step="0.01"
                               value={f[field.key] || ''}
                               onChange={(e) => handleChange(ap.id_apertura, field.key, parseFloat(e.target.value) || 0)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  e.currentTarget.blur();
+                                }
+                              }}
+                              onBlur={(e) => handleChange(ap.id_apertura, field.key, parseFloat(e.target.value) || 0, { notify: true, field: field.key })}
                               className="w-full bg-slate-50/50 border border-transparent rounded-lg px-2 py-1 text-[11px] font-bold text-slate-800 text-right focus:bg-white focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
                               placeholder="0.00"
                             />
@@ -3173,22 +3329,6 @@ export default function AperturasDetalle({ idRegistro }) {
 
       {/* 30% SIDEBAR - Sticky/Meta Panel */}
       <div className="w-full xl:w-4/12 space-y-6">
-        {/* BOTÓN ELIMINAR */}
-        <div className="bg-white border border-gray-200 shadow-sm rounded-2xl p-3">
-          <button
-            onClick={handleConfirmarEliminacionRegistro}
-            disabled={eliminarCotizacion.isPending}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-50/50 border border-red-200 rounded-xl text-[10px] font-black text-red-700 hover:bg-red-100/50 hover:border-red-300 hover:shadow-md transition-all h-[42px] uppercase group disabled:opacity-50"
-          >
-            {eliminarCotizacion.isPending ? (
-              <div className="h-3.5 w-3.5 mr-2 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <Icon name="trash-2" className="h-3.5 w-3.5 text-red-600 group-hover:scale-110 transition-transform" />
-            )}
-            Eliminar
-          </button>
-        </div>
-
         {/* CARD DATOS COTIZACION */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden font-sans">
           <div className="px-5 py-3.5 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
@@ -3259,21 +3399,30 @@ export default function AperturasDetalle({ idRegistro }) {
               <CompactField label="Entrega Suministros">
                 {quote?.entrega_suministros || quote?.tiempo_entrega_suministros || '0'}{' '}
                 <span className="text-[9px] text-gray-400 font-bold uppercase">
-                  {quote?.suministros_unidad || quote?.id_unidad_tiempo_entrega_suministros_nombre || 'DÍAS'}
+                  {labelUnidadTiempo(
+                    quote?.unidad_suministro_nombre || quote?.suministros_unidad,
+                    quote?.id_unidad_tiempo_entrega_suministros
+                  )}
                 </span>
               </CompactField>
 
               <CompactField label="Entrega Servicios">
                 {quote?.entrega_servicios || quote?.tiempo_entrega_servicios || '0'}{' '}
                 <span className="text-[9px] text-gray-400 font-bold uppercase">
-                  {quote?.servicios_unidad || quote?.id_unidad_tiempo_entrega_servicios_nombre || 'DÍAS'}
+                  {labelUnidadTiempo(
+                    quote?.unidad_servicio_nombre || quote?.servicios_unidad,
+                    quote?.id_unidad_tiempo_entrega_servicios
+                  )}
                 </span>
               </CompactField>
 
               <CompactField label="Validez Oferta">
                 {quote?.validez_oferta || '0'}{' '}
                 <span className="text-[9px] text-gray-400 font-bold uppercase">
-                  {quote?.validez_unidad || quote?.id_unidad_tiempo_validez_nombre || 'DÍAS'}
+                  {labelUnidadTiempo(
+                    quote?.unidad_validez_nombre || quote?.validez_unidad,
+                    quote?.id_unidad_tiempo_validez
+                  )}
                 </span>
               </CompactField>
             </div>
@@ -3447,9 +3596,9 @@ export default function AperturasDetalle({ idRegistro }) {
                   );
                 })
               )}
-            </div>
           </div>
-          
+        </div>
+
       {/* Modal de Previsualización de Documento */}
       {previewDoc && createPortal(
         <div className="fixed inset-0 bg-slate-900/20 z-50 flex items-center justify-center p-4">
@@ -3471,6 +3620,7 @@ export default function AperturasDetalle({ idRegistro }) {
                 {previewDoc.url && (
                   <a
                     href={previewDoc.url}
+                    download={previewDoc.name || "orden.pdf"}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-650 hover:bg-indigo-700 text-white rounded-xl text-[9.5px] font-black transition-colors uppercase shadow-sm cursor-pointer"
@@ -3505,10 +3655,10 @@ export default function AperturasDetalle({ idRegistro }) {
             >
               {previewDoc.url ? (
                 previewDoc.extension === '.pdf' ? (
-                  <ReportIframe 
-                    src={previewDoc.url} 
-                    className="w-full h-full bg-white rounded-xl border border-slate-200 shadow-sm" 
-                    title="Previsualización PDF" 
+                  <iframe
+                    src={previewDoc.url}
+                    className="w-full h-full bg-white rounded-xl border border-slate-200 shadow-sm"
+                    title={previewDoc.name || "Previsualización PDF"}
                     onLoad={(e) => {
                       const iframe = e.target;
                       setTimeout(() => {
@@ -3649,6 +3799,64 @@ export default function AperturasDetalle({ idRegistro }) {
                   }, 50);
                 }}
               />
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {outlookHelpOpen && createPortal(
+        <div className="fixed inset-0 bg-slate-900/40 z-[9999] flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white border border-teal-200 shadow-xl p-6">
+            <p className="text-teal-900 font-black text-sm uppercase tracking-wide mb-2">
+              Abrir Outlook de escritorio
+            </p>
+            <p className="text-slate-600 text-[13px] font-semibold leading-relaxed mb-3">
+              Opera GX no usa el Outlook del PC (manda el correo a Gmail). Se descargó
+              <span className="font-black text-slate-800"> SIGECOM-Abrir-Outlook.vbs</span>.
+              Ábrelo para que salga la ventana de mensaje, como en el 4.0.
+            </p>
+            <ul className="text-slate-600 text-[12px] font-semibold space-y-1.5 mb-5 list-disc pl-5">
+              <li>Si Opera dice que el archivo puede dañar el equipo, pulsa Conservar / Keep.</li>
+              <li>Si Windows protege el PC: Más información → Ejecutar de todas formas.</li>
+              <li>La próxima vez, Enviar Correo abrirá Outlook solo.</li>
+            </ul>
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                className="w-full rounded-xl bg-teal-700 text-white font-black uppercase text-[11px] py-3 hover:bg-teal-800"
+                onClick={() => {
+                  const payload = getCorreoAperturaPayload();
+                  if (payload) descargarAbridorOutlookVbs(payload);
+                }}
+              >
+                Descargar de nuevo
+              </button>
+              <a
+                href="/activar-outlook.vbs"
+                download="activar-outlook.vbs"
+                className="w-full rounded-xl border border-teal-200 bg-white text-teal-800 font-black uppercase text-[11px] py-3 hover:bg-teal-50 text-center"
+              >
+                Descargar activador
+              </a>
+              <button
+                type="button"
+                className="w-full rounded-xl border border-teal-200 bg-teal-50 text-teal-800 font-black uppercase text-[11px] py-3 hover:bg-teal-100"
+                onClick={() => {
+                  marcarOutlookProtocoloListo();
+                  setOutlookHelpOpen(false);
+                  toast.success("Listo. Vuelve a pulsar Enviar Correo.");
+                }}
+              >
+                Ya lo ejecuté
+              </button>
+              <button
+                type="button"
+                className="w-full rounded-xl text-slate-500 font-bold uppercase text-[10px] py-2 hover:text-slate-700"
+                onClick={() => setOutlookHelpOpen(false)}
+              >
+                Cerrar
+              </button>
             </div>
           </div>
         </div>,

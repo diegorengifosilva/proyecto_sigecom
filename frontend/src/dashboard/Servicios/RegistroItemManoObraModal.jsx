@@ -12,6 +12,7 @@ import { Users, Briefcase, Calculator, TrendingUp, ChevronsRight } from "lucide-
 import SelectField from "../../components/ui/SelectField";
 import InputField from "../../components/ui/InputField";
 import TipoPersonalModal from "./TipoPersonalModal";
+import { roundMoney, moneyTotal } from "@/utils/money";
 
 function RegistroItemManoObraModal({ open, onClose, onConfirm, item, areaCotizacion }) {
   const [areas, setAreas] = useState([]);
@@ -128,32 +129,22 @@ function RegistroItemManoObraModal({ open, onClose, onConfirm, item, areaCotizac
 
     // Si cambia el Costo o cambia el Porcentaje -> La utilidad SE RECALCULA
     if (campoModificado === "costoDia" || campoModificado === "porcentaje" || campoModificado === null) {
-      utilidad = (costoDia * porcentaje) / 100;
-      next.utilidad = utilidad.toFixed(2);
+      utilidad = roundMoney((costoDia * porcentaje) / 100);
+      next.utilidad = utilidad;
     }
 
-    // Si el usuario decide forzar una UTILIDAD manual (Excepción)
-    // Recalculamos el porcentaje para mantener la coherencia visual
     else if (campoModificado === "utilidad") {
       if (costoDia > 0) {
-        porcentaje = (utilidad / costoDia) * 100;
-        next.porcentaje = porcentaje.toFixed(2);
+        porcentaje = roundMoney((utilidad / costoDia) * 100);
+        next.porcentaje = porcentaje;
       }
     }
 
-    // ==========================================
-    // 2️⃣ CÁLCULO DE TOTALES (CADENA)
-    // ==========================================
-    const costoTotal = costoDia * dias * hombres;
-    const cotizadoDia = costoDia + utilidad;
-    const cotizadoTotal = cotizadoDia * dias * hombres;
-    const utilidadTotal = utilidad * dias * hombres;
-
-    // Seteo de valores con precisión de 2 decimales
-    next.costoTotal = costoTotal.toFixed(2);
-    next.cotizadoDia = cotizadoDia.toFixed(2);
-    next.cotizadoTotal = cotizadoTotal.toFixed(2);
-    next.utilidadTotal = utilidadTotal.toFixed(2);
+    const units = dias * hombres;
+    next.costoTotal = moneyTotal(costoDia, units);
+    next.cotizadoDia = roundMoney(Number(costoDia) + Number(utilidad));
+    next.cotizadoTotal = moneyTotal(next.cotizadoDia, units);
+    next.utilidadTotal = moneyTotal(utilidad, units);
 
     return next;
   };

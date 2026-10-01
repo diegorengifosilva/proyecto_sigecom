@@ -3,6 +3,9 @@ import { ERPTable, StatusBadge } from "@/components/ui/ERPComponents";
 import { formatDate } from "@/utils/formatters";
 import { Pin } from "lucide-react";
 
+const simboloMoneda = (tipo) =>
+    String(tipo || "S").trim().toUpperCase().startsWith("D") ? "$" : "S/.";
+
 const renderAreaBadge = (areaName) => {
     if (!areaName) return null;
     const name = areaName.trim().toUpperCase();
@@ -125,7 +128,7 @@ const TablaCotizaciones = ({
                                 <span>{formatDate(item.fecha)}</span>
                             </div>
                             <span className="text-xs font-black text-gray-950">
-                                ${Number(item.total_cotizacion || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                {simboloMoneda(item.tipo_moneda)}{Number(item.total_cotizacion || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                             </span>
                         </div>
                     </div>
@@ -222,7 +225,7 @@ const TablaCotizaciones = ({
 
                             {/* Total */}
                             <td className="px-4 py-2 whitespace-nowrap text-sm font-black text-gray-900 text-right">
-                                ${Number(item.total_cotizacion || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                {simboloMoneda(item.tipo_moneda)}{Number(item.total_cotizacion || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                             </td>
                         </tr>
                     );

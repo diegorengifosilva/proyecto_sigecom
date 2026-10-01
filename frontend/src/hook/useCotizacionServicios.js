@@ -4,6 +4,9 @@ import { toast } from '../utils/toast';
 import { useSensors, useSensor, PointerSensor } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 import XLSX from 'xlsx-js-style';
+import { nombreArchivoReporte } from '../utils/excel';
+import { aplicarTotalesServicio } from '../utils/utilidadBidireccional';
+import { roundMoney, moneyTotal } from '../utils/money';
 
 const isTempServicioId = (id) => typeof id === 'string' && String(id).startsWith('temp_');
 const isVirtualServicioId = (id) => typeof id === 'string' && String(id).startsWith('virtual_');
@@ -38,7 +41,10 @@ const nextCodigoGrupoServicio = (grupos) => {
   return String(maxCode + 1).padStart(2, "0");
 };
 
-export const useCotizacionServicios = (numReg, onAddLog) => {
+export const useCotizacionServicios = (numReg, onAddLog, archivoMeta) => {
+  const meta = archivoMeta && typeof archivoMeta === "object" && !Array.isArray(archivoMeta)
+    ? archivoMeta
+    : {};
   const [gruposServicios, setGruposServicios] = useState({});
   const [originalGruposServicios, setOriginalGruposServicios] = useState({});
   const [deletedServicioIds, setDeletedServicioIds] = useState([]);
@@ -93,7 +99,12 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
               const costoDia = Number(it.costo_hombre_dia || 0);
               const pct = Number(it.porcentaje || 0);
               const isGasto05 = tInfo.type === "05";
-              const unitUtil = isGasto05 ? 0 : (pct > 0 ? Number((costoDia * (pct / 100)).toFixed(2)) : Number(it.utilidad || 0));
+              const hasStoredUtil = it.utilidad !== undefined && it.utilidad !== null && it.utilidad !== "";
+              const unitUtil = isGasto05
+                ? 0
+                : (hasStoredUtil
+                  ? roundMoney(it.utilidad)
+                  : roundMoney(costoDia * (pct / 100)));
               return {
                 id_servicio: it.id_servicio,
                 id_registro: it.id_registro,
@@ -113,6 +124,7 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
                 costo_total: Number(it.costo_total || 0),
                 porcentaje: isGasto05 ? 0 : pct,
                 utilidad: unitUtil,
+                utilidad_origen: hasStoredUtil ? "monto" : "porcentaje",
                 cotizado_hombre_dia: Number(it.cotizado_hombre_dia || 0),
                 cotizado_total: Number(it.cotizado_total || 0),
                 descripcion_servicio: it.descripcion_servicio || "",
@@ -221,20 +233,31 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
               let utilidad = 0;
               let cotizadoDia = 0;
               let cotizadoTotal = 0;
+              let porcentajeFinal = isCat05 ? 0 : porcentajeUtilidad;
 
               if (isCat05) {
-                cotizadoDia = Number(item.cotizado_hombre_dia || item.costo_hombre_dia || 0);
+                cotizadoDia = roundMoney(item.cotizado_hombre_dia || item.costo_hombre_dia || 0);
                 const totalUnits = cantidad * (dias > 0 ? dias : 1);
-                costoTotal = Number((totalUnits * cotizadoDia).toFixed(2));
+                costoTotal = moneyTotal(cotizadoDia, totalUnits);
                 cotizadoTotal = costoTotal;
                 utilidad = 0;
               } else {
                 const totalUnits = cantidad * (isCat04 ? (dias > 0 ? dias : 1) : 1);
-                costoTotal = Number((totalUnits * costoDia).toFixed(2));
-                const utilidadUnit = Number((costoDia * (porcentajeUtilidad / 100)).toFixed(2));
-                utilidad = utilidadUnit;
-                cotizadoDia = Number((costoDia + utilidadUnit).toFixed(2));
-                cotizadoTotal = Number((totalUnits * cotizadoDia).toFixed(2));
+                const origen = item.utilidad_origen === "porcentaje"
+                  ? "porcentaje"
+                  : (item.utilidad !== undefined && item.utilidad !== null && item.utilidad !== "" ? "monto" : "porcentaje");
+                const tot = aplicarTotalesServicio({
+                  costoUnit: costoDia,
+                  totalUnits,
+                  utilidad: item.utilidad,
+                  porcentaje: porcentajeUtilidad,
+                  origen,
+                });
+                costoTotal = tot.costo_total;
+                utilidad = tot.utilidad;
+                porcentajeFinal = tot.porcentaje;
+                cotizadoDia = tot.cotizado_hombre_dia;
+                cotizadoTotal = tot.cotizado_total;
               }
 
               const payload = {
@@ -248,8 +271,9 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
                 costo_hombre_dia: isCat05 ? cotizadoDia : costoDia,
                 cantidad_dias: dias,
                 costo_total: costoTotal,
-                porcentaje: isCat05 ? 0 : porcentajeUtilidad,
+                porcentaje: porcentajeFinal,
                 utilidad: utilidad,
+                utilidad_origen: isCat05 ? undefined : (item.utilidad_origen === "porcentaje" ? "porcentaje" : "monto"),
                 cotizado_total: cotizadoTotal,
                 id_area: 1, // Default area
                 orden: index + 1
@@ -329,20 +353,31 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
         let utilidad = 0;
         let cotizadoDia = 0;
         let cotizadoTotal = 0;
+        let porcentajeFinal = isCat05 ? 0 : porcentajeUtilidad;
 
         if (isCat05) {
-          cotizadoDia = Number(form.cotizado_hombre_dia || form.costo_hombre_dia || 0);
+          cotizadoDia = roundMoney(form.cotizado_hombre_dia || form.costo_hombre_dia || 0);
           const totalUnits = cantidad * (dias > 0 ? dias : 1);
-          costoTotal = Number((totalUnits * cotizadoDia).toFixed(2));
+          costoTotal = moneyTotal(cotizadoDia, totalUnits);
           cotizadoTotal = costoTotal;
           utilidad = 0;
         } else {
           const totalUnits = cantidad * (isCat04 ? (dias > 0 ? dias : 1) : 1);
-          costoTotal = Number((totalUnits * costoDia).toFixed(2));
-          const utilidadUnit = Number((costoDia * (porcentajeUtilidad / 100)).toFixed(2));
-          utilidad = utilidadUnit;
-          cotizadoDia = Number((costoDia + utilidadUnit).toFixed(2));
-          cotizadoTotal = Number((totalUnits * cotizadoDia).toFixed(2));
+          const origen = form.utilidad_origen === "porcentaje"
+            ? "porcentaje"
+            : (form.utilidad !== undefined && form.utilidad !== null && form.utilidad !== "" ? "monto" : "porcentaje");
+          const tot = aplicarTotalesServicio({
+            costoUnit: costoDia,
+            totalUnits,
+            utilidad: form.utilidad,
+            porcentaje: porcentajeUtilidad,
+            origen,
+          });
+          costoTotal = tot.costo_total;
+          utilidad = tot.utilidad;
+          porcentajeFinal = tot.porcentaje;
+          cotizadoDia = tot.cotizado_hombre_dia;
+          cotizadoTotal = tot.cotizado_total;
         }
 
         const payload = {
@@ -355,8 +390,9 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
           costo_hombre_dia: isCat05 ? cotizadoDia : costoDia,
           cantidad_dias: dias,
           costo_total: costoTotal,
-          porcentaje: isCat05 ? 0 : porcentajeUtilidad,
+          porcentaje: porcentajeFinal,
           utilidad: utilidad,
+          utilidad_origen: isCat05 ? undefined : (form.utilidad_origen === "porcentaje" ? "porcentaje" : "monto"),
           cotizado_hombre_dia: cotizadoDia,
           cotizado_total: cotizadoTotal,
           id_tipo_gasto: subg.tipoCodigo?.endsWith("04") ? 3 : subg.tipoCodigo?.endsWith("05") ? 4 : 5,
@@ -1370,9 +1406,9 @@ export const useCotizacionServicios = (numReg, onAddLog) => {
 
     // 4️⃣ Grabar Libro de Trabajo y lanzar descarga
     XLSX.utils.book_append_sheet(wb, ws, "Servicios General");
-    XLSX.writeFile(wb, `Reporte_Servicios_${numReg}.xlsx`);
+    XLSX.writeFile(wb, `${nombreArchivoReporte("reporte_servicios", meta.codigo || numReg, meta.referencia)}.xlsx`);
     toast.success("Excel corporativo de servicios descargado");
-  }, [gruposServicios, numReg]);
+  }, [gruposServicios, numReg, meta.codigo, meta.referencia]);
 
   const handleReporteServicios = useCallback(() => {
     if (!numReg) return;

@@ -28,6 +28,38 @@ const getSessionValue = (key, defaultValue) => {
 };
 
 const EMPTY_ARRAY = [];
+
+const parseKpiDateParts = (value) => {
+  if (!value) return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return { year: value.getFullYear(), month: value.getMonth() };
+  }
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    return { year: Number(match[1]), month: Number(match[2]) - 1 };
+  }
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return { year: d.getFullYear(), month: d.getMonth() };
+};
+
+const summarizeModuleKpis = (rows, { amountKey = "total_cotizacion", dateKey = "fecha" } = {}) => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  let montoTotal = 0;
+  let esteMes = 0;
+  for (const row of rows || []) {
+    const estado = String(row.estado_nombre || row.estado || "").toLowerCase();
+    const anulado = estado.includes("anulado") || Number(row.id_estado) === 4;
+    const monto = Number(row[amountKey] || 0);
+    if (!anulado && Number.isFinite(monto)) montoTotal += monto;
+    const parts = parseKpiDateParts(row[dateKey]);
+    if (parts && parts.year === year && parts.month === month) esteMes += 1;
+  }
+  return { total: (rows || []).length, montoTotal, esteMes };
+};
+
 const normalizeArrayFilter = (val, defaultVal = EMPTY_ARRAY) => {
   if (!val || val === "%" || val === "TODAS") return defaultVal;
   if (Array.isArray(val)) return val;
@@ -280,36 +312,10 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
   const setStatusFilter = (val) => updateFilter("statusFilter", val);
 
   const selectedAnno = currentFilters.selectedAnno;
-  const setSelectedAnno = (val) => {
-    setTabFilters(prev => {
-      const currentVal = prev[currentTab]?.selectedAnno;
-      const nextVal = typeof val === 'function' ? val(currentVal) : val;
-      const updated = {
-        cotizaciones: { ...(prev.cotizaciones || getInitialTabFilters("cotizaciones")), selectedAnno: nextVal },
-        oportunidades: { ...(prev.oportunidades || getInitialTabFilters("oportunidades")), selectedAnno: nextVal },
-        aperturas: { ...(prev.aperturas || getInitialTabFilters("aperturas")), selectedAnno: nextVal },
-        programacion: { ...(prev.programacion || getInitialTabFilters("programacion")), selectedAnno: nextVal }
-      };
-      sessionStorage.setItem("comercial_tab_filters", JSON.stringify(updated));
-      return updated;
-    });
-  };
+  const setSelectedAnno = (val) => updateFilter("selectedAnno", val);
 
   const selectedMes = currentFilters.selectedMes;
-  const setSelectedMes = (val) => {
-    setTabFilters(prev => {
-      const currentVal = prev[currentTab]?.selectedMes;
-      const nextVal = typeof val === 'function' ? val(currentVal) : val;
-      const updated = {
-        cotizaciones: { ...(prev.cotizaciones || getInitialTabFilters("cotizaciones")), selectedMes: nextVal },
-        oportunidades: { ...(prev.oportunidades || getInitialTabFilters("oportunidades")), selectedMes: nextVal },
-        aperturas: { ...(prev.aperturas || getInitialTabFilters("aperturas")), selectedMes: nextVal },
-        programacion: { ...(prev.programacion || getInitialTabFilters("programacion")), selectedMes: nextVal }
-      };
-      sessionStorage.setItem("comercial_tab_filters", JSON.stringify(updated));
-      return updated;
-    });
-  };
+  const setSelectedMes = (val) => updateFilter("selectedMes", val);
 
   const envioFilter = currentFilters.envioFilter;
   const setEnvioFilter = (val) => updateFilter("envioFilter", val);
@@ -889,8 +895,9 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
   };
 
   const filteredData = useMemo(() => {
+    const searchLower = (fCoti.globalSearch || "").toLowerCase().trim();
+    const statusCoti = normalizeArrayFilter(fCoti.statusFilter);
     let result = cotizaciones.filter((item) => {
-      const searchLower = globalSearch.toLowerCase().trim();
       const formattedTotal = Number(item.total_cotizacion || 0).toLocaleString('en-US', { minimumFractionDigits: 2 });
       const formattedDate = formatDate(item.fecha);
       const formattedEnvio = item.estado_envio === 2 ? "enviado" : "pendiente";
@@ -910,18 +917,22 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
         item.total_cotizacion?.toString().includes(searchLower) ||
         formattedTotal.includes(searchLower);
 
-      const matchesStatus = statusFilter.length === 0 ||
-        statusFilter.includes(item.estado_nombre?.toUpperCase());
+      const matchesStatus = statusCoti.length === 0 ||
+        statusCoti.includes(item.estado_nombre?.toUpperCase());
 
       return matchesSearch && matchesStatus;
     });
 
-    // Sorting (pinned items always first)
+    // Sorting: fijados primero, luego PENDIENTE de envío, luego ENVIADO; dentro de eso la columna activa (fecha desc por defecto)
     result.sort((a, b) => {
       const aPinned = pinnedIds.has(a.id_registro);
       const bPinned = pinnedIds.has(b.id_registro);
       if (aPinned && !bPinned) return -1;
       if (!aPinned && bPinned) return 1;
+
+      const aEnviado = Number(a.estado_envio) === 2 ? 1 : 0;
+      const bEnviado = Number(b.estado_envio) === 2 ? 1 : 0;
+      if (aEnviado !== bEnviado) return aEnviado - bEnviado;
 
       if (sortConfig.key) {
         const aValue = a[sortConfig.key];
@@ -934,10 +945,10 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
     });
 
     return result;
-  }, [cotizaciones, globalSearch, statusFilter, sortConfig, pinnedIds]);
+  }, [cotizaciones, fCoti.globalSearch, fCoti.statusFilter, sortConfig, pinnedIds]);
 
   const filteredOportunidades = useMemo(() => {
-    const searchLower = globalSearch.toLowerCase().trim();
+    const searchLower = (fOpor.globalSearch || "").toLowerCase().trim();
     const MAPPING_ESTADOS = { 1: "pendiente", 2: "no cotizado", 3: "rechazado", 4: "cotizado" };
     const filtered = oportunidades.filter((item) => {
       const statusText = MAPPING_ESTADOS[item.estado_oportunidad] || "pendiente";
@@ -964,10 +975,10 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
       if (!aPinned && bPinned) return 1;
       return 0;
     });
-  }, [oportunidades, globalSearch, pinnedIds]);
+  }, [oportunidades, fOpor.globalSearch, pinnedIds]);
 
   const filteredAperturas = useMemo(() => {
-    const searchLower = globalSearch.toLowerCase().trim();
+    const searchLower = (fAper.globalSearch || "").toLowerCase().trim();
     const filtered = (dataAperturas?.tabla || []).filter((item) => {
       const codigo = item.cotizacion_codigo || item.id_registro?.codigo || "";
       const referencia = item.cotizacion_referencia || item.id_registro?.referencia || "";
@@ -994,15 +1005,20 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
       if (!aPinned && bPinned) return 1;
       return 0;
     });
-  }, [dataAperturas?.tabla, globalSearch, pinnedIds]);
+  }, [dataAperturas?.tabla, fAper.globalSearch, pinnedIds]);
 
-  const stats = useMemo(() => {
-    return {
-      total: filteredData.length,
-      adjudicadas: filteredData.filter(c => c.estado_nombre?.includes('ADJUDICADA')).length,
-      pendientes: filteredData.filter(c => c.estado_nombre?.includes('PENDIENTE')).length,
-    };
-  }, [filteredData]);
+  const kpisOportunidades = useMemo(
+    () => summarizeModuleKpis(filteredOportunidades, { amountKey: "total_cotizacion", dateKey: "recepcion_solicitud" }),
+    [filteredOportunidades]
+  );
+  const kpisCotizaciones = useMemo(
+    () => summarizeModuleKpis(filteredData, { amountKey: "total_cotizacion", dateKey: "fecha" }),
+    [filteredData]
+  );
+  const kpisAperturas = useMemo(
+    () => summarizeModuleKpis(filteredAperturas, { amountKey: "total_orden", dateKey: "fecha_orden" }),
+    [filteredAperturas]
+  );
 
   const recordCount = useMemo(() => {
     if (currentTab === "cotizaciones") return filteredData.length;
@@ -1032,10 +1048,10 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
       isMountedRef.current = true;
       return;
     }
-    setCurrentPage(1); // Reset to page 1 on filter/search change
-    setCurrentPageOportunidades(1);
-    setCurrentPageApertura(1);
-  }, [globalSearch, statusFilter, estadoOportunidad]);
+    if (currentTab === "cotizaciones") setCurrentPage(1);
+    else if (currentTab === "oportunidades") setCurrentPageOportunidades(1);
+    else if (currentTab === "aperturas") setCurrentPageApertura(1);
+  }, [currentTab, globalSearch, statusFilter, estadoOportunidad]);
 
   const headers = [
     { label: "Código", key: "codigo", className: "w-[12%]" },
@@ -1265,7 +1281,13 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
     }
     
     const reportUrl = `cotizaciones/reportes/reporte_cotizaciones_dashboard_html/?${params.toString()}`;
-    
+
+    const titles = {
+      aperturas: "Relación de Aperturas",
+      oportunidades: "Reporte de Oportunidades",
+      cotizaciones: "Reporte de Cotizaciones",
+    };
+    setReporteTitle(titles[currentTab] || "Reporte");
     setReporteUrl(reportUrl);
     setReporteDashboardOpen(true);
   };
@@ -1330,7 +1352,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
               {isLoadingOportunidades ? (
                 <div className="h-7 w-16 bg-gray-100 animate-pulse rounded-lg" />
               ) : (
-                `${dataOportunidades?.dashboard?.total || 0}`
+                `${kpisOportunidades.total}`
               )}
             </h3>
           </div>
@@ -1344,7 +1366,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
             <div className="text-right bg-indigo-50/70 text-indigo-700 px-2 py-0.5 rounded-lg flex flex-col items-end">
               <span className="text-[8px] font-black uppercase tracking-wider leading-none mb-0.5">Este Mes</span>
               <span className="font-black text-[10px]">
-                {dataOportunidades?.dashboard?.esteMes || 0} • ${Number(0).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                {kpisOportunidades.esteMes} • ${Number(0).toLocaleString('en-US', { maximumFractionDigits: 0 })}
               </span>
             </div>
           </div>
@@ -1376,7 +1398,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
               {isLoadingCotizaciones ? (
                 <div className="h-7 w-16 bg-gray-100 animate-pulse rounded-lg" />
               ) : (
-                `${dataCotizaciones?.dashboard?.total || 0}`
+                `${kpisCotizaciones.total}`
               )}
             </h3>
           </div>
@@ -1384,13 +1406,13 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
           <div className="mt-2.5 pt-1.5 border-t border-gray-100/60 flex items-center justify-between text-[10px] font-bold tracking-tight">
             <div className="flex flex-col">
               <span className="text-gray-900 font-black">
-                ${Number(dataCotizaciones?.dashboard?.montoTotalDolares || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                {Number(kpisCotizaciones.montoTotal).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
             <div className="text-right bg-blue-50/70 text-blue-700 px-2 py-0.5 rounded-lg flex flex-col items-end">
               <span className="text-[8px] font-black uppercase tracking-wider leading-none mb-0.5">Este Mes</span>
               <span className="font-black text-[10px]">
-                {dataCotizaciones?.dashboard?.esteMes || 0} • ${Number(dataCotizaciones?.dashboard?.montoTotalDolares || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                {kpisCotizaciones.esteMes}
               </span>
             </div>
           </div>
@@ -1423,7 +1445,7 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
               {isLoadingAperturas ? (
                 <div className="h-7 w-16 bg-gray-100 animate-pulse rounded-lg" />
               ) : (
-                `${dataAperturas?.dashboard?.total || 0}`
+                `${kpisAperturas.total}`
               )}
             </h3>
           </div>
@@ -1431,13 +1453,13 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
           <div className="mt-2.5 pt-1.5 border-t border-gray-100/60 flex items-center justify-between text-[10px] font-bold tracking-tight">
             <div className="flex flex-col">
               <span className="text-gray-900 font-black">
-                ${Number(dataAperturas?.dashboard?.montoTotalDolares || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                {Number(kpisAperturas.montoTotal).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
             <div className="text-right bg-amber-50/70 text-amber-700 px-2 py-0.5 rounded-lg flex flex-col items-end">
               <span className="text-[8px] font-black uppercase tracking-wider leading-none mb-0.5">Este Mes</span>
               <span className="font-black text-[10px]">
-                {dataAperturas?.dashboard?.esteMes || 0} • ${Number(dataAperturas?.dashboard?.montoTotalDolares || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                {kpisAperturas.esteMes}
               </span>
             </div>
           </div>

@@ -40,10 +40,13 @@ export default defineConfig(({ mode }) => {
             /^\/admin\//,
             /^\/media\//,
             /^\/static\//,
+            /^\/clientes\//,
+            /^\/outlook\.html/i,
+            /^\/activar-outlook\.vbs/i,
           ],
           runtimeCaching: [
             {
-              urlPattern: /\/(api|admin|media|static)\//,
+              urlPattern: /\/(api|admin|media|static|clientes)\//,
               handler: 'NetworkOnly',
             },
           ],
@@ -86,6 +89,11 @@ export default defineConfig(({ mode }) => {
       proxy: {
         '/api': {
           target: proxyTarget, // backend Django dinámico desde .env
+          changeOrigin: true,
+          secure: false,
+        },
+        '/clientes': {
+          target: proxyTarget,
           changeOrigin: true,
           secure: false,
         },

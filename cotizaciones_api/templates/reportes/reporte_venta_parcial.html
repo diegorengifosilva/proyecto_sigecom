@@ -193,7 +193,7 @@ document.getElementById("btnExportarExcel").addEventListener("click", function()
     const blob = new Blob(['\ufeff', template], { type: "application/vnd.ms-excel" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = "REPORTE_SUMINISTROS_{{ num_reg }}.xls";
+    link.download = "{{ nombre_excel|default:'reporte_suministros' }}.xls";
     link.click();
 });
 </script>

@@ -10,6 +10,7 @@ import {
 import { Button } from "../../components/ui/button";
 import { Shapes, FileEdit, Calculator, TrendingUp, ChevronsRight } from "lucide-react";
 import CodigoTipoGastoModal from "./CodigoTipoGastoModal";
+import { roundMoney, moneyTotal } from "@/utils/money";
 
 function RegistroItemOtrosModal({ open, onClose, onConfirm, codigoTipoGasto, item }) {
   const [form, setForm] = useState({
@@ -95,32 +96,21 @@ function RegistroItemOtrosModal({ open, onClose, onConfirm, codigoTipoGasto, ite
 
     // Si cambia el PRECIO o cambia el PORCENTAJE -> Recalculamos UTILIDAD
     if (campoModificado === "precio" || campoModificado === "porcentaje" || campoModificado === null) {
-      utilidad = (precio * porcentaje) / 100;
-      next.utilidad = utilidad.toFixed(2);
+      utilidad = roundMoney((precio * porcentaje) / 100);
+      next.utilidad = utilidad;
     } 
     
-    // Si el usuario decide forzar una UTILIDAD manual
-    // Recalculamos el porcentaje para que la ficha sea coherente
     else if (campoModificado === "utilidad") {
       if (precio > 0) {
-        porcentaje = (utilidad / precio) * 100;
-        next.porcentaje = porcentaje.toFixed(2);
+        porcentaje = roundMoney((utilidad / precio) * 100);
+        next.porcentaje = porcentaje;
       }
     }
 
-    // ==========================================
-    // 2️⃣ CÁLCULO DE TOTALES
-    // ==========================================
-    const totalCosto = precio * cantidad;
-    const ventaPrecioUnitario = precio + utilidad;
-    const ventaTotalAcumulada = ventaPrecioUnitario * cantidad;
-    const utilidadTotalAcumulada = utilidad * cantidad;
-
-    // Seteo de valores con formato de 2 decimales para la UI
-    next.total = totalCosto.toFixed(2);
-    next.ventaPrecio = ventaPrecioUnitario.toFixed(2);
-    next.ventaTotal = ventaTotalAcumulada.toFixed(2);
-    next.utilidadTotal = utilidadTotalAcumulada.toFixed(2);
+    next.total = moneyTotal(precio, cantidad);
+    next.ventaPrecio = roundMoney(Number(precio) + Number(utilidad));
+    next.ventaTotal = moneyTotal(next.ventaPrecio, cantidad);
+    next.utilidadTotal = moneyTotal(utilidad, cantidad);
 
     return next;
   };

@@ -26,5 +26,17 @@ export const tableToExcel = (tableId, sheetName, filename) => {
   const link = document.createElement("a");
   link.href = uri + base64(format(template, ctx));
   link.download = filename;
-  link.click();
+    link.click();
+};
+
+export const nombreArchivoReporte = (prefijo, codigo, referencia) => {
+  const slug = (value) =>
+    String(value || "")
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^\w.\-]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+  const code = slug(codigo) || "sin_codigo";
+  const ref = slug(referencia);
+  return ref ? `${prefijo}_${code}_${ref}` : `${prefijo}_${code}`;
 };

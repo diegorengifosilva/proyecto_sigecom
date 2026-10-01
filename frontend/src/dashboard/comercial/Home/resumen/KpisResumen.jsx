@@ -134,8 +134,8 @@ export default function KpisResumen({
       {/* KPI 2: MONTO COTIZADO (Human-Readable) */}
       <KPICard
         label="Monto Cotizado"
-        current={formatValue(data.monto_mes, true)}
-        accumulated={formatValue(data.monto_total?.anual, true)}
+        current={formatValue(data.monto_mes_dolares ?? data.monto_mes, true)}
+        accumulated={formatValue(data.monto_total?.dolares ?? data.monto_total?.anual, true)}
         icon={TrendingUp}
         color="indigo"
         category="Potencial"
@@ -147,8 +147,8 @@ export default function KpisResumen({
       {/* KPI 3: VENTAS REALES (Human-Readable) */}
       <KPICard
         label="Ventas Cerradas"
-        current={formatValue(data.ventas_reales_mes, true)}
-        accumulated={formatValue(data.ventas_reales_anual, true)}
+        current={formatValue(data.ventas_reales_mes_dolares ?? data.ventas_reales_mes, true)}
+        accumulated={formatValue(data.ventas_reales_anual_dolares ?? data.ventas_reales_anual, true)}
         icon={Zap}
         color="emerald"
         category="Cierre"

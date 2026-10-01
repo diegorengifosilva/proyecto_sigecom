@@ -2,7 +2,10 @@ import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import api from '@/services/api';
 import { toast } from '../utils/toast';
 import XLSX from 'xlsx-js-style';
+import { nombreArchivoReporte } from '../utils/excel';
 import { calcularItemSegunProveedor, resolverEndpointPorCodigo } from '@/dashboard/Suministros/tables/tablaUtils';
+import { aplicarTotalesSuministro } from '@/utils/utilidadBidireccional';
+import { roundMoney, moneyTotal, sumMoney } from '@/utils/money';
 import { useSensors, useSensor, PointerSensor } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 
@@ -13,79 +16,157 @@ const toFkId = (val) => {
   return n;
 };
 
+export const sameSuministroId = (a, b) => String(a ?? "") === String(b ?? "");
+
+const normTipoVenta = (tipoVenta) => String(tipoVenta || "").trim().toUpperCase();
+
+export const envioGrupoValue = (grupo, tipoVenta) => {
+  if (!grupo) return 0;
+  if (normTipoVenta(tipoVenta) === "P") {
+    const n = Number(grupo.costo_envio_unidad ?? grupo.costo_envio ?? 0);
+    return Number.isFinite(n) ? n : 0;
+  }
+  const n = Number(grupo.costo_envio_total ?? grupo.costo_envio ?? 0);
+  return Number.isFinite(n) ? n : 0;
+};
+
+/** Prorratea el envío de grupo a un ítem: T = por costo de línea, P = envío unitario / cantidad. */
+export const prorratearEnvioItem = (item, groupCostoEnvio, totalCostoItems, tipoVenta) => {
+  const tVenta = normTipoVenta(tipoVenta);
+  const cantidad = Number(item?.cantidad || 0);
+  const costoPrecio = Number(item?.costo_precio || 0);
+  const envioGrupo = Number(groupCostoEnvio || 0);
+
+  if (tVenta === "P") {
+    const costoEnvio = cantidad > 0 ? envioGrupo / cantidad : 0;
+    const porcentajeEnvio = costoPrecio > 0 ? (costoEnvio / costoPrecio) * 100 : 0;
+    return { costoEnvio, porcentajeEnvio };
+  }
+
+  const lineCost = moneyTotal(costoPrecio, cantidad);
+  const ratioLinea = totalCostoItems > 0 ? lineCost / totalCostoItems : 0;
+  const envioLinea = envioGrupo * ratioLinea;
+  const costoEnvio = cantidad > 0 ? envioLinea / cantidad : 0;
+  // PREUBAS TOTAL / 4.0: % Envío = costo unitario / suma(costo total de líneas)
+  const porcentajeEnvio = totalCostoItems > 0 ? (costoPrecio / totalCostoItems) * 100 : 0;
+  return { costoEnvio, porcentajeEnvio };
+};
+
+const esCodigoPlaceholder = (cod) => {
+  const k = String(cod || "").trim().toUpperCase();
+  return !k || ["-", ".", "S/C", "SC", "S/N", "N/A", "NA", "SIN CODIGO", "SIN CÓDIGO"].includes(k);
+};
+
+const parseEntregaExcel = (val) => {
+  if (val === undefined || val === null || val === "") return null;
+  if (typeof val === "number" && Number.isFinite(val)) return val;
+  const m = String(val).match(/(\d+(?:[.,]\d+)?)/);
+  if (!m) return null;
+  const n = Number(String(m[1]).replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+};
+
+/** Misma lógica unitaria que crear/editar grupos: UTILIDAD del Excel es % → monto unitario. */
+const calcularUtilidadImportacion = (costoUnit, cantidad, excelUtilidad) => {
+  const qty = Number(cantidad) || 0;
+  const costo = roundMoney(costoUnit);
+  const pctRaw = excelUtilidad === null || excelUtilidad === undefined || !Number.isFinite(Number(excelUtilidad))
+    ? 20
+    : Number(excelUtilidad);
+  const tot = aplicarTotalesSuministro({
+    costoPrecio: costo,
+    cantidad: qty,
+    utilidad: 0,
+    porcentaje: pctRaw,
+    origen: "porcentaje",
+  });
+  return {
+    puc: costo,
+    tou: tot.utilidad,
+    cau: tot.porcentaje_utilidad,
+    toc: tot.costo_total,
+    val: tot.precio_venta,
+    tot: tot.venta_total,
+    utilidad_origen: "porcentaje",
+  };
+};
+
 export const recalculateGroupSuministrosValues = (grupo, tipoVenta) => {
   const items = grupo.items || [];
   const cantidadGrupo = Number(grupo.cantidad || 1);
-  
-  let groupCostoEnvio = 0;
-  if (tipoVenta === "P") {
-    groupCostoEnvio = Number(grupo.costo_envio_unidad !== undefined && grupo.costo_envio_unidad !== null ? grupo.costo_envio_unidad : (grupo.costo_envio || 0));
-  } else if (tipoVenta === "T") {
-    groupCostoEnvio = Number(grupo.costo_envio_total !== undefined && grupo.costo_envio_total !== null ? grupo.costo_envio_total : (grupo.costo_envio || 0));
-  } else {
-    groupCostoEnvio = Number(grupo.costo_envio || 0);
-  }
+  const tVenta = normTipoVenta(tipoVenta);
 
-  // 1. Calcular totalCostoItems
-  const totalCostoItems = items.reduce((acc, it) => acc + (Number(it.costo_precio || 0) * Number(it.cantidad || 0)), 0);
+  let groupCostoEnvio = envioGrupoValue(grupo, tVenta);
+  groupCostoEnvio = roundMoney(groupCostoEnvio);
 
-  // 2. Recalcular cada ítem
+  const totalCostoItems = sumMoney(items.map(it => moneyTotal(it.costo_precio, it.cantidad)));
+
   const recalculatedItems = items.map(item => {
     const nextItem = { ...item };
     const cantidad = Number(nextItem.cantidad || 0);
     const costoPrecio = Number(nextItem.costo_precio || 0);
 
-    let costoEnvio = 0;
-    let porcentajeEnvio = 0;
+    const { costoEnvio, porcentajeEnvio } = prorratearEnvioItem(
+      nextItem,
+      groupCostoEnvio,
+      totalCostoItems,
+      tVenta
+    );
 
-    if (tipoVenta === "P") {
-      costoEnvio = cantidad > 0 ? groupCostoEnvio / cantidad : 0;
-      porcentajeEnvio = costoPrecio > 0 ? ((costoEnvio / costoPrecio) * 100) : 0;
-    } else if (tipoVenta === "T") {
-      porcentajeEnvio = totalCostoItems > 0 ? (costoPrecio / totalCostoItems) * 100 : 0;
-      costoEnvio = (porcentajeEnvio / 100) * groupCostoEnvio;
-    }
+    const origen = nextItem.utilidad_origen === "monto" ? "monto" : "porcentaje";
+    const tot = aplicarTotalesSuministro({
+      costoPrecio,
+      cantidad,
+      costoEnvio,
+      porcentajeEnvio,
+      utilidad: nextItem.utilidad,
+      porcentaje: nextItem.porcentaje_utilidad,
+      origen,
+    });
 
-    const costoConEnvio = costoPrecio + costoEnvio;
-    nextItem.costo_envio = Number(costoEnvio.toFixed(2));
-    nextItem.porcentaje_envio = Number(porcentajeEnvio.toFixed(2));
-    nextItem.costo_con_envio = Number(costoConEnvio.toFixed(2));
-    nextItem.costo_envio_unidad = nextItem.costo_envio;
-    nextItem.costo_envio_total = Number((costoEnvio * cantidad).toFixed(2));
-
-    // Utilidad
-    let porcentajeUtil = Number(nextItem.porcentaje_utilidad || 0);
-    let utilidadUnit = (costoConEnvio * porcentajeUtil) / 100;
-    nextItem.utilidad = Number(utilidadUnit.toFixed(2));
-
-    // Precio venta & venta total
-    const ventaPrecio = costoConEnvio + nextItem.utilidad;
-    nextItem.precio_venta = Number(ventaPrecio.toFixed(2));
-    nextItem.venta_total = Number((ventaPrecio * cantidad).toFixed(2));
-    nextItem.costo_total = Number((costoPrecio * cantidad).toFixed(2));
+    nextItem.costo_envio = tot.costo_envio;
+    nextItem.porcentaje_envio = tot.porcentaje_envio;
+    nextItem.costo_con_envio = tot.costo_con_envio;
+    nextItem.costo_envio_unidad = tot.costo_envio;
+    nextItem.costo_envio_total = moneyTotal(tot.costo_envio, cantidad);
+    nextItem.utilidad = tot.utilidad;
+    nextItem.porcentaje_utilidad = tot.porcentaje_utilidad;
+    nextItem.precio_venta = tot.precio_venta;
+    nextItem.venta_total = tot.venta_total;
+    nextItem.costo_total = tot.costo_total;
 
     return nextItem;
   });
 
-  const totalVentaItems = recalculatedItems.reduce((acc, curr) => acc + Number(curr.venta_total || 0), 0);
-  const venta_total = totalVentaItems * cantidadGrupo;
+  const totalVentaItems = sumMoney(recalculatedItems.map(curr => curr.venta_total));
+  const venta_total = moneyTotal(totalVentaItems, cantidadGrupo);
 
   return {
     ...grupo,
     costo_envio: groupCostoEnvio,
-    costo_envio_total: tipoVenta === "T" ? groupCostoEnvio : (grupo.costo_envio_total || 0),
-    costo_envio_unidad: tipoVenta === "P" ? groupCostoEnvio : (grupo.costo_envio_unidad || 0),
+    costo_envio_total: tVenta === "P" ? Number(grupo.costo_envio_total || 0) : groupCostoEnvio,
+    costo_envio_unidad: tVenta === "P" ? groupCostoEnvio : Number(grupo.costo_envio_unidad || 0),
     venta_total,
     items: recalculatedItems
   };
 };
 
-export const useCotizacionSuministros = (numReg, onAddLog) => {
+export const useCotizacionSuministros = (numReg, onAddLog, archivoMeta) => {
+  const meta = archivoMeta && typeof archivoMeta === "object" && !Array.isArray(archivoMeta)
+    ? archivoMeta
+    : {};
   const [gruposSuministros, setGruposSuministros] = useState({});
   const [originalGruposSuministros, setOriginalGruposSuministros] = useState({});
   const [deletedSuministroIds, setDeletedSuministroIds] = useState([]);
   const [proveedores, setProveedores] = useState([]);
   const isSavingRef = useRef(false);
+  const gruposRef = useRef(gruposSuministros);
+  const originalGruposRef = useRef(originalGruposSuministros);
+  const deletedIdsRef = useRef(deletedSuministroIds);
+
+  useEffect(() => { gruposRef.current = gruposSuministros; }, [gruposSuministros]);
+  useEffect(() => { originalGruposRef.current = originalGruposSuministros; }, [originalGruposSuministros]);
+  useEffect(() => { deletedIdsRef.current = deletedSuministroIds; }, [deletedSuministroIds]);
 
   const isSuministrosDirty = useMemo(() => {
     return JSON.stringify(gruposSuministros) !== JSON.stringify(originalGruposSuministros) || deletedSuministroIds.length > 0;
@@ -142,6 +223,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
           cantidad: Number(row.cantidad || row.can || 0),
           precio_venta: Number(row.precio_venta || row.val || 0),
           venta_total: Number(row.venta_total || row.tot || 0),
+          utilidad_origen: row.utilidad_origen || "porcentaje",
         });
       }
     });
@@ -155,6 +237,8 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
       const res = await api.get(`cotizaciones/lista_suministros/${numReg}/`);
       const dataPlana = Array.isArray(res.data) ? res.data : (res.data?.suministros || []);
       const mapped = mapSuministrosBackendToState(dataPlana);
+      gruposRef.current = mapped;
+      originalGruposRef.current = JSON.parse(JSON.stringify(mapped));
       setGruposSuministros(mapped);
       setOriginalGruposSuministros(JSON.parse(JSON.stringify(mapped)));
       setDeletedSuministroIds([]);
@@ -176,8 +260,8 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
 
       const cantidadGrupo = parseFloat(grupo.cantidad || 0);
       const itemsToSum = customItems || grupo.items || [];
-      const sumaItems = itemsToSum.reduce((acc, item) => acc + parseFloat(item.venta_total || 0), 0);
-      const nuevoTotal = sumaItems * cantidadGrupo;
+      const sumaItems = sumMoney(itemsToSum.map(item => item.venta_total));
+      const nuevoTotal = moneyTotal(sumaItems, cantidadGrupo);
 
       next[codigo_grupo] = {
         ...grupo,
@@ -189,22 +273,35 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
   }, []);
 
   const handleAgregarGrupoSuministro = useCallback((form, setOpenGrupoModal, tipoVenta = null) => {
-    const isEdit = Boolean(form._key && gruposSuministros[form._key]);
+    const tVenta = normTipoVenta(tipoVenta);
+    const envioVal = Number(form.costoEnvio);
+    const envio = Number.isFinite(envioVal) ? envioVal : 0;
+    let isEdit = false;
+    let nombreGrupo = (form.nombre || "").toUpperCase();
 
     setGruposSuministros(prev => {
       const next = { ...prev };
+      const keyHint = form._key != null && form._key !== "" ? String(form._key) : null;
+      const existingKey = keyHint
+        ? (Object.prototype.hasOwnProperty.call(next, keyHint)
+            ? keyHint
+            : Object.keys(next).find(k => String(k) === keyHint || String(next[k]?.codigo_grupo) === keyHint))
+        : null;
+      isEdit = Boolean(existingKey && next[existingKey]);
+
       if (isEdit) {
-        const grupo = next[form._key];
+        const grupo = next[existingKey];
+        nombreGrupo = (form.nombre || grupo.nombre_grupo || "").toUpperCase();
         const nextGroup = {
           ...grupo,
-          nombre_grupo: form.nombre.toUpperCase(),
+          nombre_grupo: nombreGrupo,
           cantidad: Number(form.cantidad),
-          costo_envio: Number(form.costoEnvio || 0),
-          costo_envio_total: tipoVenta === "T" ? Number(form.costoEnvio || 0) : (grupo.costo_envio_total || 0),
-          costo_envio_unidad: tipoVenta === "P" ? Number(form.costoEnvio || 0) : (grupo.costo_envio_unidad || 0),
+          costo_envio: envio,
+          costo_envio_total: tVenta === "P" ? Number(grupo.costo_envio_total || 0) : envio,
+          costo_envio_unidad: tVenta === "P" ? envio : Number(grupo.costo_envio_unidad || 0),
           items: grupo.items || []
         };
-        next[form._key] = recalculateGroupSuministrosValues(nextGroup, tipoVenta);
+        next[existingKey] = recalculateGroupSuministrosValues(nextGroup, tVenta);
       } else {
         const existentes = Object.keys(prev)
           .map(k => parseInt(k, 10))
@@ -229,6 +326,8 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
             observacion: item.observacion || "",
             costo_precio: Number(item.costo_precio || item.costoPrecio || 0),
             porcentaje_utilidad: Number(item.porcentaje_utilidad || item.porcentaje || 20),
+            utilidad: Number(item.utilidad || 0),
+            utilidad_origen: item.utilidad_origen || "porcentaje",
             tipo_unidad: item.tipo_unidad || "UNI"
           };
         });
@@ -248,17 +347,18 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
         const newGroupRaw = {
           id: tempId,
           codigo_grupo: nuevoCodigo,
-          nombre_grupo: form.nombre.toUpperCase(),
+          nombre_grupo: (form.nombre || "").toUpperCase(),
           cantidad: Number(form.cantidad),
           orden: nuevoOrden,
           items: newItems,
-          costo_envio: Number(form.costoEnvio || 0),
-          costo_envio_total: tipoVenta === "T" ? Number(form.costoEnvio || 0) : 0,
-          costo_envio_unidad: tipoVenta === "P" ? Number(form.costoEnvio || 0) : 0
+          costo_envio: envio,
+          costo_envio_total: tVenta === "P" ? 0 : envio,
+          costo_envio_unidad: tVenta === "P" ? envio : 0
         };
 
-        next[nuevoCodigo] = recalculateGroupSuministrosValues(newGroupRaw, tipoVenta);
+        next[nuevoCodigo] = recalculateGroupSuministrosValues(newGroupRaw, tVenta);
       }
+      gruposRef.current = next;
       return next;
     });
 
@@ -270,7 +370,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
     }
 
     return true;
-  }, [gruposSuministros, numReg, onAddLog]);
+  }, [numReg, onAddLog]);
 
   const handleAgregarItem = useCallback((form, grupoActivo, setOpenItemModal, tipoVenta = null) => {
     const activeGrupoKey = form.cog_override || grupoActivo;
@@ -305,6 +405,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
         costo_precio: Number(form.costo_precio || form.costoPrecio || 0),
         porcentaje_utilidad: Number(form.porcentaje_utilidad || form.porcentaje || 0),
         utilidad: Number(form.utilidad || 0),
+        utilidad_origen: form.utilidad_origen || (form.utilidad !== undefined && form.utilidad !== null ? "monto" : "porcentaje"),
         precio_venta: Number(form.precio_venta || form.ventaPrecio || 0),
         venta_total: Number(form.venta_total || form.ventaTotal || 0),
         id_marca: form.id_marca || null,
@@ -316,14 +417,14 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
         costo_envio: Number(form.costo_envio || 0),
         porcentaje_envio: Number(form.porcentaje_envio || 0),
         costo_con_envio: Number(form.costo_con_envio || 0),
-        tiempo_entrega: form.tiempo_entrega ? Number(form.tiempo_entrega) : null,
-        id_unidad_tiempo_entrega: form.id_unidad_tiempo_entrega || null,
+        tiempo_entrega: (form.tiempo_entrega === "" || form.tiempo_entrega === undefined || form.tiempo_entrega === null || Number.isNaN(Number(form.tiempo_entrega))) ? 0 : Number(form.tiempo_entrega),
+        id_unidad_tiempo_entrega: form.id_unidad_tiempo_entrega || 1,
         orden: isEdit ? form.orden : nuevoOrden
       };
 
       let nextItems = [];
       if (isEdit) {
-        nextItems = (grupo.items || []).map(item => item.id_suministro === form.id_suministro ? payload : item);
+        nextItems = (grupo.items || []).map(item => sameSuministroId(item.id_suministro, form.id_suministro) ? payload : item);
       } else {
         nextItems = [...(grupo.items || []), payload];
       }
@@ -333,6 +434,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
         items: nextItems
       };
       next[activeGrupoKey] = recalculateGroupSuministrosValues(rawGroup, tipoVenta);
+      gruposRef.current = next;
       return next;
     });
 
@@ -357,7 +459,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
       let existingItem = null;
 
       Object.entries(prev).forEach(([key, gp]) => {
-        const found = gp.items?.find(it => it.id_suministro === editingItemId);
+        const found = gp.items?.find(it => sameSuministroId(it.id_suministro, editingItemId));
         if (found) {
           foundGroupKey = key;
           existingItem = found;
@@ -374,6 +476,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
         costo_precio: Number(editForm.costo_precio || editForm.costoPrecio || 0),
         porcentaje_utilidad: Number(editForm.porcentaje_utilidad || editForm.porcentaje || 0),
         utilidad: Number(editForm.utilidad || 0),
+        utilidad_origen: editForm.utilidad_origen || existingItem.utilidad_origen || "monto",
         precio_venta: Number(editForm.precio_venta || editForm.ventaPrecio || 0),
         venta_total: Number(editForm.venta_total || editForm.ventaTotal || 0),
         id_marca: editForm.id_marca || null,
@@ -384,12 +487,12 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
         costo_envio: Number(editForm.costo_envio || 0),
         porcentaje_envio: Number(editForm.porcentaje_envio || 0),
         costo_con_envio: Number(editForm.costo_con_envio || 0),
-        tiempo_entrega: editForm.tiempo_entrega ? Number(editForm.tiempo_entrega) : null,
-        id_unidad_tiempo_entrega: editForm.id_unidad_tiempo_entrega || null
+        tiempo_entrega: (editForm.tiempo_entrega === "" || editForm.tiempo_entrega === undefined || editForm.tiempo_entrega === null || Number.isNaN(Number(editForm.tiempo_entrega))) ? 0 : Number(editForm.tiempo_entrega),
+        id_unidad_tiempo_entrega: editForm.id_unidad_tiempo_entrega || 1
       };
 
       const grupo = next[foundGroupKey];
-      const nextItems = grupo.items.map(item => item.id_suministro === editingItemId ? payload : item);
+      const nextItems = grupo.items.map(item => sameSuministroId(item.id_suministro, editingItemId) ? payload : item);
 
       const rawGroup = {
         ...grupo,
@@ -456,7 +559,8 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
         venta_total: grupo.venta_total,
         cantidad: grupo.cantidad,
         orden: nuevoOrden,
-        items: newItems
+        items: newItems,
+        total_por_grupo: grupo.total_por_grupo || 0
       };
       return next;
     });
@@ -509,7 +613,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
 
   const handleEliminarItem = useCallback((itemId, codigo_grupo, tipoVenta = null, skipConfirm = false) => {
     const grupo = gruposSuministros[codigo_grupo];
-    const item = grupo?.items?.find(it => it.id_suministro === itemId);
+    const item = grupo?.items?.find(it => sameSuministroId(it.id_suministro, itemId));
     const desc = item?.descripcion ? ` "${item.descripcion}"` : "";
 
     if (!skipConfirm && !confirm(`¿Está seguro de eliminar el ítem${desc}?`)) {
@@ -531,7 +635,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
       const gp = next[codigo_grupo];
       if (!gp) return prev;
 
-      const remainingItems = (gp.items || []).filter(it => it.id_suministro !== itemId);
+      const remainingItems = (gp.items || []).filter(it => !sameSuministroId(it.id_suministro, itemId));
       const rawGroup = {
         ...gp,
         items: remainingItems
@@ -544,7 +648,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
       if (!prev || !prev[codigo_grupo]) return prev;
       const next = { ...prev };
       const gp = next[codigo_grupo];
-      const remainingItems = (gp.items || []).filter(it => it.id_suministro !== itemId);
+      const remainingItems = (gp.items || []).filter(it => !sameSuministroId(it.id_suministro, itemId));
       next[codigo_grupo] = { ...gp, items: remainingItems };
       return next;
     });
@@ -563,7 +667,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
 
   const handleEliminarItemsBulk = useCallback((itemIds = [], globalTipoVenta = null) => {
     if (!Array.isArray(itemIds) || itemIds.length === 0) return;
-    const itemIdsSet = new Set(itemIds);
+    const itemIdsSet = new Set(itemIds.map((id) => String(id)));
 
     const realIdsToDelete = itemIds.filter(id => typeof id !== 'string' || !id.startsWith('temp_'));
     if (realIdsToDelete.length > 0) {
@@ -576,9 +680,9 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
         const gp = next[codigo_grupo];
         if (!gp || !gp.items) return;
 
-        const hasTarget = gp.items.some(it => itemIdsSet.has(it.id_suministro));
+        const hasTarget = gp.items.some(it => itemIdsSet.has(String(it.id_suministro)));
         if (hasTarget) {
-          const remainingItems = gp.items.filter(it => !itemIdsSet.has(it.id_suministro));
+          const remainingItems = gp.items.filter(it => !itemIdsSet.has(String(it.id_suministro)));
           const rawGroup = {
             ...gp,
             items: remainingItems
@@ -596,9 +700,17 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
     }
   }, [onAddLog]);
 
-  const saveSuministros = async (ocultarMap = {}) => {
-    if (isSavingRef.current) return;
+  const pendingSaveRef = useRef(null);
+
+  const saveSuministros = useCallback(async (ocultarMap = {}) => {
+    if (isSavingRef.current) {
+      pendingSaveRef.current = ocultarMap;
+      return { skipped: true };
+    }
     isSavingRef.current = true;
+    const gruposSuministros = JSON.parse(JSON.stringify(gruposRef.current || {}));
+    const originalGruposSuministros = originalGruposRef.current || {};
+    const deletedSuministroIds = [...(deletedIdsRef.current || [])];
     const tempIdToRealIdMap = new Map();
     const tempGroupCodeToRealGroupCodeMap = new Map();
     const updateStateWithRealIdsAndOrders = (prev) => {
@@ -661,34 +773,42 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
         return Number(val).toFixed(2);
       };
 
+      const numEq = (a, b) => Math.abs(Number(a || 0) - Number(b || 0)) < 0.005;
+
       const hasGroupChanged = (gp, origGp) => {
         if (!origGp) return true;
         return (
-          gp.nombre_grupo !== origGp.nombre_grupo ||
-          gp.cantidad !== origGp.cantidad ||
-          gp.costo_envio !== origGp.costo_envio ||
-          gp.costo_envio_total !== origGp.costo_envio_total ||
-          gp.costo_envio_unidad !== origGp.costo_envio_unidad ||
-          gp.total_por_grupo !== origGp.total_por_grupo ||
-          gp.orden !== origGp.orden ||
+          String(gp.nombre_grupo || "") !== String(origGp.nombre_grupo || "") ||
+          !numEq(gp.cantidad, origGp.cantidad) ||
+          !numEq(gp.costo_envio, origGp.costo_envio) ||
+          !numEq(gp.costo_envio_total, origGp.costo_envio_total) ||
+          !numEq(gp.costo_envio_unidad, origGp.costo_envio_unidad) ||
+          Number(gp.total_por_grupo || 0) !== Number(origGp.total_por_grupo || 0) ||
+          Number(gp.orden || 0) !== Number(origGp.orden || 0) ||
           gp.items?.length !== origGp.items?.length
         );
       };
 
       const hasItemChanged = (item, origItem) => {
         if (!origItem) return true;
-        const fields = [
-          'codigo_item', 'descripcion', 'cantidad', 'costo_precio', 
-          'porcentaje_utilidad', 'id_marca', 'proveedor', 'observacion', 
-          'tipo_unidad', 'costo_envio', 'tiempo_entrega', 'id_unidad_tiempo_entrega', 'orden'
+        const textFields = [
+          'codigo_item', 'descripcion', 'id_marca', 'proveedor', 'observacion',
+          'tipo_unidad', 'tiempo_entrega', 'id_unidad_tiempo_entrega'
         ];
-        return fields.some(f => {
+        if (textFields.some(f => {
           const v1 = item[f];
           const v2 = origItem[f];
           const cleanV1 = (v1 === undefined || v1 === null) ? "" : String(v1).trim();
           const cleanV2 = (v2 === undefined || v2 === null) ? "" : String(v2).trim();
           return cleanV1 !== cleanV2;
-        });
+        })) return true;
+        const numFields = [
+          'cantidad', 'costo_precio', 'porcentaje_utilidad', 'utilidad',
+          'costo_envio', 'porcentaje_envio', 'costo_con_envio',
+          'costo_envio_total', 'costo_envio_unidad',
+          'precio_venta', 'venta_total', 'orden'
+        ];
+        return numFields.some(f => !numEq(item[f], origItem[f]));
       };
 
       let hasAdd = false;
@@ -709,7 +829,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
           if (isItemTemp) {
             hasAdd = true;
           } else {
-            const origItem = origGp?.items?.find(it => it.id_suministro === item.id_suministro);
+            const origItem = origGp?.items?.find(it => sameSuministroId(it.id_suministro, item.id_suministro));
             if (hasItemChanged(item, origItem)) {
               hasUpdate = true;
             }
@@ -774,8 +894,8 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
               costo_envio_total: toDec(Number(item.costo_envio || 0) * Number(item.cantidad || 0)),
               costo_envio_unidad: toDec(item.costo_envio),
               costo_con_envio: toDec(item.costo_con_envio),
-              tiempo_entrega: (item.tiempo_entrega !== "" && item.tiempo_entrega !== undefined && item.tiempo_entrega !== null && !isNaN(item.tiempo_entrega)) ? Number(item.tiempo_entrega) : null,
-              id_unidad_tiempo_entrega: toFkId(item.id_unidad_tiempo_entrega),
+              tiempo_entrega: (item.tiempo_entrega !== "" && item.tiempo_entrega !== undefined && item.tiempo_entrega !== null && !isNaN(item.tiempo_entrega)) ? Number(item.tiempo_entrega) : 0,
+              id_unidad_tiempo_entrega: toFkId(item.id_unidad_tiempo_entrega) || 1,
               orden: Number(item.orden || 0)
             };
             const resItem = await api.post(`cotizaciones/lista_suministros/${numReg}/`, payloadItem);
@@ -828,8 +948,8 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
                 costo_envio_total: toDec(Number(item.costo_envio || 0) * Number(item.cantidad || 0)),
                 costo_envio_unidad: toDec(item.costo_envio),
                 costo_con_envio: toDec(item.costo_con_envio),
-                tiempo_entrega: (item.tiempo_entrega !== "" && item.tiempo_entrega !== undefined && item.tiempo_entrega !== null && !isNaN(item.tiempo_entrega)) ? Number(item.tiempo_entrega) : null,
-                id_unidad_tiempo_entrega: toFkId(item.id_unidad_tiempo_entrega),
+                tiempo_entrega: (item.tiempo_entrega !== "" && item.tiempo_entrega !== undefined && item.tiempo_entrega !== null && !isNaN(item.tiempo_entrega)) ? Number(item.tiempo_entrega) : 0,
+                id_unidad_tiempo_entrega: toFkId(item.id_unidad_tiempo_entrega) || 1,
                 orden: Number(item.orden || 0)
               };
               const postPromise = api.post(`cotizaciones/lista_suministros/${numReg}/`, payloadItem).then(res => {
@@ -837,7 +957,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
               });
               savePromises.push(postPromise);
             } else {
-              const origItem = origGp?.items?.find(it => it.id_suministro === item.id_suministro);
+              const origItem = origGp?.items?.find(it => sameSuministroId(it.id_suministro, item.id_suministro));
               if (hasItemChanged(item, origItem)) {
                 const payloadItem = {
                   id_suministro: item.id_suministro,
@@ -861,8 +981,8 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
                   costo_envio_total: toDec(Number(item.costo_envio || 0) * Number(item.cantidad || 0)),
                   costo_envio_unidad: toDec(item.costo_envio),
                   costo_con_envio: toDec(item.costo_con_envio),
-                  tiempo_entrega: (item.tiempo_entrega !== "" && item.tiempo_entrega !== undefined && item.tiempo_entrega !== null && !isNaN(item.tiempo_entrega)) ? Number(item.tiempo_entrega) : null,
-                  id_unidad_tiempo_entrega: toFkId(item.id_unidad_tiempo_entrega),
+                  tiempo_entrega: (item.tiempo_entrega !== "" && item.tiempo_entrega !== undefined && item.tiempo_entrega !== null && !isNaN(item.tiempo_entrega)) ? Number(item.tiempo_entrega) : 0,
+                  id_unidad_tiempo_entrega: toFkId(item.id_unidad_tiempo_entrega) || 1,
                   orden: Number(item.orden || 0)
                 };
                 savePromises.push(api.put(`cotizaciones/lista_suministros/${numReg}/`, payloadItem));
@@ -914,10 +1034,15 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
       }
 
       setDeletedSuministroIds([]);
-      setGruposSuministros(prev => updateStateWithRealIdsAndOrders(prev));
-      setOriginalGruposSuministros(prev => updateStateWithRealIdsAndOrders(prev));
+      deletedIdsRef.current = [];
+      const next = updateStateWithRealIdsAndOrders(gruposRef.current || {});
+      gruposRef.current = next;
+      const origCopy = JSON.parse(JSON.stringify(next));
+      originalGruposRef.current = origCopy;
+      setGruposSuministros(next);
+      setOriginalGruposSuministros(origCopy);
 
-      return {
+      const saved = {
         type: hasAdd ? 'add' : (hasDelete ? 'delete' : (hasUpdate ? 'update' : 'save')),
         message: hasAdd 
           ? "Suministros agregados correctamente" 
@@ -934,15 +1059,21 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
                   ? "SUMINISTROS ACTUALIZADOS" 
                   : "SUMINISTROS GUARDADOS"))
       };
+      isSavingRef.current = false;
+      if (pendingSaveRef.current !== null) {
+        const pending = pendingSaveRef.current;
+        pendingSaveRef.current = null;
+        return saveSuministros(pending);
+      }
+      return saved;
     } catch (err) {
       if (tempIdToRealIdMap.size > 0 || tempGroupCodeToRealGroupCodeMap.size > 0) {
         setGruposSuministros(prev => updateStateWithRealIdsAndOrders(prev));
       }
-      throw err;
-    } finally {
       isSavingRef.current = false;
+      throw err;
     }
-  };
+  }, [numReg]);
 
   const handleExportarGrupoXLS = (codigo_grupo) => {
     // 1️⃣ Buscar el grupo de suministro en el estado del Hook
@@ -1136,7 +1267,10 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
       .substring(0, 30);
 
     XLSX.utils.book_append_sheet(wb, ws, `Grupo ${grupo.codigo_grupo}`);
-    XLSX.writeFile(wb, `Suministros_${nombreArchivoLimpio}_${numReg}.xlsx`);
+    XLSX.writeFile(
+      wb,
+      `${nombreArchivoReporte("reporte_suministros", meta.codigo || numReg, meta.referencia)}_${nombreArchivoLimpio}.xlsx`
+    );
 
     toast.success("Excel corporativo del grupo descargado");
   };
@@ -1374,7 +1508,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
 
     // 4️⃣ Grabar Libro de Trabajo y lanzar descarga limpia
     XLSX.utils.book_append_sheet(wb, ws, "Suministros General");
-    XLSX.writeFile(wb, `Reporte_Suministros_${numReg}.xlsx`);
+    XLSX.writeFile(wb, `${nombreArchivoReporte("reporte_suministros", meta.codigo || numReg, meta.referencia)}.xlsx`);
 
     toast.success("Excel corporativo general descargado con éxito");
   };
@@ -1402,7 +1536,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
     }
   };
 
-  const handleImportarDesdeXLS = async (excelRowsOrFile, activeGrupoKey, tcamb = 1) => {
+  const handleImportarDesdeXLS = async (excelRowsOrFile, activeGrupoKey, tcamb = 1, tipoVenta = null) => {
     if (!activeGrupoKey) {
       toast.error("No hay grupo activo seleccionado");
       return;
@@ -1442,7 +1576,6 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
         return;
       }
 
-      // A helper to get row value case-insensitively
       const getRowValue = (row, possibleKeys) => {
         for (const k of possibleKeys) {
           const foundKey = Object.keys(row).find(rk => rk.trim().toUpperCase() === k.toUpperCase());
@@ -1453,11 +1586,6 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
         return undefined;
       };
 
-      if (!excelRows.some(r => getRowValue(r, ["CODIGO", "COD", "CODE"]))) {
-        toast.warning("El Excel no tiene columna Código.");
-        return;
-      }
-
       const grupo = gruposSuministros[activeGrupoKey];
       if (!grupo) {
         toast.error("El grupo seleccionado no existe");
@@ -1467,25 +1595,22 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
       const getOfficialBrandFromDB = (enteredBrand = "") => {
         const entered = String(enteredBrand || "").trim().toUpperCase();
         if (!entered) return null;
-        
-        // 1. Primero buscar coincidencia exacta
+
         let match = (proveedores || []).find(p => String(p.nombre || "").toUpperCase().trim() === entered);
-        
-        // 2. Buscar coincidencia parcial de similitud
+
         if (!match) {
           match = (proveedores || []).find(p => {
             const official = String(p.nombre || "").toUpperCase().trim();
             return official.includes(entered) || entered.includes(official);
           });
         }
-        
-        // 3. Casos especiales y abreviaturas
+
         if (!match) {
           if (entered === "LS" || entered === "LSIS") {
             match = (proveedores || []).find(p => String(p.nombre || "").toUpperCase().includes("LS"));
           }
         }
-        
+
         return match || null;
       };
 
@@ -1499,7 +1624,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
         if (brandObj) {
           return String(brandObj.id_marca).padStart(2, '0');
         }
-        return "99"; // default a Otros
+        return "99";
       };
 
       const itemsBase = excelRows.map((row, index) => {
@@ -1507,7 +1632,7 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
         const des = String(getRowValue(row, ["DESCRIPCION", "DESC", "DESCRIPTION"]) || "").trim();
         const can = Number(getRowValue(row, ["CANTIDAD", "CANT", "QTY", "CANT. BUDGET", "CANT."]) || 1);
         const proveedorExcel = String(getRowValue(row, ["MARCA", "PROVEEDOR", "BRAND", "SUPPLIER"]) || "").trim();
-        
+
         const excelCostoUnit = getRowValue(row, ["COSTO UNITARIO", "COSTO UNIT.", "UNIT COST", "PUC", "COSTO_UNITARIO"]);
         const excelUtilidad = getRowValue(row, ["UTILIDAD", "UTIL", "PROFIT", "MARGEN", "UTILIDAD (%)", "UTILIDAD %"]);
         const excelUnidadMedida = getRowValue(row, ["UNIDAD MEDIDA", "UNIDAD", "U.M", "UM", "UNIT", "UNIDAD_MEDIDA"]);
@@ -1516,22 +1641,22 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
         return {
           cod,
           des,
-          can,
+          can: Number.isFinite(can) && can > 0 ? can : 1,
           proveedorExcel,
           excelCostoUnit: excelCostoUnit !== undefined && excelCostoUnit !== "" ? Number(excelCostoUnit) : null,
           excelUtilidad: excelUtilidad !== undefined && excelUtilidad !== "" ? Number(excelUtilidad) : null,
           excelUnidadMedida: excelUnidadMedida !== undefined && excelUnidadMedida !== "" ? String(excelUnidadMedida).trim() : null,
-          excelTiemposEntrega: excelTiemposEntrega !== undefined && excelTiemposEntrega !== "" ? Number(excelTiemposEntrega) : null,
+          excelTiemposEntrega: parseEntregaExcel(excelTiemposEntrega),
           rowIndex: index + 2
         };
-      });
+      }).filter(item => item.cod || item.des || item.proveedorExcel || item.excelCostoUnit !== null);
 
-      // Validar estrictamente que todos los ítems tengan Marca y Código
+      if (itemsBase.length === 0) {
+        toast.warning("El archivo Excel no tiene filas válidas para importar.");
+        return;
+      }
+
       for (const item of itemsBase) {
-        if (!item.cod) {
-          toast.error(`Error en la fila ${item.rowIndex}: El campo CÓDIGO está vacío. Todos los ítems de la plantilla deben tener código.`);
-          return;
-        }
         if (!item.proveedorExcel) {
           toast.error(`Error en la fila ${item.rowIndex}: El campo MARCA está vacío. Todos los ítems de la plantilla deben tener marca.`);
           return;
@@ -1539,35 +1664,36 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
       }
 
       let nuevos = 0;
-      let actualizados = 0;
       let noEncontrados = 0;
 
       const processedItems = await Promise.all(
         itemsBase.map(async item => {
-          const key = item.cod?.toUpperCase();
-          if (!key || ["S/C", "."].includes(key)) {
-            const costoUnit = item.excelCostoUnit !== null ? item.excelCostoUnit : 0;
-            const pctUtilidad = item.excelUtilidad !== null ? item.excelUtilidad : 0;
-            const costoTotal = costoUnit * item.can;
-            const utilidadMonetaria = costoTotal * (pctUtilidad / 100);
-            const ventaPrecio = costoUnit * (1 + pctUtilidad / 100);
-            const ventaTotal = ventaPrecio * item.can;
+          const key = String(item.cod || "").trim().toUpperCase();
+          const sinCodigoCatalogo = esCodigoPlaceholder(item.cod);
+
+          const aplicarCalculos = (costoUnit, extra = {}) => {
+            const calcUtil = calcularUtilidadImportacion(costoUnit, item.can, item.excelUtilidad);
             return {
               ...item,
-              tpr: "99",
-              cod: item.cod || "S/C",
+              tpr: extra.tpr || "99",
+              cod: extra.cod !== undefined ? extra.cod : item.cod,
+              des: extra.des || item.des || "S/D",
+              pro: extra.pro || getOfficialBrandName(item.proveedorExcel) || "Otros",
+              tde: extra.tde || item.excelUnidadMedida || "UNI",
+              can: item.can,
+              ...calcUtil,
+              entrega: item.excelTiemposEntrega,
+            };
+          };
+
+          if (sinCodigoCatalogo) {
+            return aplicarCalculos(item.excelCostoUnit !== null ? item.excelCostoUnit : 0, {
+              tpr: mapProveedorExcelToTPR(item.proveedorExcel),
+              cod: item.cod,
               des: item.des || "S/D",
               pro: getOfficialBrandName(item.proveedorExcel) || "Otros",
               tde: item.excelUnidadMedida || "UNI",
-              can: item.can,
-              puc: costoUnit,
-              tou: utilidadMonetaria,
-              cau: pctUtilidad,
-              toc: costoTotal,
-              val: ventaPrecio,
-              tot: ventaTotal,
-              entrega: item.excelTiemposEntrega !== null ? item.excelTiemposEntrega : null,
-            };
+            });
           }
 
           try {
@@ -1628,66 +1754,27 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
               );
             }
 
-            // Override with values from Excel if present
             const costoUnit = item.excelCostoUnit !== null ? item.excelCostoUnit : (calc.costoPrecio ?? 0);
-            const pctUtilidad = item.excelUtilidad !== null ? item.excelUtilidad : (calc.porcentaje ?? 0);
-            
-            const costoTotal = costoUnit * item.can;
-            const utilidadMonetaria = costoTotal * (pctUtilidad / 100);
-            const ventaPrecio = costoUnit * (1 + pctUtilidad / 100);
-            const ventaTotal = ventaPrecio * item.can;
-
-            return {
-              ...item,
+            return aplicarCalculos(costoUnit, {
               tpr: calc.tpr ?? tprFinal,
-              cod: calc.codigo ?? item.cod,
+              cod: item.cod || calc.codigo || "",
               des: item.des || calc.descripcion || "S/D",
               pro: getOfficialBrandName(item.proveedorExcel) || calc.marca || "",
               tde: item.excelUnidadMedida || calc.unidad || "UNI",
-              can: item.can,
-              puc: costoUnit,
-              tou: utilidadMonetaria,
-              cau: pctUtilidad,
-              toc: costoTotal,
-              val: ventaPrecio,
-              tot: ventaTotal,
-              entrega: item.excelTiemposEntrega !== null ? item.excelTiemposEntrega : null,
-            };
-
+            });
           } catch (err) {
             console.error("Error resolviendo XLS item", item.cod, err);
-            const costoUnit = item.excelCostoUnit !== null ? item.excelCostoUnit : 0;
-            const pctUtilidad = item.excelUtilidad !== null ? item.excelUtilidad : 0;
-            const costoTotal = costoUnit * item.can;
-            const utilidadMonetaria = costoTotal * (pctUtilidad / 100);
-            const ventaPrecio = costoUnit * (1 + pctUtilidad / 100);
-            const ventaTotal = ventaPrecio * item.can;
-            return {
-              ...item,
-              tpr: "99",
-              cod: item.cod || "S/C",
+            noEncontrados++;
+            return aplicarCalculos(item.excelCostoUnit !== null ? item.excelCostoUnit : 0, {
+              tpr: mapProveedorExcelToTPR(item.proveedorExcel),
+              cod: item.cod,
               des: item.des || "S/D",
               pro: getOfficialBrandName(item.proveedorExcel) || "Otros",
               tde: item.excelUnidadMedida || "UNI",
-              can: item.can,
-              puc: costoUnit,
-              tou: utilidadMonetaria,
-              cau: pctUtilidad,
-              toc: costoTotal,
-              val: ventaPrecio,
-              tot: ventaTotal,
-              entrega: item.excelTiemposEntrega !== null ? item.excelTiemposEntrega : null,
-            };
+            });
           }
         })
       );
-
-      const itemsExistentesMap = new Map();
-      if (grupo.items) {
-        grupo.items.forEach(it => {
-          itemsExistentesMap.set(it.codigo_item?.toUpperCase(), it);
-        });
-      }
 
       setGruposSuministros(prev => {
         const next = { ...prev };
@@ -1696,67 +1783,49 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
 
         const nextItems = [...(activeGrupo.items || [])];
 
-        processedItems.forEach(item => {
-          const key = item.cod?.toUpperCase();
-          const existenteIdx = nextItems.findIndex(it => it.codigo_item?.toUpperCase() === key);
-
-          if (existenteIdx !== -1) {
-            actualizados++;
-            const existente = nextItems[existenteIdx];
-            const nuevaCantidad = Number(existente.cantidad || 0) + Number(item.can || 0);
-            const nuevoVentaTotal = nuevaCantidad * Number(existente.precio_venta || 0);
-
-            nextItems[existenteIdx] = {
-              ...existente,
-              cantidad: nuevaCantidad,
-              venta_total: nuevoVentaTotal,
-            };
-          } else {
-            nuevos++;
-            const tempItemId = `temp_item_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            const payloadCreate = {
-              id_suministro: tempItemId,
-              id_registro: numReg,
-              codigo_grupo: parseInt(activeGrupoKey, 10),
-              nivel: 1,
-              codigo_item: item.cod || "S/C",
-              descripcion: item.des || "S/D",
-              cantidad: Number(item.can || 1),
-              precio_venta: Number(item.val || 0),
-              venta_total: Number(item.tot || 0),
-              costo_precio: Number(item.puc || 0),
-              costo_total: Number(item.toc || 0),
-              utilidad: Number(item.tou || 0),
-              porcentaje_utilidad: Number(item.cau || 0),
-              proveedor: getOfficialBrandName(item.pro) || getOfficialBrandName(item.proveedorExcel) || "",
-              id_marca: toFkId(item.tpr),
-              marca_nombre: getOfficialBrandName(item.pro) || getOfficialBrandName(item.proveedorExcel) || "",
-              tipo_unidad: item.tde || "UNI",
-              id_tipo_gasto: 1,
-              tiempo_entrega: item.entrega !== null ? Number(item.entrega) : null,
-              id_unidad_tiempo_entrega: item.entrega !== null ? 1 : null,
-            };
-            nextItems.push(payloadCreate);
-          }
+        processedItems.forEach((item, idx) => {
+          const tempItemId = `temp_item_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 9)}`;
+          const payloadCreate = {
+            id_suministro: tempItemId,
+            id_registro: numReg,
+            codigo_grupo: parseInt(activeGrupoKey, 10),
+            nivel: 1,
+            codigo_item: item.cod || "",
+            descripcion: item.des || "S/D",
+            cantidad: Number(item.can || 1),
+            precio_venta: Number(item.val || 0),
+            venta_total: Number(item.tot || 0),
+            costo_precio: Number(item.puc || 0),
+            costo_total: Number(item.toc || 0),
+            utilidad: Number(item.tou || 0),
+            porcentaje_utilidad: Number(item.cau || 0),
+            utilidad_origen: item.utilidad_origen || "porcentaje",
+            proveedor: getOfficialBrandName(item.pro) || getOfficialBrandName(item.proveedorExcel) || "",
+            id_marca: toFkId(item.tpr),
+            marca_nombre: getOfficialBrandName(item.pro) || getOfficialBrandName(item.proveedorExcel) || "",
+            tipo_unidad: item.tde || "UNI",
+            id_tipo_gasto: 1,
+            tiempo_entrega: item.entrega !== null && Number.isFinite(Number(item.entrega)) ? Number(item.entrega) : null,
+            id_unidad_tiempo_entrega: item.entrega !== null && Number.isFinite(Number(item.entrega)) ? 1 : null,
+          };
+          nextItems.push(payloadCreate);
         });
 
-        const totalVentaItems = nextItems.reduce((acc, curr) => acc + Number(curr.venta_total || 0), 0);
-        const totalVentaGrupo = totalVentaItems * Number(activeGrupo.cantidad || 1);
-
-        next[activeGrupoKey] = {
+        const rawGroup = {
           ...activeGrupo,
-          venta_total: totalVentaGrupo,
           items: nextItems
         };
+        next[activeGrupoKey] = recalculateGroupSuministrosValues(rawGroup, tipoVenta);
         return next;
       });
 
+      nuevos = processedItems.length;
       toast.success("Importación finalizada correctamente");
 
       alert(
         `Importación completada:
         ✔ ${nuevos} procesados
-        🔁 ${actualizados} actualizados en memoria
+        🔁 0 actualizados en memoria
         ⚠ ${noEncontrados} sin coincidencia de precios`
       );
 
@@ -1828,14 +1897,14 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
 
     // Reordenar Items (dentro del mismo grupo o entre grupos)
     if (activeIdStr.startsWith("item-")) {
-      const activeItemId = parseInt(activeIdStr.replace("item-", ""), 10);
+      const activeItemId = activeIdStr.replace("item-", "");
 
       let fromCog = null;
       let itemToMove = null;
       let itemIndex = -1;
 
       Object.entries(gruposSuministros).forEach(([cog, grupo]) => {
-        const idx = grupo.items.findIndex(i => i.id_suministro === activeItemId);
+        const idx = (grupo.items || []).findIndex(i => sameSuministroId(i.id_suministro, activeItemId));
         if (idx !== -1) {
           fromCog = cog;
           itemToMove = grupo.items[idx];
@@ -1851,9 +1920,9 @@ export const useCotizacionSuministros = (numReg, onAddLog) => {
       if (overIdStr.startsWith("grupo-")) {
         toCog = overIdStr.replace("grupo-", "");
       } else if (overIdStr.startsWith("item-")) {
-        const overItemId = parseInt(overIdStr.replace("item-", ""), 10);
+        const overItemId = overIdStr.replace("item-", "");
         Object.entries(gruposSuministros).forEach(([cog, grupo]) => {
-          const idx = grupo.items.findIndex(i => i.id_suministro === overItemId);
+          const idx = (grupo.items || []).findIndex(i => sameSuministroId(i.id_suministro, overItemId));
           if (idx !== -1) {
             toCog = cog;
             targetIndex = idx;

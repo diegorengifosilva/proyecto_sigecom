@@ -171,6 +171,9 @@ yarn-error.log*
 ehthumbs.db
 Thumbs.db
 
+# Interruptor local de réplica a SIGECOM 4.0
+legacy_sync.off
+
 # Media
 media/
 *.rar  

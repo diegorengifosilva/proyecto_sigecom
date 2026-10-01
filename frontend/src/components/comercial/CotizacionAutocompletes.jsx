@@ -2318,6 +2318,7 @@ export const UnidadMedidaAutocomplete = ({
   isReadOnly,
   tabIndex,
   placeholder = "-- Unidad --",
+  fallbackLabel = "",
   onKeyDown
 }) => {
   const [query, setQuery] = useState("");
@@ -2332,9 +2333,14 @@ export const UnidadMedidaAutocomplete = ({
   const inputRef = useRef(null);
   const dropdownRef = useRef(null);
 
-  // Find the selected unit
-  const selectedUnit = unidadesMedida.find(u => Number(u.id_medida) === Number(idMedida) || u.id_medida === idMedida);
-  const unitName = selectedUnit ? selectedUnit.nombre : "";
+  // Find the selected unit (id, then codigo/nombre fallback)
+  const selectedUnit = unidadesMedida.find(u => Number(u.id_medida) === Number(idMedida) || u.id_medida === idMedida)
+    || unidadesMedida.find(u => {
+      const raw = String(fallbackLabel || "").trim().toUpperCase();
+      if (!raw) return false;
+      return String(u.nombre || "").toUpperCase() === raw || String(u.codigo || "").toUpperCase() === raw;
+    });
+  const unitName = selectedUnit ? selectedUnit.nombre : (fallbackLabel || "");
 
   // Sync display with idMedida changes
   useEffect(() => {
