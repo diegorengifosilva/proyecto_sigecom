@@ -1,0 +1,2954 @@
+{
+  "hseq_asignacion_capacitacion": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "employeeId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "trainingId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "applicabilityStatus",
+      "type": "enum('APPLIES','NOT_APPLICABLE','EXEMPT')",
+      "null": "NO",
+      "key": "",
+      "default": "APPLIES"
+    },
+    {
+      "field": "status",
+      "type": "enum('PENDING','IN_PROGRESS','APPROVED','FAILED','OVERDUE','VALIDATED','NOT_APPLICABLE')",
+      "null": "NO",
+      "key": "",
+      "default": "PENDING"
+    },
+    {
+      "field": "dueDate",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "bestScore",
+      "type": "decimal(65,30)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "attemptCount",
+      "type": "int(11)",
+      "null": "NO",
+      "key": "",
+      "default": "0"
+    },
+    {
+      "field": "reasonCode",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "registrationAppliedAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "registrationSnapshot",
+      "type": "longtext",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "examUnlockedAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "createdAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    },
+    {
+      "field": "updatedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    }
+  ],
+  "hseq_capacitacion": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "code",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "UNI",
+      "default": "None"
+    },
+    {
+      "field": "title",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "description",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "plannedMonth",
+      "type": "int(11)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "publishedAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "regularizationDays",
+      "type": "int(11)",
+      "null": "NO",
+      "key": "",
+      "default": "30"
+    },
+    {
+      "field": "managementOwner",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "HSEQ"
+    },
+    {
+      "field": "executedAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "durationMinutes",
+      "type": "int(11)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "location",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "considerations",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "status",
+      "type": "enum('DRAFT','PLANNED','CONFIRMED','RESCHEDULED','EXECUTED','CLOSED','CANCELLED')",
+      "null": "NO",
+      "key": "",
+      "default": "DRAFT"
+    },
+    {
+      "field": "modality",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "videoUrl",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "registrationUrl",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "evaluationUrl",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "activityType",
+      "type": "enum('TRAINING','SIMULATION','CAMPAIGN')",
+      "null": "NO",
+      "key": "",
+      "default": "TRAINING"
+    },
+    {
+      "field": "responsible",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "sourceSheet",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "sourceRow",
+      "type": "int(11)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "sourceMark",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "comments",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "annualProgramId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "pillarId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "competencyId",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "createdAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    },
+    {
+      "field": "updatedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    }
+  ],
+  "hseq_certificado_tar": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "employeeId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "type",
+      "type": "enum('HEIGHT','ELECTRICAL_RISK','LOTO','HOT_WORK','SCAFFOLDING')",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "certificateCode",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "provider",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "verificationUrl",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "issuedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "expiresAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "originalName",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "storageName",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "UNI",
+      "default": "None"
+    },
+    {
+      "field": "mimeType",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "application/pdf"
+    },
+    {
+      "field": "sizeBytes",
+      "type": "int(11)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "sourcePath",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "sourceCategory",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "notes",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "uploadedBy",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "uploadedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    }
+  ],
+  "hseq_encuesta_capacitacion": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "assignmentId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "UNI",
+      "default": "None"
+    },
+    {
+      "field": "employeeId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "topicRating",
+      "type": "int(11)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "trainerRating",
+      "type": "int(11)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "understandingRating",
+      "type": "int(11)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "materialsRating",
+      "type": "int(11)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "connectionRating",
+      "type": "int(11)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "expectationsMet",
+      "type": "tinyint(1)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "knowledgeApplication",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "comments",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "submittedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "current_timestamp(3)"
+    }
+  ],
+  "hseq_evaluacion": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "title",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "minimumScore",
+      "type": "decimal(65,30)",
+      "null": "NO",
+      "key": "",
+      "default": "16.000000000000000000000000000000"
+    },
+    {
+      "field": "maxAttempts",
+      "type": "int(11)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "durationMinutes",
+      "type": "int(11)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "isPublished",
+      "type": "tinyint(1)",
+      "null": "NO",
+      "key": "",
+      "default": "0"
+    },
+    {
+      "field": "trainingId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "UNI",
+      "default": "None"
+    },
+    {
+      "field": "createdAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    },
+    {
+      "field": "updatedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    }
+  ],
+  "hseq_evidencia_capacitacion": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "trainingId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "originalName",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "storageName",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "UNI",
+      "default": "None"
+    },
+    {
+      "field": "mimeType",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "sizeBytes",
+      "type": "int(11)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "uploadedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    }
+  ],
+  "hseq_intento_evaluacion": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "evaluationId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "employeeId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "startedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    },
+    {
+      "field": "submittedAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "score",
+      "type": "decimal(65,30)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "status",
+      "type": "enum('PENDING','IN_PROGRESS','APPROVED','FAILED','OVERDUE','VALIDATED','NOT_APPLICABLE')",
+      "null": "NO",
+      "key": "",
+      "default": "IN_PROGRESS"
+    },
+    {
+      "field": "source",
+      "type": "enum('INTERNAL','MANUAL','GOOGLE_FORMS','IMPORT')",
+      "null": "NO",
+      "key": "",
+      "default": "INTERNAL"
+    },
+    {
+      "field": "externalResponseId",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "UNI",
+      "default": "None"
+    },
+    {
+      "field": "evidenceUrl",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    }
+  ],
+  "hseq_notificacion_induccion": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "employeeId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "processId",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "audience",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "category",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "title",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "message",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "status",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "PENDING"
+    },
+    {
+      "field": "dueAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "readAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "dedupeKey",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "UNI",
+      "default": "None"
+    },
+    {
+      "field": "createdAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    },
+    {
+      "field": "updatedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    }
+  ],
+  "hseq_opcion_pregunta": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "questionId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "label",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "isCorrect",
+      "type": "tinyint(1)",
+      "null": "NO",
+      "key": "",
+      "default": "0"
+    }
+  ],
+  "hseq_pilar": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "code",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "UNI",
+      "default": "None"
+    },
+    {
+      "field": "name",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "createdAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    },
+    {
+      "field": "updatedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    }
+  ],
+  "hseq_pregunta_evaluacion": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "evaluationId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "prompt",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "type",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "points",
+      "type": "decimal(65,30)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "orderIndex",
+      "type": "int(11)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "isActive",
+      "type": "tinyint(1)",
+      "null": "NO",
+      "key": "",
+      "default": "1"
+    },
+    {
+      "field": "version",
+      "type": "int(11)",
+      "null": "NO",
+      "key": "",
+      "default": "1"
+    },
+    {
+      "field": "createdAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    },
+    {
+      "field": "updatedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    }
+  ],
+  "hseq_proceso_induccion": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "employeeId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "type",
+      "type": "enum('INITIAL','REINDUCTION')",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "trigger",
+      "type": "enum('HIRE','EXPIRATION','POSITION_CHANGE','REINFORCEMENT','CLIENT_REQUEST','ANNUAL_REGULARIZATION')",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "status",
+      "type": "enum('PENDING','IN_PROGRESS','HSEQ_DOCUMENTS','HR_WORKPLACE_TRAINING','COMPLETED','OBSERVED')",
+      "null": "NO",
+      "key": "MUL",
+      "default": "PENDING"
+    },
+    {
+      "field": "initiatedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    },
+    {
+      "field": "dueAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "completedAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "validUntil",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "positionNameSnapshot",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "previousPositionName",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "requestedBy",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "clientRequest",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "notes",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "surveyResponse",
+      "type": "longtext",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "hseqCompletionReportedAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "hseqCompletedAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "workplaceTrainingDueAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "workplaceTrainingAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "workplaceTrainingStatus",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "PENDING"
+    },
+    {
+      "field": "createdAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    },
+    {
+      "field": "updatedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    }
+  ],
+  "hseq_programa_anual": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "year",
+      "type": "int(11)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "managementOwner",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "HSEQ"
+    },
+    {
+      "field": "name",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "minimumScore",
+      "type": "decimal(65,30)",
+      "null": "NO",
+      "key": "",
+      "default": "16.000000000000000000000000000000"
+    },
+    {
+      "field": "generalTarget",
+      "type": "decimal(65,30)",
+      "null": "NO",
+      "key": "",
+      "default": "80.000000000000000000000000000000"
+    },
+    {
+      "field": "createdAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    },
+    {
+      "field": "updatedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    }
+  ],
+  "hseq_recurso_induccion": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "code",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "version",
+      "type": "int(11)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "title",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "originalName",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "storageName",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "UNI",
+      "default": "None"
+    },
+    {
+      "field": "mimeType",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "sizeBytes",
+      "type": "int(11)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "isActive",
+      "type": "tinyint(1)",
+      "null": "NO",
+      "key": "",
+      "default": "1"
+    },
+    {
+      "field": "uploadedBy",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "uploadedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    }
+  ],
+  "hseq_registro_colaborador": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "employeeId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "UNI",
+      "default": "None"
+    },
+    {
+      "field": "status",
+      "type": "enum('PENDING','IN_PROGRESS','COMPLETED','OBSERVED')",
+      "null": "NO",
+      "key": "",
+      "default": "PENDING"
+    },
+    {
+      "field": "generalInductionAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "specificInductionAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "policiesBriefingAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "internalRegulationsDeliveredAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "initialRequirementsValidatedAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "notes",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "createdAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    },
+    {
+      "field": "updatedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    }
+  ],
+  "hseq_requisito_induccion": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "processId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "code",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "label",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "category",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "status",
+      "type": "enum('PENDING','IN_PROGRESS','COMPLETED','FAILED','BLOCKED','OBSERVED')",
+      "null": "NO",
+      "key": "",
+      "default": "PENDING"
+    },
+    {
+      "field": "trainingAssignmentId",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "employeeDocumentId",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "attemptLimit",
+      "type": "int(11)",
+      "null": "NO",
+      "key": "",
+      "default": "2"
+    },
+    {
+      "field": "acknowledgedAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "downloadedAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "viewedAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "completedAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "metadata",
+      "type": "longtext",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "createdAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    },
+    {
+      "field": "updatedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    }
+  ],
+  "hseq_respuesta_intento": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "attemptId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "questionId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "value",
+      "type": "longtext",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "isCorrect",
+      "type": "tinyint(1)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "points",
+      "type": "decimal(65,30)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    }
+  ],
+  "rrhh_aceptacion_documento": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "documentId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "candidateId",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "employeeId",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "action",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "signerName",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "signerDni",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "status",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "ACCEPTED"
+    },
+    {
+      "field": "documentSha256",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "acceptedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    },
+    {
+      "field": "ipAddress",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "userAgent",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "evidence",
+      "type": "longtext",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    }
+  ],
+  "rrhh_area": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "name",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "UNI",
+      "default": "None"
+    },
+    {
+      "field": "createdAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    },
+    {
+      "field": "updatedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    }
+  ],
+  "rrhh_cargo": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "name",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "UNI",
+      "default": "None"
+    },
+    {
+      "field": "createdAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    },
+    {
+      "field": "updatedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    }
+  ],
+  "rrhh_colaborador": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "dni",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "UNI",
+      "default": "None"
+    },
+    {
+      "field": "fullName",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "email",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "UNI",
+      "default": "None"
+    },
+    {
+      "field": "personalEmail",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "birthDate",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "corporatePhone",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "personalPhone",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "address",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "sourceSystem",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "HUMAN_RESOURCES"
+    },
+    {
+      "field": "sourceUpdatedAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "hireDate",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "terminationDate",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "status",
+      "type": "enum('ACTIVE','INACTIVE')",
+      "null": "NO",
+      "key": "",
+      "default": "ACTIVE"
+    },
+    {
+      "field": "workerCategory",
+      "type": "enum('PAYROLL','THIRD_PARTY_RXH')",
+      "null": "NO",
+      "key": "",
+      "default": "PAYROLL"
+    },
+    {
+      "field": "employerName",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "directManagerId",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "areaId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "positionId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "profileId",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "createdAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    },
+    {
+      "field": "updatedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    }
+  ],
+  "rrhh_competencia": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "code",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "UNI",
+      "default": "None"
+    },
+    {
+      "field": "name",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "description",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "createdAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    },
+    {
+      "field": "updatedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    }
+  ],
+  "rrhh_documento_colaborador": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "employeeId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "type",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "period",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "title",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "originalName",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "storageName",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "UNI",
+      "default": "None"
+    },
+    {
+      "field": "mimeType",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "sizeBytes",
+      "type": "int(11)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "visibleToEmployee",
+      "type": "tinyint(1)",
+      "null": "NO",
+      "key": "",
+      "default": "1"
+    },
+    {
+      "field": "uploadedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    }
+  ],
+  "rrhh_documento_seleccion": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "processId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "candidateId",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "type",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "title",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "originalName",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "storageName",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "UNI",
+      "default": "None"
+    },
+    {
+      "field": "mimeType",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "sizeBytes",
+      "type": "int(11)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "uploadedBy",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "uploadedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    },
+    {
+      "field": "sha256",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    }
+  ],
+  "rrhh_lote_sincronizacion": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "externalBatchId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "UNI",
+      "default": "None"
+    },
+    {
+      "field": "sourceSystem",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "status",
+      "type": "enum('RECEIVED','APPLIED','PARTIAL','FAILED')",
+      "null": "NO",
+      "key": "",
+      "default": "RECEIVED"
+    },
+    {
+      "field": "receivedCount",
+      "type": "int(11)",
+      "null": "NO",
+      "key": "",
+      "default": "0"
+    },
+    {
+      "field": "appliedCount",
+      "type": "int(11)",
+      "null": "NO",
+      "key": "",
+      "default": "0"
+    },
+    {
+      "field": "errorCount",
+      "type": "int(11)",
+      "null": "NO",
+      "key": "",
+      "default": "0"
+    },
+    {
+      "field": "errors",
+      "type": "longtext",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "receivedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    },
+    {
+      "field": "completedAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    }
+  ],
+  "rrhh_mof_cargo": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "assetId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "positionId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "profileName",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "pageStart",
+      "type": "int(11)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "pageEnd",
+      "type": "int(11)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "confidence",
+      "type": "decimal(65,30)",
+      "null": "NO",
+      "key": "",
+      "default": "1.000000000000000000000000000000"
+    },
+    {
+      "field": "createdAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    }
+  ],
+  "rrhh_perfil_competencia": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "name",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "UNI",
+      "default": "None"
+    },
+    {
+      "field": "description",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "isActive",
+      "type": "tinyint(1)",
+      "null": "NO",
+      "key": "",
+      "default": "1"
+    },
+    {
+      "field": "createdAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    },
+    {
+      "field": "updatedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    }
+  ],
+  "rrhh_perfil_competencia_detalle": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "profileId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "competencyId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "isRequired",
+      "type": "tinyint(1)",
+      "null": "NO",
+      "key": "",
+      "default": "1"
+    },
+    {
+      "field": "requirementMoment",
+      "type": "enum('BEFORE_START','FIRST_WEEK','FIRST_YEAR','BEFORE_CRITICAL_WORK','RECURRING')",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "validityMonths",
+      "type": "int(11)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "allowsValidation",
+      "type": "tinyint(1)",
+      "null": "NO",
+      "key": "",
+      "default": "0"
+    },
+    {
+      "field": "createdAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    },
+    {
+      "field": "updatedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    }
+  ],
+  "rrhh_postulante": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "processId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "fullName",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "dni",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "email",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "phone",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "source",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "status",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "APPLICANT"
+    },
+    {
+      "field": "interviewAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "interviewMode",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "interviewScore",
+      "type": "decimal(65,30)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "evaluationScore",
+      "type": "decimal(65,30)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "interviewNotes",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "offerSentAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "offerRespondedAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "offerAccepted",
+      "type": "tinyint(1)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "rejectionReason",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "emoStatus",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "PENDING"
+    },
+    {
+      "field": "emoScheduledAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "emoEvaluatedAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "emoResult",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "emoClinic",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "emoNotes",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "createdAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    },
+    {
+      "field": "updatedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "emoType",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "emoClient",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "emoProject",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "emoProtocol",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    }
+  ],
+  "rrhh_proceso_seleccion": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "code",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "UNI",
+      "default": "None"
+    },
+    {
+      "field": "title",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "status",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "REQUESTED"
+    },
+    {
+      "field": "vacancyCount",
+      "type": "int(11)",
+      "null": "NO",
+      "key": "",
+      "default": "1"
+    },
+    {
+      "field": "employmentType",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "workLocation",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "requestedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    },
+    {
+      "field": "targetHireDate",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "closedAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "requestReason",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "requirements",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "internalPromotion",
+      "type": "tinyint(1)",
+      "null": "NO",
+      "key": "",
+      "default": "0"
+    },
+    {
+      "field": "internalCandidateId",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "isSimulation",
+      "type": "tinyint(1)",
+      "null": "NO",
+      "key": "",
+      "default": "0"
+    },
+    {
+      "field": "requestingManagerId",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "areaId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "positionId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "hiredEmployeeId",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "UNI",
+      "default": "None"
+    },
+    {
+      "field": "createdBy",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "createdAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    },
+    {
+      "field": "updatedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "mofAssetId",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "monthlySalary",
+      "type": "decimal(65,30)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "salaryCurrency",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "PEN"
+    },
+    {
+      "field": "compensationNotes",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    }
+  ],
+  "rrhh_recurso_oficial": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "code",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "version",
+      "type": "int(11)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "category",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "title",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "originalName",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "storageName",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "UNI",
+      "default": "None"
+    },
+    {
+      "field": "mimeType",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "sizeBytes",
+      "type": "int(11)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "sha256",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "isActive",
+      "type": "tinyint(1)",
+      "null": "NO",
+      "key": "",
+      "default": "1"
+    },
+    {
+      "field": "uploadedBy",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "uploadedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    },
+    {
+      "field": "positionId",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "scopeName",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "analysis",
+      "type": "longtext",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    }
+  ],
+  "rrhh_registro_sincronizacion": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "batchId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "externalId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "employeeId",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "operation",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "payload",
+      "type": "longtext",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "applied",
+      "type": "tinyint(1)",
+      "null": "NO",
+      "key": "",
+      "default": "0"
+    },
+    {
+      "field": "errorMessage",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "createdAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    }
+  ],
+  "rrhh_remuneracion": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "employeeId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "recruitmentProcessId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "UNI",
+      "default": "None"
+    },
+    {
+      "field": "monthlyAmount",
+      "type": "decimal(65,30)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "currency",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "PEN"
+    },
+    {
+      "field": "effectiveFrom",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "notes",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "isSimulation",
+      "type": "tinyint(1)",
+      "null": "NO",
+      "key": "",
+      "default": "0"
+    },
+    {
+      "field": "createdBy",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "createdAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    }
+  ],
+  "rrhh_tarea_seleccion": [
+    {
+      "field": "id",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "PRI",
+      "default": "None"
+    },
+    {
+      "field": "processId",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "code",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "title",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "ownerArea",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "MUL",
+      "default": "None"
+    },
+    {
+      "field": "status",
+      "type": "varchar(191)",
+      "null": "NO",
+      "key": "",
+      "default": "PENDING"
+    },
+    {
+      "field": "required",
+      "type": "tinyint(1)",
+      "null": "NO",
+      "key": "",
+      "default": "0"
+    },
+    {
+      "field": "dueAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "completedAt",
+      "type": "datetime(3)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "completedBy",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "notes",
+      "type": "varchar(191)",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "metadata",
+      "type": "longtext",
+      "null": "YES",
+      "key": "",
+      "default": "None"
+    },
+    {
+      "field": "createdAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "current_timestamp(3)"
+    },
+    {
+      "field": "updatedAt",
+      "type": "datetime(3)",
+      "null": "NO",
+      "key": "",
+      "default": "None"
+    }
+  ]
+}

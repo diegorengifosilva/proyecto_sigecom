@@ -26,6 +26,10 @@ def lista_programacion(request):
     """
     from cotizaciones_api.models import CotizacionApertura
     
+    subtipo = request.GET.get('tipo_programa') or request.GET.get('subtipo') or request.GET.get('tipo')
+    if subtipo and subtipo.lower() in ('plan_inversion', 'plan-inversion', 'planinversion', 'plan'):
+        return lista_plan_inversion(request)
+
     anno = request.GET.get('anno')
     mes = request.GET.get('mes')
 
@@ -126,7 +130,7 @@ def lista_programacion(request):
             "referencia": referencia,
             "empresa": empresa,
             "area": area,
-            "tipo": tipo,
+            "tipo": "PROYECTO",
             "programado": programado,
             "ejecutado": ejecutado,
             "saldo": saldo
@@ -171,6 +175,354 @@ def lista_programacion(request):
         "tabla": tabla,
         "dashboard": dashboard
     }, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def lista_plan_inversion(request):
+    """
+    Retorna la lista de planes de inversión anual y estadísticas asociadas.
+    """
+    from compras_api.models import ProgramacionPlanInversion, SolicitudOrdenCompra, SolicitudPasajes
+    from caja_chica_api.models import SolicitudCajaChica
+    from collections import defaultdict
+
+    anno = request.GET.get('anno')
+    mes = request.GET.get('mes')
+
+    hoy = timezone.now()
+    if not anno or not anno.isdigit():
+        target_year = hoy.year
+    else:
+        target_year = int(anno)
+
+    target_month = int(mes) if mes and mes.isdigit() else None
+
+    # Consulta de planes de inversión
+    planes_qs = ProgramacionPlanInversion.objects.all().select_related('id_area')
+    planes_qs = planes_qs.filter(anno=target_year)
+    if target_month:
+        # Si existen registros específicos para el mes seleccionado, filtramos por él;
+        # si no, al ser un plan de inversión anual, mostramos el ejercicio completo.
+        if planes_qs.filter(mes=target_month).exists():
+            planes_qs = planes_qs.filter(mes=target_month)
+
+    planes_qs = planes_qs.order_by('-id_plan')
+
+    planes_list = list(planes_qs[:2000])
+    plan_codigos = [str(p.id_plan) for p in planes_list]
+    for p in planes_list:
+        if p.codigo and p.codigo.strip() and p.codigo.strip() not in plan_codigos:
+            plan_codigos.append(p.codigo.strip())
+
+    # Calcular ejecutado dinámicamente desde solicitudes asociadas
+    ejecutado_map = defaultdict(float)
+    if plan_codigos:
+        query_filter = Q(codigo__in=plan_codigos)
+        ocs = SolicitudOrdenCompra.objects.filter(query_filter).exclude(id_estado=5).values('codigo', 'monto_dolares')
+        pas = SolicitudPasajes.objects.filter(query_filter).exclude(id_estado=5).values('codigo', 'monto_dolares')
+        ccs = SolicitudCajaChica.objects.filter(query_filter).exclude(id_estado=5).values('codigo', 'monto_dolares')
+
+        for item in list(ocs) + list(pas) + list(ccs):
+            monto = float(item.get('monto_dolares') or 0.0)
+            cod = str(item.get('codigo') or '').strip()
+            if cod:
+                ejecutado_map[cod] += monto
+
+    tabla = []
+    tc_default = 3.75  # Tipo de cambio referencial USD a PEN
+
+    for plan in planes_list:
+        codigo_display = plan.codigo.strip() if (plan.codigo and plan.codigo.strip()) else str(plan.id_plan)
+        referencia = plan.referencia or "S/R"
+        empresa = "V&C CORPORATION S.A.C."
+        area = plan.id_area.nombre if plan.id_area else "Otros"
+        tipo = "PLAN INVERSION"
+
+        programado = round(float(plan.total or 0.00), 2)
+
+        # Si tenemos solicitudes asociadas calculadas, usamos esa suma; si no, el monto_ejecutado registrado en la tabla
+        calc_ejecutado = ejecutado_map.get(str(plan.id_plan), 0.0)
+        if plan.codigo and plan.codigo.strip() and plan.codigo.strip() in ejecutado_map:
+            calc_ejecutado = max(calc_ejecutado, ejecutado_map.get(plan.codigo.strip(), 0.0))
+
+        if calc_ejecutado > 0:
+            ejecutado = round(calc_ejecutado, 2)
+        else:
+            ejecutado = round(float(plan.monto_ejecutado or 0.00), 2)
+
+        saldo = round(max(0.00, programado - ejecutado), 2)
+
+        tabla.append({
+            # Identificadores y claves
+            "id_registro": plan.id_plan,
+            "id_plan": plan.id_plan,
+            "id_area": plan.id_area_id,
+
+            # Periodicidad y clasificación
+            "anno": plan.anno,
+            "mes": plan.mes,
+            "fuente_financiamiento": plan.fuente_financiamiento,
+            "tipo_gasto": plan.tipo_gasto,
+            "codigo": codigo_display,
+            "referencia": referencia,
+
+            # Columnas visibles requeridas en la tabla
+            "empresa": empresa,
+            "area": area,
+            "tipo": tipo,
+            "programado": programado,
+            "ejecutado": ejecutado,
+            "saldo": saldo,
+
+            # Valores y auditoría del modelo original
+            "cantidad": plan.cantidad,
+            "precio": float(plan.precio or 0.00),
+            "total": float(plan.total or 0.00),
+            "monto_ejecutado": float(plan.monto_ejecutado or 0.00),
+            "estado": plan.estado,
+            "usu": plan.usu,
+            "fer": plan.fer.strftime('%Y-%m-%d %H:%M:%S') if plan.fer else None,
+            "obs": plan.obs,
+            "tip": plan.tip,
+            "tca": float(plan.tca or 0.000),
+            "prioridad": plan.prioridad,
+            "pocot": plan.pocot
+        })
+
+    # Estadísticas dashboard
+    total = len(tabla)
+    monto_total_dolares = sum(item["programado"] for item in tabla)
+    monto_total_soles = round(monto_total_dolares * tc_default, 2)
+    promedio_dolares = round(monto_total_dolares / total if total > 0 else 0.00, 2)
+    promedio_soles = round(monto_total_soles / total if total > 0 else 0.00, 2)
+
+    current_month_int = hoy.month
+    este_mes = sum(1 for plan in planes_list if plan.mes == current_month_int)
+
+    dashboard = {
+        "total": total,
+        "montoTotalDolares": round(monto_total_dolares, 2),
+        "montoTotalSoles": monto_total_soles,
+        "esteMes": este_mes,
+        "promedioDolares": promedio_dolares,
+        "promedioSoles": promedio_soles
+    }
+
+    return Response({
+        "tabla": tabla,
+        "dashboard": dashboard
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['GET', 'PUT', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def plan_inversion_detalle(request, id_plan):
+    """
+    Retorna los datos detallados de un Plan de Inversión Anual y sus Solicitudes de Gasto vinculadas.
+    Permite también actualizar datos básicos del plan (PUT / PATCH).
+    """
+    from compras_api.models import ProgramacionPlanInversion, SolicitudOrdenCompra, SolicitudPasajes
+    from caja_chica_api.models import SolicitudCajaChica
+
+    try:
+        plan = ProgramacionPlanInversion.objects.select_related('id_area').get(id_plan=id_plan)
+    except ProgramacionPlanInversion.DoesNotExist:
+        return Response({"error": "Plan de inversión no encontrado"}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method in ['PUT', 'PATCH']:
+        data = request.data
+        if 'referencia' in data:
+            plan.referencia = data['referencia']
+        if 'cantidad' in data:
+            plan.cantidad = int(data['cantidad'] or 0)
+        if 'precio' in data:
+            plan.precio = float(data['precio'] or 0.0)
+        if 'total' in data:
+            plan.total = float(data['total'] or 0.0)
+        if 'id_area' in data and data['id_area']:
+            plan.id_area_id = data['id_area']
+        plan.save()
+
+    # Consultar solicitudes asociadas por código o id_apertura
+    plan_code = str(plan.id_plan)
+    base_q = Q(codigo=plan_code) | Q(id_apertura=plan.id_plan) | Q(nivel_grupo=plan.id_plan) | Q(nivel_grupo=plan_code)
+    if plan.codigo and plan.codigo.strip():
+        base_q |= Q(codigo=plan.codigo.strip())
+
+    solicitudes_qs = SolicitudOrdenCompra.objects.filter(base_q).select_related('id_area', 'id_solicitante', 'id_estado').distinct()
+    pasajes_qs = SolicitudPasajes.objects.filter(base_q).select_related('id_area', 'id_solicitante', 'id_estado').distinct()
+    caja_chica_qs = SolicitudCajaChica.objects.filter(base_q).select_related('id_area', 'id_destinatario', 'id_estado').distinct()
+
+    rel_solicitudes = []
+
+    # 1. Órdenes de Compra
+    for s in solicitudes_qs:
+        rubro_soc = s.tipo_gasto_id
+        if not rubro_soc:
+            cog_s = str(s.cog or s.codigo or "").strip()[:2]
+            if cog_s == "04": rubro_soc = 3
+            elif cog_s == "05": rubro_soc = 4
+            elif cog_s == "06": rubro_soc = 5
+            elif cog_s == "01": rubro_soc = 1
+            elif cog_s == "02": rubro_soc = 2
+            else: rubro_soc = 5
+
+        rel_solicitudes.append({
+            "id_registro": s.id_solicitud,
+            "id_solicitud": s.id_solicitud,
+            "id_registro_directo": s.id_solicitud,
+            "codigo": s.codigo,
+            "cog": s.cog,
+            "fecha": s.fecha.strftime("%Y-%m-%d") if s.fecha else None,
+            "concepto": s.concepto or s.referencia or "Solicitud de Compra",
+            "num": s.num or 1,
+            "nivel_grupo": s.nivel_grupo,
+            "tipo_gasto": rubro_soc,
+            "id_tipo_gasto": rubro_soc,
+            "tipo_movimiento": s.tipo_movimiento or "03",
+            "monto_soles": float(s.monto_soles or 0.00),
+            "monto_dolares": float(s.monto_dolares or 0.00),
+            "tipo_moneda": s.tipo_moneda or "D",
+            "id_estado": s.id_estado_id,
+            "estado_nombre": s.id_estado.nombre if s.id_estado else "Pendiente",
+            "tipo": s.tipo or "Suministro",
+            "categoria_solicitud": "compra",
+            "empresa": s.empresa or "",
+            "contacto": s.contacto or "",
+            "es_caja_chica": False
+        })
+
+    # 2. Pasajes
+    for p in pasajes_qs:
+        trans_p = (p.transporte or "A").upper()
+        prefix_p = "Pasaje Aéreo" if trans_p == "A" else "Pasaje Terrestre"
+        concepto_p = (p.concepto or "").strip()
+        obs_p = (p.observacion or "").strip()
+        final_concepto = concepto_p if concepto_p else (f"{prefix_p}: {obs_p}" if obs_p else prefix_p)
+
+        rel_solicitudes.append({
+            "id_registro": p.id_pasaje,
+            "id_pasaje": p.id_pasaje,
+            "id_registro_directo": p.id_pasaje,
+            "codigo": p.codigo,
+            "cog": p.cog,
+            "fecha": p.fecha.strftime("%Y-%m-%d") if p.fecha else None,
+            "concepto": final_concepto,
+            "num": p.num or 1,
+            "nivel_grupo": p.nivel_grupo,
+            "tipo_gasto": 4,
+            "id_tipo_gasto": 4,
+            "tipo_movimiento": "02",
+            "transporte": trans_p,
+            "monto_soles": float(p.monto_soles or 0.00),
+            "monto_dolares": float(p.monto_dolares or 0.00),
+            "tipo_moneda": p.tipo_moneda or "D",
+            "id_estado": p.id_estado_id,
+            "estado_nombre": p.id_estado.nombre if p.id_estado else "Pendiente",
+            "tipo": prefix_p,
+            "categoria_solicitud": "pasaje",
+            "empresa": p.empresa or "",
+            "es_caja_chica": False
+        })
+
+    # 3. Caja Chica
+    for c in caja_chica_qs:
+        rel_solicitudes.append({
+            "id_registro": c.id_registro,
+            "id_solicitud": c.id_registro,
+            "id_caja_chica": c.id_registro,
+            "id_registro_directo": c.id_registro,
+            "codigo": c.codigo,
+            "cog": c.cog,
+            "fecha": c.fecha.strftime("%Y-%m-%d") if c.fecha else None,
+            "concepto": c.concepto or c.observacion or "Caja Chica",
+            "num": c.num or 1,
+            "nivel_grupo": c.nivel_grupo,
+            "tipo_gasto": c.tipo_gasto_id or 5,
+            "id_tipo_gasto": c.tipo_gasto_id or 5,
+            "tipo_movimiento": "01",
+            "monto_soles": float(c.monto_soles or 0.00),
+            "monto_dolares": float(c.monto_dolares or 0.00),
+            "tipo_moneda": c.tipo_moneda or "S",
+            "id_estado": c.id_estado_id,
+            "estado_nombre": c.id_estado.nombre if c.id_estado else "Pendiente",
+            "tipo": "Caja Chica",
+            "categoria_solicitud": "caja_chica",
+            "empresa": "",
+            "es_caja_chica": True
+        })
+
+    # Ordenar solicitudes por fecha descendente
+    rel_solicitudes.sort(key=lambda x: x.get('fecha') or '', reverse=True)
+
+    # Resumen financiero
+    total_presupuesto = round(float(plan.total or 0.00), 2)
+    total_programado = round(sum(float(s.get('monto_dolares') or 0.0) for s in rel_solicitudes if s.get('id_estado') != 5), 2)
+    if total_programado == 0 and float(plan.monto_ejecutado or 0.0) > 0:
+        total_programado = round(float(plan.monto_ejecutado or 0.0), 2)
+
+    total_disponible = round(max(0.00, total_presupuesto - total_programado), 2)
+
+    # Presupuestos por categoría para coincidir con la vista de detalle
+    cat_budgets = {
+        "orden_compra_equipos": 0.0,
+        "orden_compra_materiales": 0.0,
+        "orden_compra_mano_obra": 0.0,
+        "orden_compra_hh": 0.0,
+        "orden_compra_costo_servicios": 0.0,
+        "orden_compra_otros": 0.0
+    }
+
+    tg = plan.tipo_gasto or 5
+    if tg == 1:
+        cat_budgets["orden_compra_equipos"] = total_presupuesto
+    elif tg == 2:
+        cat_budgets["orden_compra_materiales"] = total_presupuesto
+    elif tg == 3:
+        cat_budgets["orden_compra_mano_obra"] = total_presupuesto
+        cat_budgets["orden_compra_hh"] = total_presupuesto
+    elif tg == 4:
+        cat_budgets["orden_compra_costo_servicios"] = total_presupuesto
+    else:
+        cat_budgets["orden_compra_otros"] = total_presupuesto
+
+    response_data = {
+        "id_plan": plan.id_plan,
+        "id_apertura": plan.id_plan,
+        "codigo": plan.codigo.strip() if (plan.codigo and plan.codigo.strip()) else str(plan.id_plan),
+        "cotizacion_codigo": plan.codigo.strip() if (plan.codigo and plan.codigo.strip()) else str(plan.id_plan),
+        "referencia": plan.referencia or "",
+        "id_area": plan.id_area_id,
+        "area_nombre": plan.id_area.nombre if plan.id_area else "S/A",
+        "anno": plan.anno,
+        "mes": plan.mes,
+        "fuente_financiamiento": plan.fuente_financiamiento,
+        "tipo_gasto": plan.tipo_gasto,
+        "cantidad": plan.cantidad,
+        "precio": float(plan.precio or 0.00),
+        "total": total_presupuesto,
+        "presupuesto": total_presupuesto,
+        "monto_ejecutado": total_programado,
+        "total_programado": total_programado,
+        "total_disponible": total_disponible,
+        "estado": plan.estado,
+        "estado_orden_nombre": "Activo" if plan.estado == 1 else "Inactivo",
+        "empresa": "V&C CORPORATION S.A.C.",
+        "cliente_nombre": "V&C CORPORATION S.A.C.",
+        "tipo": "PLAN INVERSION",
+        "usu": plan.usu,
+        "fer": plan.fer.strftime('%Y-%m-%d %H:%M:%S') if plan.fer else None,
+        "obs": plan.obs or "",
+        "tip": plan.tip or "",
+        "tca": float(plan.tca or 0.000),
+        "prioridad": plan.prioridad,
+        "pocot": plan.pocot,
+        "solicitudes": rel_solicitudes,
+        **cat_budgets
+    }
+
+    return Response(response_data, status=status.HTTP_200_OK)
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -377,6 +729,25 @@ def detalle_solicitud_compra(request, id_solicitud):
             resumen["monto_actual"] = monto_actual
             resumen["disponible_maximo"] = round(resumen["disponible_rubro"] + monto_actual, 2)
             data["presupuesto_info"] = resumen
+
+    # Determinar si pertenece a un Plan de Inversión
+    id_plan_inversion = None
+    if not solicitud.id_apertura_id and solicitud.codigo:
+        try:
+            from .models import ProgramacionPlanInversion
+            cod_clean = str(solicitud.codigo).strip()
+            plan_obj = None
+            if cod_clean.isdigit():
+                plan_obj = ProgramacionPlanInversion.objects.filter(id_plan=int(cod_clean)).first()
+            if not plan_obj:
+                plan_obj = ProgramacionPlanInversion.objects.filter(codigo=cod_clean).first()
+            if plan_obj:
+                id_plan_inversion = plan_obj.id_plan
+        except Exception:
+            pass
+
+    data['id_plan_inversion'] = id_plan_inversion
+    data['es_plan_inversion'] = bool(id_plan_inversion)
 
     return Response(data, status=status.HTTP_200_OK)
 
@@ -957,6 +1328,25 @@ def detalle_solicitud_pasaje(request, id_pasaje):
             resumen["monto_actual"] = monto_actual
             resumen["disponible_maximo"] = round(resumen["disponible_rubro"] + monto_actual, 2)
             data["presupuesto_info"] = resumen
+
+    # Determinar si pertenece a un Plan de Inversión
+    id_plan_inversion = None
+    if not pasaje.id_apertura_id and pasaje.codigo:
+        try:
+            from .models import ProgramacionPlanInversion
+            cod_clean = str(pasaje.codigo).strip()
+            plan_obj = None
+            if cod_clean.isdigit():
+                plan_obj = ProgramacionPlanInversion.objects.filter(id_plan=int(cod_clean)).first()
+            if not plan_obj:
+                plan_obj = ProgramacionPlanInversion.objects.filter(codigo=cod_clean).first()
+            if plan_obj:
+                id_plan_inversion = plan_obj.id_plan
+        except Exception:
+            pass
+
+    data['id_plan_inversion'] = id_plan_inversion
+    data['es_plan_inversion'] = bool(id_plan_inversion)
 
     return Response(data, status=status.HTTP_200_OK)
 

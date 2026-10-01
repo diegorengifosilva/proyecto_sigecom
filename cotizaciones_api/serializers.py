@@ -5,6 +5,10 @@ from django.contrib.auth import get_user_model
 from django.db import connections
 from collections import defaultdict
 import uuid
+import logging
+
+logger = logging.getLogger(__name__)
+
 from .models import (
     Cotizacion,
     CotizacionSuministro,
@@ -918,30 +922,42 @@ def fetch_orden_su_by_apertura(apertura_ids):
         return {}
     db_alias = "legacy" if "legacy" in connections else "default"
     placeholders = ",".join(["%s"] * len(ids))
-    sql = (
+    sql_local = (
+        f"SELECT num_reg, cog, nog, nig, num, TRIM(cod), mov "
+        f"FROM vc_mov_orden_su "
+        f"WHERE num_reg IN ({placeholders}) "
+        f"ORDER BY cog, nig, num"
+    )
+    sql_db_vc = (
         f"SELECT num_reg, cog, nog, nig, num, TRIM(cod), mov "
         f"FROM db_vc.vc_mov_orden_su "
         f"WHERE num_reg IN ({placeholders}) "
         f"ORDER BY cog, nig, num"
     )
     out = defaultdict(list)
-    with connections[db_alias].cursor() as cursor:
-        cursor.execute(sql, ids)
-        for num_reg, cog, nog, nig, num, cod, mov in cursor.fetchall():
+    try:
+        with connections[db_alias].cursor() as cursor:
             try:
-                key = int(num_reg)
-            except (TypeError, ValueError):
-                key = num_reg
-            cog_s = str(cog or "").strip()
-            out[key].append({
-                "cog": cog_s,
-                "prefix4": cog_s[:4] if len(cog_s) >= 4 else cog_s.zfill(4),
-                "nog": (nog or "").strip(),
-                "nig": nig,
-                "num": num,
-                "cod": (cod or "").strip(),
-                "mov": str(mov or "").strip(),
-            })
+                cursor.execute(sql_local, ids)
+            except Exception:
+                cursor.execute(sql_db_vc, ids)
+            for num_reg, cog, nog, nig, num, cod, mov in cursor.fetchall():
+                try:
+                    key = int(num_reg)
+                except (TypeError, ValueError):
+                    key = num_reg
+                cog_s = str(cog or "").strip()
+                out[key].append({
+                    "cog": cog_s,
+                    "prefix4": cog_s[:4] if len(cog_s) >= 4 else cog_s.zfill(4),
+                    "nog": (nog or "").strip(),
+                    "nig": nig,
+                    "num": num,
+                    "cod": (cod or "").strip(),
+                    "mov": str(mov or "").strip(),
+                })
+    except Exception as e:
+        logger.warning(f"[fetch_orden_su_by_apertura] Error consultando {db_alias}: {e}")
     return dict(out)
 
 
@@ -961,31 +977,43 @@ def fetch_orden_mo_by_apertura(apertura_ids):
         return {}
     db_alias = "legacy" if "legacy" in connections else "default"
     placeholders = ",".join(["%s"] * len(ids))
-    sql = (
+    sql_local = (
+        f"SELECT num_reg, cog, nog, nig, num, TRIM(cod), TRIM(des), mov "
+        f"FROM vc_mov_orden_mo "
+        f"WHERE num_reg IN ({placeholders}) "
+        f"ORDER BY cog, num"
+    )
+    sql_db_vc = (
         f"SELECT num_reg, cog, nog, nig, num, TRIM(cod), TRIM(des), mov "
         f"FROM db_vc.vc_mov_orden_mo "
         f"WHERE num_reg IN ({placeholders}) "
         f"ORDER BY cog, num"
     )
     out = defaultdict(list)
-    with connections[db_alias].cursor() as cursor:
-        cursor.execute(sql, ids)
-        for num_reg, cog, nog, nig, num, cod, des, mov in cursor.fetchall():
+    try:
+        with connections[db_alias].cursor() as cursor:
             try:
-                key = int(num_reg)
-            except (TypeError, ValueError):
-                key = num_reg
-            cog_s = str(cog or "").strip()
-            out[key].append({
-                "cog": cog_s,
-                "prefix": cog_s[:2] if len(cog_s) >= 2 else cog_s,
-                "nog": (nog or "").strip(),
-                "nig": nig,
-                "num": num,
-                "cod": (cod or "").strip(),
-                "des": (des or "").strip(),
-                "mov": str(mov or "").strip().zfill(2) if mov not in (None, "") else "",
-            })
+                cursor.execute(sql_local, ids)
+            except Exception:
+                cursor.execute(sql_db_vc, ids)
+            for num_reg, cog, nog, nig, num, cod, des, mov in cursor.fetchall():
+                try:
+                    key = int(num_reg)
+                except (TypeError, ValueError):
+                    key = num_reg
+                cog_s = str(cog or "").strip()
+                out[key].append({
+                    "cog": cog_s,
+                    "prefix": cog_s[:2] if len(cog_s) >= 2 else cog_s,
+                    "nog": (nog or "").strip(),
+                    "nig": nig,
+                    "num": num,
+                    "cod": (cod or "").strip(),
+                    "des": (des or "").strip(),
+                    "mov": str(mov or "").strip().zfill(2) if mov not in (None, "") else "",
+                })
+    except Exception as e:
+        logger.warning(f"[fetch_orden_mo_by_apertura] Error consultando {db_alias}: {e}")
     return dict(out)
 
 

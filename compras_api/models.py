@@ -193,3 +193,47 @@ class SolicitudPasajesDetalle(models.Model):
     def __str__(self):
         return f"Detalle Pasaje {self.id_registro_id} - User: {self.id_usuario_id or self.nombre_especial or ''}"
 
+class ProgramacionPlanInversion(models.Model):
+    # ── IDENTIFICADOR Y RELACIONES ─────────────────────────────
+    id_plan = models.AutoField(primary_key=True, db_column='id_plan')  #[cite: 14]
+    
+    id_area = models.ForeignKey(
+        'users.Area',
+        on_delete=models.SET_NULL,
+        db_column='id_area',
+        null=True,
+        blank=True,
+        related_name='planes_inversion'
+    )
+
+    # ── PERIODICIDAD Y CLASIFICACIÓN ───────────────────────────
+    anno = models.IntegerField(null=True, blank=True, db_column='anno')
+    mes = models.IntegerField(null=True, blank=True, db_column='mes')
+    fuente_financiamiento = models.IntegerField(null=True, blank=True, db_column='fuente_financiamiento')
+    tipo_gasto = models.IntegerField(null=True, blank=True, db_column='tipo_gasto')
+    codigo = models.CharField(max_length=50, null=True, blank=True, db_column='codigo')
+    referencia = models.CharField(max_length=500, null=True, blank=True, db_column='referencia')
+
+    # ── VALORES Y CANTIDADES ───────────────────────────────────
+    cantidad = models.IntegerField(default=0, null=True, blank=True, db_column='cantidad')
+    precio = models.DecimalField(max_digits=11, decimal_places=2, default=0.00, null=True, blank=True, db_column='precio')
+    total = models.DecimalField(max_digits=11, decimal_places=2, default=0.00, null=True, blank=True, db_column='total')
+    monto_ejecutado = models.DecimalField(max_digits=11, decimal_places=2, default=0.00, null=True, blank=True, db_column='monto_ejecutado')
+
+    # ── AUDITORÍA Y ESTADOS ────────────────────────────────────
+    estado = models.IntegerField(null=True, blank=True, db_column='estado')
+    usu = models.CharField(max_length=50, null=True, blank=True, db_column='usu')
+    fer = models.DateTimeField(null=True, blank=True, db_column='fer')
+    obs = models.CharField(max_length=500, null=True, blank=True, db_column='obs')
+    tip = models.CharField(max_length=10, null=True, blank=True, db_column='tip')
+    tca = models.DecimalField(max_digits=10, decimal_places=3, default=0.000, null=True, blank=True, db_column='tca')
+    prioridad = models.IntegerField(default=0, null=True, blank=True, db_column='prioridad')
+    pocot = models.IntegerField(null=True, blank=True, db_column='pocot')
+
+    class Meta:
+        managed = False
+        db_table = 'programacion_plan_inversion'
+
+    def __str__(self):
+        return f"Plan #{self.id_plan} - Ref: {self.referencia or 'S/R'}"
+

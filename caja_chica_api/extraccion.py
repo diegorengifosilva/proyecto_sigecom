@@ -354,7 +354,7 @@ def detectar_fecha(texto: str, qr_data: Optional[str] = None, debug: bool = Fals
         "DIC": 12, "DICIEMBRE": 12
     }
     meses_alt = "|".join(meses_map.keys())
-    pat_text = re.compile(r'(\d{1,2})[\s/\.]+(' + meses_alt + ')[\s/\.]+(\d{2,4})', flags=re.IGNORECASE)
+    pat_text = re.compile(r'(\d{1,2})[\s/\.]+(' + meses_alt + r')[\s/\.]+(\d{2,4})', flags=re.IGNORECASE)
 
     fecha_ref_idx = None
     doc_ref_idx = None

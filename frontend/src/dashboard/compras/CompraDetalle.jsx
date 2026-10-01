@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { useParams, useNavigate, useOutletContext } from "react-router-dom";
+import { useParams, useNavigate, useLocation, useOutletContext } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -84,6 +84,7 @@ const formatDateDMY = (dateStr, includeTime = false) => {
 
 export default function CompraDetalle({ idSolicitud }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id } = useParams();
   const queryClient = useQueryClient();
   const { setCustomBreadcrumbs, setBreadcrumbOverride } = useOutletContext() || {};
@@ -162,17 +163,45 @@ export default function CompraDetalle({ idSolicitud }) {
     return regStr.includes("_") ? regStr.split("_")[1] : regStr;
   }, [data, realId]);
 
+  const planInversionId = location.state?.id_plan || data?.id_plan_inversion || (!data?.id_apertura && data?.codigo ? data.codigo : null);
+
+  const handleVolver = () => {
+    if (location.state?.returnUrl) {
+      navigate(location.state.returnUrl);
+      return;
+    }
+    if (location.state?.from === "plan-inversion" || planInversionId) {
+      navigate(`/compras/plan-inversion/${planInversionId}`);
+      return;
+    }
+    if (data?.id_apertura) {
+      navigate(`/compras/programacion/${data.id_apertura}`);
+      return;
+    }
+    if (window.history.length > 1) {
+      navigate(-1);
+      return;
+    }
+    navigate("/compras/atencion");
+  };
+
   useEffect(() => {
     if (data) {
       const displayNro = String(directId);
       if (setBreadcrumbOverride) setBreadcrumbOverride(displayNro);
 
+      const isFromAdmin = location.state?.from === "plan-inversion-admin" || location.state?.returnUrl?.startsWith('/plan-inversion-anual');
       const crumbs = [];
       crumbs.push({
-        label: "PROGRAMACION",
-        path: "/compras/programacion"
+        label: isFromAdmin ? "PLAN INVERSIÓN ANUAL" : "PROGRAMACION",
+        path: isFromAdmin ? "/plan-inversion-anual" : "/compras/programacion"
       });
-      if (data.id_apertura) {
+      if (planInversionId) {
+        crumbs.push({
+          label: String(planInversionId),
+          path: location.state?.returnUrl || (isFromAdmin ? `/plan-inversion-anual/${planInversionId}` : `/compras/plan-inversion/${planInversionId}`)
+        });
+      } else if (data.id_apertura) {
         crumbs.push({
           label: String(data.id_apertura),
           path: `/compras/programacion/${data.id_apertura}`
@@ -184,7 +213,7 @@ export default function CompraDetalle({ idSolicitud }) {
 
       if (setCustomBreadcrumbs) setCustomBreadcrumbs(crumbs);
     }
-  }, [data, directId, setCustomBreadcrumbs, setBreadcrumbOverride]);
+  }, [data, directId, planInversionId, setCustomBreadcrumbs, setBreadcrumbOverride]);
 
   // Funciones controladoras de edición inline por doble clic
   const handleStartEdit = (field, currentValue) => {
@@ -350,7 +379,11 @@ export default function CompraDetalle({ idSolicitud }) {
       queryClient.invalidateQueries(["listaAtencion"]);
       queryClient.invalidateQueries(["compras-programacion"]);
       queryClient.invalidateQueries(["programacionDetalle"]);
-      if (aperturaId) {
+      if (location.state?.returnUrl) {
+        navigate(location.state.returnUrl);
+      } else if (planInversionId) {
+        navigate(`/compras/plan-inversion/${planInversionId}`);
+      } else if (aperturaId) {
         navigate(`/compras/programacion/${aperturaId}`);
       } else {
         navigate("/compras/programacion");
@@ -590,8 +623,8 @@ export default function CompraDetalle({ idSolicitud }) {
           {/* IDENTIFICACIÓN Y TÍTULO */}
           <div className="flex items-start gap-4">
             <button
-              onClick={() => navigate(data.id_apertura ? `/compras/programacion/${data.id_apertura}` : "/compras/atencion")}
-              className="p-2.5 bg-slate-50 hover:bg-emerald-50 rounded-2xl text-slate-400 hover:text-emerald-600 border border-slate-200/60 transition-all group shrink-0"
+              onClick={handleVolver}
+              className="p-2.5 bg-slate-50 hover:bg-emerald-50 rounded-2xl text-slate-400 hover:text-emerald-600 border border-slate-200/60 transition-all group shrink-0 cursor-pointer"
               title="Volver"
             >
               <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
@@ -786,10 +819,18 @@ export default function CompraDetalle({ idSolicitud }) {
 
           <div className="flex items-center gap-1.5">
             <LinkIcon className="w-3.5 h-3.5 text-blue-600" />
-            <span className="font-bold text-slate-600 uppercase text-[10px]">Cotización / Proyecto:</span>
+            <span className="font-bold text-slate-600 uppercase text-[10px]">
+              {planInversionId ? "Plan de Inversión:" : "Cotización / Proyecto:"}
+            </span>
             <span 
               className="font-black text-indigo-700 underline cursor-pointer" 
-              onClick={() => data.id_apertura && navigate(`/compras/programacion/${data.id_apertura}`)}
+              onClick={() => {
+                if (planInversionId) {
+                  navigate(`/compras/plan-inversion/${planInversionId}`);
+                } else if (data.id_apertura) {
+                  navigate(`/compras/programacion/${data.id_apertura}`);
+                }
+              }}
             >
               {data.codigo || "S/N"}
             </span>

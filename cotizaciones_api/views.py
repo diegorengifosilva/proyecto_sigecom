@@ -2815,9 +2815,6 @@ def apertura_detalle(request, id_apertura):
         except CotizacionApertura.DoesNotExist:
             return Response({"error": "Apertura no encontrada"}, status=404)
 
-        # Garantizar que los suministros y servicios estén sincronizados
-        sincronizar_items_apertura(apertura)
-
         if request.method == 'GET':
             serializer = CotizacionAperturaSerializer(apertura)
             from compras_api.models import SolicitudOrdenCompra, SolicitudPasajes
@@ -2835,6 +2832,16 @@ def apertura_detalle(request, id_apertura):
             
             rel_solicitudes = []
             for s in solicitudes_qs:
+                rubro_soc = s.tipo_gasto_id
+                if not rubro_soc:
+                    cog_s = str(s.cog or s.codigo or "").strip()[:2]
+                    if cog_s == "04": rubro_soc = 3
+                    elif cog_s == "05": rubro_soc = 4
+                    elif cog_s == "06": rubro_soc = 5
+                    elif cog_s == "01": rubro_soc = 1
+                    elif cog_s == "02": rubro_soc = 2
+                    else: rubro_soc = 2
+
                 rel_solicitudes.append({
                     "id_registro": s.id_solicitud,
                     "id_solicitud": s.id_solicitud,
@@ -2843,8 +2850,8 @@ def apertura_detalle(request, id_apertura):
                     "concepto": s.concepto or s.referencia or "Solicitud de Compra",
                     "num": s.num or 1,
                     "nivel_grupo": s.nivel_grupo,
-                    "tipo_gasto": s.tipo_gasto_id or 2,
-                    "id_tipo_gasto": s.tipo_gasto_id or 2,
+                    "tipo_gasto": rubro_soc,
+                    "id_tipo_gasto": rubro_soc,
                     "tipo_movimiento": "03",
                     "monto_soles": float(s.monto_soles or 0.00),
                     "monto_dolares": float(s.monto_dolares or 0.00),
@@ -2875,6 +2882,18 @@ def apertura_detalle(request, id_apertura):
                 elif obs_p and obs_p not in concepto_p and concepto_p in (prefix_p, "Pasaje Aéreo", "Pasaje Terrestre"):
                     concepto_p = f"{prefix_p} - {obs_p}"
 
+                rubro_pas = p.tipo_gasto_id or 4
+                cog_prefix = str(p.cog or p.codigo or "").strip()[:2]
+                mov_p = str(p.tipo_movimiento or "").strip()
+                if rubro_pas in (1, 2) and (cog_prefix == "05" or mov_p == "4"):
+                    rubro_pas = 4
+                elif rubro_pas in (1, 2) and (cog_prefix == "04" or mov_p == "3"):
+                    rubro_pas = 3
+                elif rubro_pas in (1, 2) and (cog_prefix == "06" or mov_p == "5"):
+                    rubro_pas = 5
+                elif not rubro_pas or rubro_pas in (1, 2):
+                    rubro_pas = 4
+
                 rel_solicitudes.append({
                     "id_registro": p.id_pasaje,
                     "id_solicitud": p.id_pasaje,
@@ -2886,8 +2905,8 @@ def apertura_detalle(request, id_apertura):
                     "referencia": obs_p,
                     "num": 5, # Map to Otros
                     "nivel_grupo": p.nivel_grupo or 5,
-                    "tipo_gasto": p.tipo_gasto_id or 4,
-                    "id_tipo_gasto": p.tipo_gasto_id or 4,
+                    "tipo_gasto": rubro_pas,
+                    "id_tipo_gasto": rubro_pas,
                     "tipo_movimiento": "02",
                     "monto_soles": float(p.monto_soles or 0.00),
                     "monto_dolares": float(p.monto_dolares or 0.00),
@@ -2912,6 +2931,16 @@ def apertura_detalle(request, id_apertura):
                 if c.id_destinatario:
                     destinatario_nombre = getattr(c.id_destinatario, 'nombre_completo', None) or getattr(c.id_destinatario, 'usuario', '')
 
+                rubro_cch = c.tipo_gasto_id
+                if not rubro_cch:
+                    cog_c = str(c.cog or c.codigo or "").strip()[:2]
+                    if cog_c == "04": rubro_cch = 3
+                    elif cog_c == "05": rubro_cch = 4
+                    elif cog_c == "06": rubro_cch = 5
+                    elif cog_c == "01": rubro_cch = 1
+                    elif cog_c == "02": rubro_cch = 2
+                    else: rubro_cch = 4
+
                 rel_solicitudes.append({
                     "id_registro": c.id_registro,
                     "id_solicitud": c.id_registro,
@@ -2923,8 +2952,8 @@ def apertura_detalle(request, id_apertura):
                     "id_destinatario": c.id_destinatario_id,
                     "num": c.num or 1,
                     "nivel_grupo": c.nivel_grupo,
-                    "tipo_gasto": c.tipo_gasto_id or 1,
-                    "id_tipo_gasto": c.tipo_gasto_id or 1,
+                    "tipo_gasto": rubro_cch,
+                    "id_tipo_gasto": rubro_cch,
                     "tipo_movimiento": "01",
                     "monto_soles": float(c.monto_soles or 0.00),
                     "monto_dolares": float(c.monto_dolares or 0.00),
@@ -2937,8 +2966,6 @@ def apertura_detalle(request, id_apertura):
                 })
                 
             rel_solicitudes.sort(key=lambda x: (x["fecha"] or "", x["id_registro"] or 0))
-
-            from .models import CotizacionAperturaSuministro, CotizacionAperturaServicio, CotizacionSuministro, CotizacionServicio
 
             # Cargar suministros de la apertura
             apertura_suministros_qs = CotizacionAperturaSuministro.objects.filter(
@@ -3383,8 +3410,6 @@ def crear_nueva_oc(request, id_registro):
             sugerencias = {"sugeridas": {}, "aplicadas": [], "pendientes": []}
             recalculate_apertura_costs(nueva_apertura, preserve_total=True)
             nueva_apertura.save()
-
-        sincronizar_items_apertura(nueva_apertura)
 
         cleanup_duplicate_aperturas(id_registro)
         try:

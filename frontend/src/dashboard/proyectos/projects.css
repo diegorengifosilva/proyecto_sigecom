@@ -1,0 +1,314 @@
+@tailwind components;
+@tailwind utilities;
+
+.ui-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, .4);
+  backdrop-filter: blur(2px);
+}
+
+.ui-modal-card {
+  overflow: auto;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .25);
+}
+
+.projects-module-scope {
+  --project-action: #168e87;
+  --project-action-dark: #0f726c;
+  min-height: 100vh;
+}
+
+/* Buscador común del módulo: listado, selectores y filtros operativos. */
+.projects-module-scope .corporate-search-input {
+  width: min(100%, 560px);
+  height: 40px;
+  padding: 0 2.5rem 0 2.75rem;
+  color: #0f2f3b;
+  background-color: #f7faf9;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%2366827f' stroke-width='1.8' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7.5'/%3E%3Cpath d='m20.5 20.5-4.2-4.2'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: 0.9rem center;
+  border: 1px solid #cbdad8;
+  border-radius: 10px;
+  outline: none;
+  font: inherit;
+  font-size: 0.875rem;
+  appearance: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.projects-module-scope .corporate-search-input::placeholder {
+  color: #849895;
+}
+
+.projects-module-scope .corporate-search-input:hover {
+  border-color: #9bc5c0;
+  background-color: #fff;
+}
+
+.projects-module-scope .corporate-search-input:focus {
+  border-color: #168e87;
+  background-color: #fff;
+  box-shadow: 0 0 0 3px rgba(22, 142, 135, 0.13);
+}
+
+.projects-module-scope .corporate-search-input::-webkit-calendar-picker-indicator {
+  display: none !important;
+  opacity: 0;
+}
+
+.projects-module-scope .corporate-search-input::-webkit-search-decoration {
+  appearance: none;
+}
+
+.projects-module-scope .corporate-search-input::-webkit-search-cancel-button {
+  cursor: pointer;
+}
+
+@media (max-width: 720px) {
+  .projects-module-scope .corporate-search-input {
+    width: 100%;
+    max-width: none;
+  }
+}
+
+.projects-module-scope .projects-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.projects-module-scope .projects-list-toolbar {
+  min-width: 0;
+}
+
+.projects-module-scope .projects-list-toolbar .corporate-search-input {
+  width: min(100%, 420px);
+}
+
+.projects-module-scope .projects-table-wrap {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  border: 1px solid #d7e3e1;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.projects-module-scope .projects-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 13px;
+  color: #14343c;
+}
+
+.projects-module-scope .projects-table .col-codigo { width: 16%; }
+.projects-module-scope .projects-table .col-cliente { width: 17%; }
+.projects-module-scope .projects-table .col-nombre { width: 22%; }
+.projects-module-scope .projects-table .col-estado { width: 108px; }
+.projects-module-scope .projects-table .col-fecha { width: 104px; }
+.projects-module-scope .projects-table .col-monto { width: 96px; }
+.projects-module-scope .projects-table .col-notas { width: 52px; }
+
+.projects-module-scope .projects-table th,
+.projects-module-scope .projects-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid #e6eeec;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.projects-module-scope .projects-table thead th {
+  background: #f3f7f6;
+  color: #4d6663;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.projects-module-scope .projects-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.projects-module-scope .projects-table tbody tr:hover td {
+  background: #f7fbfa;
+}
+
+.projects-module-scope .projects-table .is-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.projects-module-scope .projects-table .is-center {
+  text-align: center;
+}
+
+.projects-module-scope .projects-table .is-empty {
+  padding: 36px 12px;
+  text-align: center;
+  color: #7a9290;
+  white-space: normal;
+}
+
+.projects-module-scope .projects-table-code {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #0f726c;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.projects-module-scope .projects-table-notes {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #163f3b;
+  cursor: pointer;
+}
+
+.projects-module-scope .projects-table-notes:hover {
+  background: #eef6f4;
+}
+
+.projects-module-scope .projects-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  margin: 0;
+  padding: 4px 88px 8px 0;
+}
+
+.projects-module-scope .projects-pagination-count {
+  color: #5b7875;
+  font-size: 0.8125rem;
+}
+
+.projects-module-scope .projects-pagination-controls,
+.projects-module-scope .projects-pagination-pages {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.projects-module-scope .projects-pagination-controls button {
+  min-width: 36px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid #cbdad8;
+  border-radius: 8px;
+  background: #fff;
+  color: #0f2f3b;
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.projects-module-scope .projects-pagination-controls button:hover:not(:disabled) {
+  border-color: #9bc5c0;
+  background: #f7faf9;
+}
+
+.projects-module-scope .projects-pagination-controls button.is-active {
+  border-color: #168e87;
+  background: #168e87;
+  color: #fff;
+}
+
+.projects-module-scope .projects-pagination-controls button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.projects-module-scope .projects-pagination-ellipsis {
+  padding: 0 2px;
+  color: #849895;
+}
+
+/* Enlaces y acciones operativas del contenido; los estados semánticos conservan su color. */
+.projects-module-scope main a:not([class*="text-red"]),
+.projects-module-scope main button[class*="text-blue"],
+.projects-module-scope main button[class*="text-indigo"],
+.projects-module-scope main button[class*="border-blue"],
+.projects-module-scope main button[class*="border-indigo"] {
+  color: var(--project-action) !important;
+}
+.projects-module-scope main button[class*="bg-blue"],
+.projects-module-scope main button[class*="bg-indigo"],
+.projects-module-scope main button[class*="bg-green"] {
+  border-color: var(--project-action) !important;
+  background-color: var(--project-action) !important;
+  color: #fff !important;
+}
+.projects-module-scope main button[class*="bg-blue"]:hover,
+.projects-module-scope main button[class*="bg-indigo"]:hover,
+.projects-module-scope main button[class*="bg-green"]:hover {
+  background-color: var(--project-action-dark) !important;
+}
+
+/* Capa robusta para los modales heredados, independiente de utilidades Tailwind. */
+.projects-module-scope .ui-modal-overlay,
+.projects-module-scope .modal-overlay,
+.projects-module-scope .fixed.inset-0[class*="bg-black"],
+.projects-module-scope .fixed.inset-0:has(> .absolute.inset-0) {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 10000 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 20px !important;
+  overflow: auto !important;
+}
+.projects-module-scope .ui-modal-card,
+.projects-module-scope .modal-card,
+.projects-module-scope .fixed.inset-0[class*="bg-black"] > div,
+.projects-module-scope .fixed.inset-0[class*="bg-black"] > .relative,
+.projects-module-scope .fixed.inset-0:has(> .absolute.inset-0) > .relative {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 1100px);
+  max-height: calc(100vh - 40px) !important;
+  overflow: auto !important;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 22px 70px rgba(0, 31, 39, .28);
+}
+.projects-module-scope .fixed.inset-0:has(> .absolute.inset-0) > .absolute.inset-0 {
+  position: absolute !important;
+  inset: 0 !important;
+  background: rgba(8, 31, 37, .52) !important;
+  backdrop-filter: blur(2px);
+}

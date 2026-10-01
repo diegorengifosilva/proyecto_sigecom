@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { useParams, useNavigate, useOutletContext } from "react-router-dom";
+import { useParams, useNavigate, useLocation, useOutletContext } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -80,6 +80,7 @@ const toInputDateTime = (dateStr) => {
 
 export default function PasajeDetalle({ idPasaje }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id, id_pasaje } = useParams();
   const queryClient = useQueryClient();
   const { setCustomBreadcrumbs, setBreadcrumbOverride } = useOutletContext() || {};
@@ -134,6 +135,28 @@ export default function PasajeDetalle({ idPasaje }) {
     return regStr.includes("_") ? regStr.split("_")[1] : regStr;
   }, [data, realId]);
 
+  const planInversionId = location.state?.id_plan || data?.id_plan_inversion || (!data?.id_apertura && data?.codigo ? data.codigo : null);
+
+  const handleVolver = () => {
+    if (location.state?.returnUrl) {
+      navigate(location.state.returnUrl);
+      return;
+    }
+    if (location.state?.from === "plan-inversion" || planInversionId) {
+      navigate(`/compras/plan-inversion/${planInversionId}`);
+      return;
+    }
+    if (data?.id_apertura) {
+      navigate(`/compras/programacion/${data.id_apertura}`);
+      return;
+    }
+    if (window.history.length > 1) {
+      navigate(-1);
+      return;
+    }
+    navigate("/compras/atencion");
+  };
+
   // Breadcrumbs ejecutivos sincronizados
   useEffect(() => {
     if (data) {
@@ -145,7 +168,12 @@ export default function PasajeDetalle({ idPasaje }) {
         label: "PROGRAMACION",
         path: "/compras/programacion"
       });
-      if (data.id_apertura) {
+      if (planInversionId) {
+        crumbs.push({
+          label: String(planInversionId),
+          path: `/compras/plan-inversion/${planInversionId}`
+        });
+      } else if (data.id_apertura) {
         crumbs.push({
           label: String(data.id_apertura),
           path: `/compras/programacion/${data.id_apertura}`
@@ -157,7 +185,7 @@ export default function PasajeDetalle({ idPasaje }) {
 
       if (setCustomBreadcrumbs) setCustomBreadcrumbs(crumbs);
     }
-  }, [data, directId, setCustomBreadcrumbs, setBreadcrumbOverride]);
+  }, [data, directId, planInversionId, setCustomBreadcrumbs, setBreadcrumbOverride]);
 
   // Funciones para edición en línea (doble clic)
   const handleStartEdit = (field, currentValue) => {
@@ -328,7 +356,11 @@ export default function PasajeDetalle({ idPasaje }) {
       queryClient.invalidateQueries(["listaLiquidaciones"]);
       queryClient.invalidateQueries(["compras-programacion"]);
       queryClient.invalidateQueries(["programacionDetalle"]);
-      if (aperturaId) {
+      if (location.state?.returnUrl) {
+        navigate(location.state.returnUrl);
+      } else if (planInversionId) {
+        navigate(`/compras/plan-inversion/${planInversionId}`);
+      } else if (aperturaId) {
         navigate(`/compras/programacion/${aperturaId}`);
       } else {
         navigate("/compras/programacion");
@@ -529,8 +561,8 @@ export default function PasajeDetalle({ idPasaje }) {
           {/* IDENTIFICACIÓN Y TÍTULO */}
           <div className="flex items-start gap-4">
             <button
-              onClick={() => navigate(data.id_apertura ? `/compras/programacion/${data.id_apertura}` : "/compras/atencion")}
-              className="p-2.5 bg-slate-50 hover:bg-sky-50 rounded-2xl text-slate-400 hover:text-sky-600 border border-slate-200/60 transition-all group shrink-0"
+              onClick={handleVolver}
+              className="p-2.5 bg-slate-50 hover:bg-sky-50 rounded-2xl text-slate-400 hover:text-sky-600 border border-slate-200/60 transition-all group shrink-0 cursor-pointer"
               title="Volver"
             >
               <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
@@ -763,10 +795,18 @@ export default function PasajeDetalle({ idPasaje }) {
 
           <div className="flex items-center gap-1.5">
             <LinkIcon className="w-3.5 h-3.5 text-blue-600" />
-            <span className="font-bold text-slate-600 uppercase text-[10px]">Cotización / Proyecto:</span>
+            <span className="font-bold text-slate-600 uppercase text-[10px]">
+              {planInversionId ? "Plan de Inversión:" : "Cotización / Proyecto:"}
+            </span>
             <span 
               className="font-black text-sky-700 underline cursor-pointer" 
-              onClick={() => data.id_apertura && navigate(`/compras/programacion/${data.id_apertura}`)}
+              onClick={() => {
+                if (planInversionId) {
+                  navigate(`/compras/plan-inversion/${planInversionId}`);
+                } else if (data.id_apertura) {
+                  navigate(`/compras/programacion/${data.id_apertura}`);
+                }
+              }}
             >
               {data.codigo || "S/N"}
             </span>

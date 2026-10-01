@@ -54,6 +54,19 @@ urlpatterns = [
     path('usuarios/actual/', usuario_actual, name='usuario-actual'),
     path('home-stats/', views.caja_chica_home_stats, name='caja_chica_home_stats'),
 
+    # NUEVO MÓDULO UNIFICADO CAJA CHICA (5 KPIS Y 5 SUBMÓDULOS)
+    path('dashboard_resumen/', views.caja_chica_dashboard_resumen, name='caja_chica_dashboard_resumen'),
+    path('lista_atencion/', views.lista_atencion_solicitudes, name='lista_atencion_solicitudes'),
+    path('lista_liquidaciones/', views.lista_liquidaciones_caja, name='lista_liquidaciones_caja'),
+    path('lista_aprobaciones/', views.lista_aprobacion_liquidaciones, name='lista_aprobacion_liquidaciones'),
+    path('lista_caja_chica/', views.lista_caja_chica_general, name='lista_caja_chica_general'),
+    path('lista_guias_salida/', views.lista_guias_salida, name='lista_guias_salida'),
+    path('consulta_ruc/', views.consulta_ruc, name='consulta_ruc'),
+
+    # PORTAL DEL SOLICITANTE Y PANEL DEL DESTINATARIO
+    path('portal_solicitante/', views.portal_solicitante_data, name='portal_solicitante_data'),
+    path('portal_destinatario/', views.portal_destinatario_data, name='portal_destinatario_data'),
+
     # SOLICITUD DE GASTO
     path('solicitudes/dashboard/', solicitudes_dashboard_view, name='solicitudes-dashboard'),
     path('solicitudes/guardar-solicitud/', guardar_solicitud, name='guardar_solicitud'),

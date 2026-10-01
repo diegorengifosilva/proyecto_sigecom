@@ -113,6 +113,32 @@ class Usuario(models.Model):
     def get_username(self): return self.usuario
 
     @property
+    def username(self): return self.usuario
+
+    def get_full_name(self):
+        return self.nombre_completo or self.usuario
+
+    def get_short_name(self):
+        return self.nombre_completo or self.usuario
+
+    @property
+    def first_name(self):
+        if self.nombre_completo:
+            return self.nombre_completo.split()[0]
+        return ""
+
+    @property
+    def last_name(self):
+        if self.nombre_completo:
+            parts = self.nombre_completo.split()
+            return " ".join(parts[1:]) if len(parts) > 1 else ""
+        return ""
+
+    @property
+    def email(self):
+        return self.correo or ""
+
+    @property
     def password(self): return self.contrasena
 
     def set_password(self, raw_password):

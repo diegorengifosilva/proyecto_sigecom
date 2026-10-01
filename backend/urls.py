@@ -5,6 +5,7 @@ from django.urls import path, include, re_path
 from django.conf import settings
 from django.conf.urls.static import static
 from cotizaciones_api.views_frontend import FrontendAppView
+from integracion_api.views import commercial_sync_view
 
 urlpatterns = [
     # API de Usuarios e Identidad
@@ -21,6 +22,24 @@ urlpatterns = [
     path('api/notificaciones/', include('notificaciones_api.urls')),
     path('api/caja_chica/', include('caja_chica_api.urls')),
     path('api/buzon/', include('buzon_api.urls')),
+    path('api/hseq/', include('hseq_api.urls')),
+    path('api/proyectos/', include('proyectos_api.urls')),
+    path('api/proyectos-ev/', include('proyectos_api.urls')),
+    path('api/rrhh/', include('rrhh_api.urls')),
+    path('api/emergencias/', include('emergencias_api.urls')),
+    path('api/salud-ocupacional/', include('salud_ocupacional_api.urls')),
+    path('api/seguridad/', include('seguridad_api.urls')),
+    path('api/integracion/', include('integracion_api.urls')),
+    
+    # Alias de compatibilidad directa con contratos HSEQ
+    path('api/v1/occupational-health/', include('salud_ocupacional_api.urls')),
+    path('api/v1/human-resources/', include('rrhh_api.urls')),
+    path('api/human-resources/', include('rrhh_api.urls')),
+    path('api/brigades/', include('emergencias_api.urls')),
+    path('api/v1/emergency/', include('emergencias_api.urls')),
+    path('api/v1/hr-sync/', include('integracion_api.urls_hr_sync')),
+    path('api/v1/proyectos-ev/commercial-sync', commercial_sync_view),
+    path('api/proyectos-ev/commercial-sync', commercial_sync_view),
 
     # Django admin
     path('admin/', admin.site.urls),

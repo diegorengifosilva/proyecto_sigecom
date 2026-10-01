@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Search, FileText, Filter, MoreHorizontal, LayoutDashboard, ClipboardCheck, TrendingUp, FolderCheck, CalendarRange, ArrowUpRight, X, Trash2, Brush, Pin, PinOff, ExternalLink, Copy, Mail, GitBranch, ShieldCheck, FileDown, ListOrdered, FileSpreadsheet } from "lucide-react";
+import { Plus, Search, FileText, Filter, MoreHorizontal, LayoutDashboard, ClipboardCheck, TrendingUp, FolderCheck, CalendarRange, ArrowUpRight, X, Trash2, Brush, Pin, PinOff, ExternalLink, Copy, Mail, GitBranch, ShieldCheck, FileDown, ListOrdered, FileSpreadsheet, DollarSign, CheckCircle2 } from "lucide-react";
 import api, { openReport } from "@/services/api";
 import ReportIframe from "@/components/ReportIframe";
 import { useAuth } from "@/context/AuthContext";
@@ -1301,194 +1301,342 @@ export default function Comercial({ defaultTab = "cotizaciones" }) {
         </div>
       </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
+      {/* 2. SUB-NAVEGACIÓN HORIZONTAL ESTILO JIRA */}
+      <div className="bg-white rounded-2xl border border-gray-200/90 shadow-xs px-3 sm:px-6">
+        <div className="flex items-center justify-between border-b border-gray-100">
+          <nav className="flex items-center gap-1 sm:gap-2 overflow-x-auto overflow-y-hidden scrollbar-none py-1">
+            {[
+              {
+                id: "oportunidades",
+                label: "Oportunidades",
+                icon: TrendingUp,
+                badge: `${dataOportunidades?.dashboard?.total || 0}`,
+              },
+              {
+                id: "cotizaciones",
+                label: "Cotizaciones",
+                icon: FileText,
+                badge: `${dataCotizaciones?.dashboard?.total || 0}`,
+              },
+              {
+                id: "aperturas",
+                label: "Aperturas",
+                icon: FolderCheck,
+                badge: `${dataAperturas?.dashboard?.total || 0}`,
+              },
+              {
+                id: "programacion",
+                label: "Programación",
+                icon: CalendarRange,
+                badge: "0",
+              },
+            ].map((tab) => {
+              const isActive = currentTab === tab.id;
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => navigate(`/comercial/${tab.id}`)}
+                  className={`group flex items-center gap-2 px-3 sm:px-4 py-2.5 text-xs sm:text-sm font-bold transition-all relative border-b-2 whitespace-nowrap cursor-pointer ${
+                    isActive
+                      ? "border-teal-600 text-teal-700 font-black"
+                      : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
+                  }`}
+                >
+                  <Icon
+                    className={`w-4 h-4 shrink-0 transition-colors ${
+                      isActive ? "text-teal-600" : "text-slate-400 group-hover:text-slate-600"
+                    }`}
+                  />
+                  <span>{tab.label}</span>
+                  {tab.badge !== undefined && (
+                    <span
+                      className={`text-[10.5px] font-black px-2 py-0.5 rounded-full transition-colors ${
+                        isActive
+                          ? "bg-teal-50 text-teal-700 border border-teal-200/80"
+                          : "bg-slate-100 text-slate-500 group-hover:bg-slate-200/80"
+                      }`}
+                    >
+                      {tab.badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
 
-        {/* 1. OPORTUNIDADES */}
-        <button
-          type="button"
-          onClick={() => navigate("/comercial/oportunidades")}
-          className={`w-full text-left bg-white p-3 rounded-2xl border transition-all duration-300 relative overflow-hidden group shadow-sm cursor-pointer active:scale-[0.98] ${currentTab === "oportunidades"
-              ? "border-indigo-500 ring-2 ring-indigo-500/10 shadow-md"
-              : "border-gray-100 hover:border-indigo-300 hover:shadow-md"
-            }`}
-        >
-          <div className="flex justify-between items-start mb-1">
-            <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest block">
-              Oportunidades
-            </span>
-            <div className="flex items-center gap-1.5">
-              <ArrowUpRight className={`w-3.5 h-3.5 text-gray-300 transition-all duration-300 group-hover:text-indigo-400 ${currentTab === "oportunidades" && "text-indigo-500 translate-x-0.5 -translate-y-0.5"}`} />
-              <div className={`p-1.5 rounded-lg transition-all duration-300 ${currentTab === "oportunidades" ? "bg-indigo-600 text-white" : "bg-indigo-50 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white"}`}>
-                <TrendingUp className="w-3.5 h-3.5" />
-              </div>
-            </div>
+          <div className="hidden lg:flex items-center gap-2 text-xs font-semibold text-slate-400 pl-4 py-2 shrink-0">
+            <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse" />
+            <span>Gestión Comercial</span>
           </div>
-
-          <div>
-            <h3 className="text-2xl font-black text-gray-950 tracking-tight leading-none mt-0.5">
-              {isLoadingOportunidades ? (
-                <div className="h-7 w-16 bg-gray-100 animate-pulse rounded-lg" />
-              ) : (
-                `${dataOportunidades?.dashboard?.total || 0}`
-              )}
-            </h3>
-          </div>
-
-          <div className="mt-2.5 pt-1.5 border-t border-gray-100/60 flex items-center justify-between text-[10px] font-bold tracking-tight">
-            <div className="flex flex-col">
-              <span className="text-gray-900 font-black">
-                ${Number(0).toLocaleString('en-US', { maximumFractionDigits: 0 })}
-              </span>
-            </div>
-            <div className="text-right bg-indigo-50/70 text-indigo-700 px-2 py-0.5 rounded-lg flex flex-col items-end">
-              <span className="text-[8px] font-black uppercase tracking-wider leading-none mb-0.5">Este Mes</span>
-              <span className="font-black text-[10px]">
-                {dataOportunidades?.dashboard?.esteMes || 0} • ${Number(0).toLocaleString('en-US', { maximumFractionDigits: 0 })}
-              </span>
-            </div>
-          </div>
-        </button>
-
-        {/* 2. COTIZACIONES */}
-        <button
-          type="button"
-          onClick={() => navigate("/comercial/cotizaciones")}
-          className={`w-full text-left bg-white p-3 rounded-2xl border transition-all duration-300 relative overflow-hidden group shadow-sm cursor-pointer active:scale-[0.98] ${currentTab === "cotizaciones"
-              ? "border-blue-500 ring-2 ring-blue-500/10 shadow-md"
-              : "border-gray-100 hover:border-blue-300 hover:shadow-md"
-            }`}
-        >
-          <div className="flex justify-between items-start mb-1">
-            <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest block">
-              Cotizaciones
-            </span>
-            <div className="flex items-center gap-1.5">
-              <ArrowUpRight className={`w-3.5 h-3.5 text-gray-300 transition-all duration-300 group-hover:text-blue-400 ${currentTab === "cotizaciones" && "text-blue-500 translate-x-0.5 -translate-y-0.5"}`} />
-              <div className={`p-1.5 rounded-lg transition-all duration-300 ${currentTab === "cotizaciones" ? "bg-blue-600 text-white" : "bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white"}`}>
-                <FileText className="w-3.5 h-3.5" />
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <h3 className="text-2xl font-black text-gray-950 tracking-tight leading-none mt-0.5">
-              {isLoadingCotizaciones ? (
-                <div className="h-7 w-16 bg-gray-100 animate-pulse rounded-lg" />
-              ) : (
-                `${dataCotizaciones?.dashboard?.total || 0}`
-              )}
-            </h3>
-          </div>
-
-          <div className="mt-2.5 pt-1.5 border-t border-gray-100/60 flex items-center justify-between text-[10px] font-bold tracking-tight">
-            <div className="flex flex-col">
-              <span className="text-gray-900 font-black">
-                ${Number(dataCotizaciones?.dashboard?.montoTotalDolares || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}
-              </span>
-            </div>
-            <div className="text-right bg-blue-50/70 text-blue-700 px-2 py-0.5 rounded-lg flex flex-col items-end">
-              <span className="text-[8px] font-black uppercase tracking-wider leading-none mb-0.5">Este Mes</span>
-              <span className="font-black text-[10px]">
-                {dataCotizaciones?.dashboard?.esteMes || 0} • ${Number(dataCotizaciones?.dashboard?.montoTotalDolares || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}
-              </span>
-            </div>
-          </div>
-        </button>
-
-        {/* 3. APERTURAS */}
-        <button
-          type="button"
-          onClick={() => navigate("/comercial/aperturas")}
-          className={`w-full text-left bg-white p-3 rounded-2xl border transition-all duration-300 relative overflow-hidden group shadow-sm cursor-pointer active:scale-[0.98] ${
-            currentTab === "aperturas"
-              ? "border-amber-500 ring-2 ring-amber-500/10 shadow-md"
-              : "border-gray-100 hover:border-amber-300 hover:shadow-md"
-          }`}
-        >
-          <div className="flex justify-between items-start mb-1">
-            <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest block">
-              Aperturas
-            </span>
-            <div className="flex items-center gap-1.5">
-              <ArrowUpRight className={`w-3.5 h-3.5 text-gray-300 transition-all duration-300 group-hover:text-amber-400 ${currentTab === "aperturas" && "text-amber-500 translate-x-0.5 -translate-y-0.5"}`} />
-              <div className={`p-1.5 rounded-lg transition-all duration-300 ${currentTab === "aperturas" ? "bg-amber-600 text-white" : "bg-amber-50 text-amber-600 group-hover:bg-amber-600 group-hover:text-white"}`}>
-                <FolderCheck className="w-3.5 h-3.5" />
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <h3 className="text-2xl font-black text-gray-950 tracking-tight leading-none mt-0.5">
-              {isLoadingAperturas ? (
-                <div className="h-7 w-16 bg-gray-100 animate-pulse rounded-lg" />
-              ) : (
-                `${dataAperturas?.dashboard?.total || 0}`
-              )}
-            </h3>
-          </div>
-
-          <div className="mt-2.5 pt-1.5 border-t border-gray-100/60 flex items-center justify-between text-[10px] font-bold tracking-tight">
-            <div className="flex flex-col">
-              <span className="text-gray-900 font-black">
-                ${Number(dataAperturas?.dashboard?.montoTotalDolares || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}
-              </span>
-            </div>
-            <div className="text-right bg-amber-50/70 text-amber-700 px-2 py-0.5 rounded-lg flex flex-col items-end">
-              <span className="text-[8px] font-black uppercase tracking-wider leading-none mb-0.5">Este Mes</span>
-              <span className="font-black text-[10px]">
-                {dataAperturas?.dashboard?.esteMes || 0} • ${Number(dataAperturas?.dashboard?.montoTotalDolares || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}
-              </span>
-            </div>
-          </div>
-        </button>
-
-        {/* 4. PROGRAMACIÓN */}
-        <button
-          type="button"
-          onClick={() => navigate("/comercial/programacion")}
-          className={`w-full text-left bg-white p-3 rounded-2xl border transition-all duration-300 relative overflow-hidden group shadow-sm cursor-pointer active:scale-[0.98] ${currentTab === "programacion"
-              ? "border-emerald-500 ring-2 ring-emerald-500/10 shadow-md"
-              : "border-gray-100 hover:border-emerald-300 hover:shadow-md"
-            }`}
-        >
-          <div className="flex justify-between items-start mb-1">
-            <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest block">
-              Programación
-            </span>
-            <div className="flex items-center gap-1.5">
-              <ArrowUpRight className={`w-3.5 h-3.5 text-gray-300 transition-all duration-300 group-hover:text-emerald-400 ${currentTab === "programacion" && "text-emerald-500 translate-x-0.5 -translate-y-0.5"}`} />
-              <div className={`p-1.5 rounded-lg transition-all duration-300 ${currentTab === "programacion" ? "bg-emerald-600 text-white" : "bg-emerald-50 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white"}`}>
-                <CalendarRange className="w-3.5 h-3.5" />
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <h3 className="text-2xl font-black text-gray-950 tracking-tight leading-none mt-0.5">
-              {false ? (
-                <div className="h-7 w-16 bg-gray-100 animate-pulse rounded-lg" />
-              ) : (
-                `0`
-              )}
-            </h3>
-          </div>
-
-          <div className="mt-2.5 pt-1.5 border-t border-gray-100/60 flex items-center justify-between text-[10px] font-bold tracking-tight">
-            <div className="flex flex-col">
-              <span className="text-gray-900 font-black">
-                ${Number(0).toLocaleString('en-US', { maximumFractionDigits: 0 })}
-              </span>
-            </div>
-            <div className="text-right bg-emerald-50/70 text-emerald-700 px-2 py-0.5 rounded-lg flex flex-col items-end">
-              <span className="text-[8px] font-black uppercase tracking-wider leading-none mb-0.5">Este Mes</span>
-              <span className="font-black text-[10px]">
-                0 • ${Number(0).toLocaleString('en-US', { maximumFractionDigits: 0 })}
-              </span>
-            </div>
-          </div>
-        </button>
+        </div>
       </div>
+
+      {/* 3. FILA ÚNICA DE 4 KPIS CONTEXTUALES SEGÚN LA SECCIÓN ACTIVA */}
+      {currentTab === "cotizaciones" && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 animate-in fade-in duration-200">
+          <div className="bg-white p-3.5 rounded-2xl border border-gray-200/80 shadow-sm flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600 shrink-0">
+                <FileText className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Total Cotizaciones</span>
+                <span className="text-xl font-black text-gray-900 leading-none">{dataCotizaciones?.dashboard?.total || 0}</span>
+              </div>
+            </div>
+            <div className="text-right text-[10px] font-bold text-gray-400 hidden xl:block">
+              <span className="text-blue-600 block">Este Mes: {dataCotizaciones?.dashboard?.esteMes || 0}</span>
+            </div>
+          </div>
+
+          <div className="bg-white p-3.5 rounded-2xl border border-gray-200/80 shadow-sm flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 shrink-0">
+                <DollarSign className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Monto Cartera USD</span>
+                <span className="text-xl font-black text-gray-900 leading-none">
+                  ${Number(dataCotizaciones?.dashboard?.montoTotalDolares || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                </span>
+              </div>
+            </div>
+            <div className="text-right text-[10px] font-bold text-gray-400 hidden xl:block">
+              <span className="text-emerald-600 block">En cartera</span>
+            </div>
+          </div>
+
+          <div className="bg-white p-3.5 rounded-2xl border border-gray-200/80 shadow-sm flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-amber-50 text-amber-600 shrink-0">
+                <ClipboardCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">En Seguimiento</span>
+                <span className="text-xl font-black text-gray-900 leading-none">
+                  {stats.pendientes}
+                </span>
+              </div>
+            </div>
+            <div className="text-right text-[10px] font-bold text-gray-400 hidden xl:block">
+              <span className="text-amber-600 block">Pendientes/Seguimiento</span>
+            </div>
+          </div>
+
+          <div className="bg-white p-3.5 rounded-2xl border border-gray-200/80 shadow-sm flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-teal-50 text-teal-600 shrink-0">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Adjudicadas</span>
+                <span className="text-xl font-black text-gray-900 leading-none">
+                  {stats.adjudicadas}
+                </span>
+              </div>
+            </div>
+            <div className="text-right text-[10px] font-bold text-gray-400 hidden xl:block">
+              <span className="text-teal-600 block">Ganadas con éxito</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {currentTab === "aperturas" && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 animate-in fade-in duration-200">
+          <div className="bg-white p-3.5 rounded-2xl border border-gray-200/80 shadow-sm flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-amber-50 text-amber-600 shrink-0">
+                <FolderCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Total Aperturas</span>
+                <span className="text-xl font-black text-gray-900 leading-none">{dataAperturas?.dashboard?.total || 0}</span>
+              </div>
+            </div>
+            <div className="text-right text-[10px] font-bold text-gray-400 hidden xl:block">
+              <span className="text-amber-600 block">Este Mes: {dataAperturas?.dashboard?.esteMes || 0}</span>
+            </div>
+          </div>
+
+          <div className="bg-white p-3.5 rounded-2xl border border-gray-200/80 shadow-sm flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 shrink-0">
+                <DollarSign className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Monto Aperturas</span>
+                <span className="text-xl font-black text-gray-900 leading-none">
+                  ${Number(dataAperturas?.dashboard?.montoTotalDolares || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                </span>
+              </div>
+            </div>
+            <div className="text-right text-[10px] font-bold text-gray-400 hidden xl:block">
+              <span className="text-emerald-600 block">Dólares USD</span>
+            </div>
+          </div>
+
+          <div className="bg-white p-3.5 rounded-2xl border border-gray-200/80 shadow-sm flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-indigo-50 text-indigo-600 shrink-0">
+                <TrendingUp className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Aperturas con Proyecto</span>
+                <span className="text-xl font-black text-gray-900 leading-none">{dataAperturas?.dashboard?.total || 0}</span>
+              </div>
+            </div>
+            <div className="text-right text-[10px] font-bold text-gray-400 hidden xl:block">
+              <span className="text-indigo-600 block">Vinculadas</span>
+            </div>
+          </div>
+
+          <div className="bg-white p-3.5 rounded-2xl border border-gray-200/80 shadow-sm flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-teal-50 text-teal-600 shrink-0">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Estado de Gestión</span>
+                <span className="text-xl font-black text-gray-900 leading-none">100%</span>
+              </div>
+            </div>
+            <div className="text-right text-[10px] font-bold text-gray-400 hidden xl:block">
+              <span className="text-teal-600 block">Al día</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {currentTab === "oportunidades" && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 animate-in fade-in duration-200">
+          <div className="bg-white p-3.5 rounded-2xl border border-gray-200/80 shadow-sm flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-indigo-50 text-indigo-600 shrink-0">
+                <TrendingUp className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Total Oportunidades</span>
+                <span className="text-xl font-black text-gray-900 leading-none">{dataOportunidades?.dashboard?.total || 0}</span>
+              </div>
+            </div>
+            <div className="text-right text-[10px] font-bold text-gray-400 hidden xl:block">
+              <span className="text-indigo-600 block">Pipeline</span>
+            </div>
+          </div>
+
+          <div className="bg-white p-3.5 rounded-2xl border border-gray-200/80 shadow-sm flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 shrink-0">
+                <DollarSign className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Valor Estimado</span>
+                <span className="text-xl font-black text-gray-900 leading-none">$0</span>
+              </div>
+            </div>
+            <div className="text-right text-[10px] font-bold text-gray-400 hidden xl:block">
+              <span className="text-emerald-600 block">Proyección</span>
+            </div>
+          </div>
+
+          <div className="bg-white p-3.5 rounded-2xl border border-gray-200/80 shadow-sm flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-amber-50 text-amber-600 shrink-0">
+                <ClipboardCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Nuevas este Mes</span>
+                <span className="text-xl font-black text-gray-900 leading-none">{dataOportunidades?.dashboard?.esteMes || 0}</span>
+              </div>
+            </div>
+            <div className="text-right text-[10px] font-bold text-gray-400 hidden xl:block">
+              <span className="text-amber-600 block">En calificación</span>
+            </div>
+          </div>
+
+          <div className="bg-white p-3.5 rounded-2xl border border-gray-200/80 shadow-sm flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-teal-50 text-teal-600 shrink-0">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Maduración Comercial</span>
+                <span className="text-xl font-black text-gray-900 leading-none">Activa</span>
+              </div>
+            </div>
+            <div className="text-right text-[10px] font-bold text-gray-400 hidden xl:block">
+              <span className="text-teal-600 block">En seguimiento</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {currentTab === "programacion" && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 animate-in fade-in duration-200">
+          <div className="bg-white p-3.5 rounded-2xl border border-gray-200/80 shadow-sm flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 shrink-0">
+                <CalendarRange className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Total Programación</span>
+                <span className="text-xl font-black text-gray-900 leading-none">0</span>
+              </div>
+            </div>
+            <div className="text-right text-[10px] font-bold text-gray-400 hidden xl:block">
+              <span className="text-emerald-600 block">Este Mes</span>
+            </div>
+          </div>
+
+          <div className="bg-white p-3.5 rounded-2xl border border-gray-200/80 shadow-sm flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600 shrink-0">
+                <DollarSign className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Monto Presupuestado</span>
+                <span className="text-xl font-black text-gray-900 leading-none">$0</span>
+              </div>
+            </div>
+            <div className="text-right text-[10px] font-bold text-gray-400 hidden xl:block">
+              <span className="text-blue-600 block">USD</span>
+            </div>
+          </div>
+
+          <div className="bg-white p-3.5 rounded-2xl border border-gray-200/80 shadow-sm flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-amber-50 text-amber-600 shrink-0">
+                <TrendingUp className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">En Planificación</span>
+                <span className="text-xl font-black text-gray-900 leading-none">0</span>
+              </div>
+            </div>
+            <div className="text-right text-[10px] font-bold text-gray-400 hidden xl:block">
+              <span className="text-amber-600 block">Pendientes</span>
+            </div>
+          </div>
+
+          <div className="bg-white p-3.5 rounded-2xl border border-gray-200/80 shadow-sm flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-teal-50 text-teal-600 shrink-0">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Cumplimiento</span>
+                <span className="text-xl font-black text-gray-900 leading-none">100%</span>
+              </div>
+            </div>
+            <div className="text-right text-[10px] font-bold text-gray-400 hidden xl:block">
+              <span className="text-teal-600 block">A tiempo</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* FILTROS */}
       <div className="flex flex-col lg:flex-row justify-between items-center gap-3 bg-white p-1.5 rounded-2xl border border-gray-200 shadow-sm">

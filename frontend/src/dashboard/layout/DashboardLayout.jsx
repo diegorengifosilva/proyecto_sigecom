@@ -25,22 +25,44 @@ const NAV_ITEMS = [
       { path: "/logistica/tablas", label: "Tablas" }
     ]
   },
-  { path: "/proyectos", label: "Proyectos", icon: "Briefcase", modulo: "PROYECTOS" },
-  { path: "/compras", label: "Compras", icon: "ShoppingCart", modulo: "COMPRAS" },
+  {
+    path: "/proyectos/home",
+    label: "Proyectos",
+    icon: "Briefcase",
+    modulo: "PROYECTOS",
+    subItems: [
+      { path: "/proyectos/home", label: "Dashboard Principal" },
+      { path: "/proyectos/mis-proyectos", label: "Mis Proyectos" },
+      { path: "/proyectos/evaluaciones", label: "Evaluaciones Estratégicas" },
+      { path: "/proyectos/riesgos", label: "Gestión de Riesgos" },
+      { path: "/proyectos/reportes", label: "Reportes Ejecutivos" }
+    ]
+  },
+  {
+    path: "/compras",
+    label: "Compras",
+    icon: "ShoppingCart",
+    modulo: "COMPRAS",
+    subItems: [
+      { path: "/compras/dashboard", label: "Dashboard Compras" },
+      { path: "/compras/programacion", label: "Ciclo de Compras" },
+      { path: "/compras/trazabilidad", label: "Trazabilidad y SLA" },
+      { path: "/compras/proveedores", label: "Catálogo de Proveedores" },
+      { path: "/compras/reportes", label: "Reportes Ejecutivos" }
+    ]
+  },
   {
     path: "/caja-chica",
     label: "Caja Chica",
     icon: "Wallet",
     modulo: "CAJA CHICA",
     subItems: [
-      { path: "/caja-chica", label: "Panel Principal" },
-      { path: "/caja-chica/solicitud", label: "Solicitud de Gasto" },
-      { path: "/caja-chica/atencion-solicitudes", label: "Atención de Solicitudes" },
-      { path: "/caja-chica/liquidaciones/presentar", label: "Liquidaciones" },
-      { path: "/caja-chica/gastos/aprobacion-liquidacion", label: "Aprobación de Liquidación" },
-      { path: "/caja-chica/movimientos/arqueo", label: "Arqueo de Caja" },
-      { path: "/caja-chica/registros/actividades", label: "Registro de Actividades" },
-      { path: "/caja-chica/reportes", label: "Reportes y Análisis" }
+      { path: "/caja-chica/dashboard", label: "Dashboard Caja Chica" },
+      { path: "/caja-chica/operaciones", label: "Gestión Operativa" },
+      { path: "/caja-chica/portal", label: "Portal del Solicitante" },
+      { path: "/caja-chica/destinatario", label: "Portal del Destinatario" },
+      { path: "/caja-chica/clientes", label: "Catálogo de Clientes" },
+      { path: "/caja-chica/arqueo-reportes", label: "Arqueo y Reportes" }
     ]
   },
   { path: "/almacen", label: "Almacén", icon: "Package", modulo: "LOGISTICA" },
@@ -56,9 +78,78 @@ const NAV_ITEMS = [
       { path: "/maestro/gastos", label: "Gastos y Personal" }
     ]
   },
+  {
+    path: "/hseq/dashboard",
+    label: "HSEQ",
+    icon: "GraduationCap",
+    subItems: [
+      { path: "/hseq/dashboard", label: "Dashboard HSEQ" },
+      { path: "/hseq/capacitaciones", label: "Gestión de Capacitaciones" },
+      { path: "/hseq/induccion-competencias", label: "Inducción y Competencias" },
+      { path: "/hseq/colaboradores-portal", label: "Colaboradores y Portal" },
+      { path: "/hseq/administracion", label: "Administración y Datos" }
+    ]
+  },
+  {
+    path: "/rrhh",
+    label: "Recursos Humanos",
+    icon: "UserCheck",
+    subItems: [
+      { path: "/rrhh", label: "Dashboard RR. HH." },
+      { path: "/rrhh/personal", label: "Gestión y Selección" },
+      { path: "/rrhh/desarrollo", label: "Desarrollo y Cultura" },
+      { path: "/rrhh/nomina-portal", label: "Nómina, Salud y Portal" }
+    ]
+  },
+  {
+    path: "/emergencias",
+    label: "Emergencias y Brigadas",
+    icon: "Flame",
+    subItems: [
+      { path: "/emergencias", label: "Dashboard Emergencias" },
+      { path: "/emergencias/brigadistas", label: "Gestión de Brigadistas" },
+      { path: "/emergencias/operaciones", label: "Simulacros y Respuesta" },
+      { path: "/emergencias/equipamiento", label: "Equipamiento e Inspecciones" }
+    ]
+  },
+  {
+    path: "/salud-ocupacional",
+    label: "Salud Ocupacional",
+    icon: "HeartPulse",
+    subItems: [
+      { path: "/salud-ocupacional", label: "Panel General EMO" },
+      { path: "/salud-ocupacional/gestion-emo", label: "Gestión de EMO y Citas" },
+      { path: "/salud-ocupacional/vigilancia", label: "Vigilancia Médica y Bienestar" },
+      { path: "/salud-ocupacional/habilitaciones-red", label: "Habilitaciones y Red Médica" }
+    ]
+  },
+  {
+    path: "/seguridad/usuarios",
+    label: "Seguridad y RBAC",
+    icon: "ShieldAlert",
+    modulo: "TI",
+    subItems: [
+      { path: "/seguridad/usuarios", label: "Administración Usuarios" },
+      { path: "/seguridad/claves", label: "Gestión de Claves" },
+      { path: "/seguridad/auditoria", label: "Auditoría Forense" }
+    ]
+  },
+  {
+    path: "/integracion/monitor",
+    label: "Integración SIG",
+    icon: "Network",
+    modulo: "TI",
+    subItems: [
+      { path: "/integracion/monitor", label: "Monitor del Bus" },
+      { path: "/integracion/comercial", label: "Comercial → Proyectos" },
+      { path: "/integracion/personas", label: "Personal → RRHH & HSEQ" },
+      { path: "/integracion/incidencias", label: "Bandeja Incidencias" }
+    ]
+  },
   { path: "/audit", label: "Auditoría", icon: "ShieldCheck" },
   { path: "/sugerencias", label: "Sugerencias y Quejas", icon: "MessageSquare" },
   { path: "/usuarios", label: "Configuración de Usuarios", icon: "Users", modulo: "TI" },
+  { path: "/plan-inversion-anual", label: "Plan Inversión Anual", icon: "TrendingUp", modulo: "TI" },
 ];
 
 const PORTALS_NAV_MAP = {
@@ -270,6 +361,24 @@ export default function DashboardLayout() {
     ? user.nombre_completo.split(" ").filter(Boolean).slice(0, 2).map(n => n[0]).join("").toUpperCase()
     : user?.usuario?.substring(0, 2).toUpperCase() || "US";
 
+  const getCurrentModuleMeta = () => {
+    const p = location.pathname;
+    if (p.startsWith("/proyectos")) return { title: "Gestión de Proyectos", subtitle: "Módulo corporativo", icon: "FolderKanban" };
+    if (p.startsWith("/hseq")) return { title: "Capacitaciones HSEQ", subtitle: "Módulo corporativo", icon: "GraduationCap" };
+    if (p.startsWith("/rrhh")) return { title: "Recursos Humanos", subtitle: "Módulo corporativo", icon: "UserCheck" };
+    if (p.startsWith("/emergencias")) return { title: "Gestión de Emergencias", subtitle: "Módulo corporativo", icon: "Flame" };
+    if (p.startsWith("/salud-ocupacional")) return { title: "Salud Ocupacional EMO", subtitle: "Módulo corporativo", icon: "HeartPulse" };
+    if (p.startsWith("/comercial")) return { title: "Gestión Comercial", subtitle: "Módulo corporativo", icon: "FileText" };
+    if (p.startsWith("/logistica") || p.startsWith("/almacen")) return { title: "Logística y Almacén", subtitle: "Módulo corporativo", icon: "ClipboardList" };
+    if (p.startsWith("/compras")) return { title: "Gestión de Compras", subtitle: "Módulo corporativo", icon: "ShoppingCart" };
+    if (p.startsWith("/caja-chica") || p.startsWith("/finanzas")) return { title: "Caja Chica y Finanzas", subtitle: "Módulo corporativo", icon: "Wallet" };
+    if (p.startsWith("/seguridad")) return { title: "Seguridad y RBAC", subtitle: "Módulo corporativo", icon: "ShieldAlert" };
+    if (p.startsWith("/integracion")) return { title: "Integración SIG", subtitle: "Módulo corporativo", icon: "Network" };
+    return { title: "SIGECOM 5.0", subtitle: "Sistema Integrado SIG", icon: "LayoutDashboard" };
+  };
+
+  const currentModuleMeta = getCurrentModuleMeta();
+
   // Form states for password change
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -433,6 +542,22 @@ export default function DashboardLayout() {
       const path = `/${parts.slice(0, index + 1).join("/")}`;
       const isLast = index === parts.length - 1;
       let label = part.charAt(0).toUpperCase() + part.slice(1).replace(/-/g, " ");
+
+      const friendlyLabels = {
+        compras: "Compras",
+        programacion: "Programación",
+        atencion: "Atención de Solicitudes",
+        liquidaciones: "Liquidaciones",
+        ciclo: "Programación",
+        trazabilidad: "Trazabilidad y SLA",
+        proveedores: "Catálogo de Proveedores",
+        reportes: "Reportes Ejecutivos"
+      };
+
+      if (friendlyLabels[part.toLowerCase()]) {
+        label = friendlyLabels[part.toLowerCase()];
+      }
+
       if (isLast && breadcrumbOverride && path === location.pathname) {
         label = breadcrumbOverride;
       }
@@ -452,34 +577,72 @@ export default function DashboardLayout() {
         />
       )}
 
-      {/* Sidebar */}
+      {/* Sidebar estilo HSEQ corporativo */}
       <aside
-        className={`fixed md:relative inset-y-0 left-0 z-50 md:z-40 flex flex-col h-full bg-white border-r border-gray-200 shrink-0 transition-all duration-300 
-          ${isMobileOpen ? "translate-x-0 w-64 shadow-2xl" : "-translate-x-full md:translate-x-0"}
-          ${isExpanded ? "md:w-60" : "md:w-20"}`}
+        className={`fixed md:relative inset-y-0 left-0 z-50 md:z-40 flex flex-col h-full bg-[#163f3b] text-[#eef9f7] border-r border-[#255650] shrink-0 transition-all duration-300 shadow-xl
+          ${isMobileOpen ? "translate-x-0 w-[275px]" : "-translate-x-full md:translate-x-0"}
+          ${isExpanded ? "md:w-[275px]" : "md:w-20"}`}
       >
-        <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
-          <div className="flex items-center overflow-hidden">
-            <img src={logo} alt="Logo" className="h-12 w-12 object-contain shrink-0" />
+        {/* Botón flotante para ocultar / mostrar menú */}
+        <button
+          type="button"
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="hidden md:flex absolute -right-3.5 top-6 z-50 text-[#163f3b] hover:text-[#0b2825] transition items-center justify-center w-7 h-7 rounded-full bg-white shadow-md border border-gray-200 hover:scale-105"
+          title={isExpanded ? "Ocultar menú" : "Mostrar menú"}
+        >
+          {isExpanded ? (
+            <LucideIcons.ChevronLeft className="h-4 w-4" />
+          ) : (
+            <LucideIcons.ChevronRight className="h-4 w-4" />
+          )}
+        </button>
+
+        {/* Brand Header con Tarjeta Blanca y Logo V&C Corporation */}
+        <div className="p-3 pb-2 flex-shrink-0">
+          {isExpanded ? (
+            <NavLink
+              to="/home"
+              className="bg-white rounded-[13px] h-[92px] p-2 flex items-center justify-center shadow-md border border-white/20 transition-transform hover:scale-[1.01]"
+              title="V&C Corporation"
+            >
+              <img
+                src="/vc-corporation-logo.png"
+                alt="V&C Corporation"
+                className="max-h-[74px] w-full object-contain"
+              />
+            </NavLink>
+          ) : (
+            <NavLink
+              to="/home"
+              className="bg-white rounded-xl w-12 h-12 p-1.5 mx-auto flex items-center justify-center shadow-md border border-white/20 transition-transform hover:scale-105"
+              title="V&C Corporation"
+            >
+              <img
+                src="/vc-corporation-logo.png"
+                alt="V&C"
+                className="max-h-8 w-auto object-contain"
+              />
+            </NavLink>
+          )}
+
+          {/* Módulo corporativo activo */}
+          <div className={`mt-3 flex items-center gap-2.5 px-2 py-1.5 border-b border-[#255650] ${isExpanded ? "" : "justify-center"}`}>
+            <Icon name={currentModuleMeta.icon} className="h-5 w-5 text-teal-300 shrink-0" />
             {isExpanded && (
-              <span className="text-[14.5px] font-bold text-gray-900 ml-2 whitespace-nowrap">
-                SIGECOM 5.0
-              </span>
+              <div className="min-w-0">
+                <strong className="block text-[13.5px] font-bold text-white truncate leading-tight">
+                  {currentModuleMeta.title}
+                </strong>
+                <span className="block text-[11px] text-[#b9d1cd]">
+                  {currentModuleMeta.subtitle}
+                </span>
+              </div>
             )}
           </div>
-          <button
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="p-1 rounded-md hover:bg-gray-100 transition-colors"
-          >
-            {isExpanded ? (
-              <LucideIcons.PanelLeftClose className="h-5 w-5 text-gray-400 hover:text-indigo-600" />
-            ) : (
-              <LucideIcons.PanelLeftOpen className="h-5 w-5 text-gray-400 hover:text-indigo-600" />
-            )}
-          </button>
         </div>
 
-        <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
+        {/* Navegación Scrollable */}
+        <nav className="flex-1 px-2.5 py-2 space-y-1.5 overflow-y-auto scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent">
           {filteredNavItems.map((item) => {
             const hasSubItems = item.subItems && item.subItems.length > 0;
             const isActive = location.pathname.startsWith(item.path);
@@ -514,16 +677,16 @@ export default function DashboardLayout() {
                           setOpenMenus((prev) => ({ ...prev, [item.label]: true }));
                         }}
                         title={item.label}
-                        className={`flex-1 flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all ${
-                          isActive
-                            ? "bg-indigo-50 text-indigo-600 shadow-sm"
-                            : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                        className={`flex-1 flex items-center px-3 py-2 text-sm font-semibold rounded-lg transition-all ${
+                          isActive || isOpen
+                            ? "bg-[#168e87] text-white shadow-sm"
+                            : "text-[#f2fbfa] hover:bg-white/10 hover:text-white"
                         } ${isExpanded ? "" : "justify-center"}`}
                       >
                         <Icon
                           name={item.icon}
-                          className={`h-5 w-5 ${isExpanded ? "mr-3" : ""} ${
-                            isActive ? "text-indigo-600" : "text-gray-400"
+                          className={`h-5 w-5 shrink-0 ${isExpanded ? "mr-2.5" : ""} ${
+                            isActive || isOpen ? "text-white" : "text-teal-200/90"
                           }`}
                         />
                         {isExpanded && <span className="truncate">{item.label}</span>}
@@ -534,7 +697,7 @@ export default function DashboardLayout() {
                         <button
                           type="button"
                           onClick={handleParentClick}
-                          className={`p-2.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors ml-1`}
+                          className="p-2 rounded-lg text-teal-200/80 hover:text-white hover:bg-white/10 transition-colors ml-1"
                         >
                           <LucideIcons.ChevronDown
                             className={`h-4 w-4 transition-transform duration-200 ${
@@ -547,17 +710,34 @@ export default function DashboardLayout() {
 
                     {/* Subopciones */}
                     {isExpanded && isOpen && (
-                      <div className="mt-1 ml-5 pl-5 border-l border-gray-200 space-y-1 py-0.5 animate-in slide-in-from-top-1 duration-200">
-                        {item.subItems.map((sub) => {
-                          const isSubActive = location.pathname.startsWith(sub.path);
+                      <div className="mt-1 ml-4 pl-3 border-l border-[#255650] space-y-1 py-1 animate-in slide-in-from-top-1 duration-200">
+                        {item.subItems.map((sub, idx) => {
+                          if (sub.isHeader) {
+                            return (
+                              <div
+                                key={`hdr-${idx}-${sub.label}`}
+                                className="pt-2.5 pb-0.5 px-2 text-[10px] font-bold uppercase tracking-wider text-teal-300/80 flex items-center gap-1.5"
+                              >
+                                <span className="w-1.5 h-1.5 rounded-full bg-teal-400"></span>
+                                <span>{sub.label}</span>
+                              </div>
+                            );
+                          }
+                          const isSubActive =
+                            location.pathname === sub.path ||
+                            location.pathname.startsWith(`${sub.path}/`) ||
+                            (sub.label === "Ciclo de Compras" &&
+                              ["/compras/programacion", "/compras/atencion", "/compras/liquidaciones", "/compras/ciclo"].some((p) =>
+                                location.pathname.startsWith(p)
+                              ));
                           return (
                             <NavLink
                               key={sub.path}
                               to={sub.path}
-                              className={`block px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                              className={`block px-3 py-1.5 text-xs rounded-[6px] transition-all ${
                                 isSubActive
-                                  ? "bg-indigo-50 text-indigo-600 shadow-sm font-bold"
-                                  : "text-gray-500 hover:bg-gray-50 hover:text-gray-800"
+                                  ? "border border-white bg-black/25 text-white font-bold shadow-sm"
+                                  : "text-[#c7dbd8] hover:bg-white/10 hover:text-white font-medium"
                               }`}
                             >
                               {sub.label}
@@ -571,16 +751,16 @@ export default function DashboardLayout() {
                   <NavLink
                     to={item.path}
                     title={item.label}
-                    className={`flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all ${
+                    className={`flex items-center px-3 py-2 text-sm font-semibold rounded-lg transition-all ${
                       isActive
-                        ? "bg-indigo-50 text-indigo-600 shadow-sm"
-                        : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                        ? "bg-[#168e87] text-white shadow-sm"
+                        : "text-[#f2fbfa] hover:bg-white/10 hover:text-white"
                     } ${isExpanded ? "" : "justify-center"}`}
                   >
                     <Icon
                       name={item.icon}
-                      className={`h-5 w-5 ${isExpanded ? "mr-3" : ""} ${
-                        isActive ? "text-indigo-600" : "text-gray-400"
+                      className={`h-5 w-5 shrink-0 ${isExpanded ? "mr-2.5" : ""} ${
+                        isActive ? "text-white" : "text-teal-200/90"
                       }`}
                     />
                     {isExpanded && <span className="truncate">{item.label}</span>}
@@ -591,7 +771,8 @@ export default function DashboardLayout() {
           })}
         </nav>
 
-        <div className="flex-shrink-0 flex border-t border-gray-200 p-4 bg-gray-50/50">
+        {/* Footer Usuario / Mi Cuenta */}
+        <div className="flex-shrink-0 border-t border-[#255650] p-3 bg-black/20">
           <ActionMenu
             align="start"
             title="Mi Cuenta"
@@ -615,7 +796,7 @@ export default function DashboardLayout() {
                     {PORTALS_LIST.filter(p => isSuperAdmin || userModules.some(m => m.toUpperCase() === p.modulo.toUpperCase())).map((item) => (
                       <button
                         key={item.path}
-                        className="flex items-center w-full text-left gap-2 px-3 py-2 text-[10px] font-bold uppercase tracking-tight rounded-xl text-slate-600 hover:bg-slate-50 hover:text-indigo-600 transition-colors"
+                        className="flex items-center w-full text-left gap-2 px-3 py-2 text-[10px] font-bold uppercase tracking-tight rounded-xl text-slate-600 hover:bg-slate-50 hover:text-teal-600 transition-colors"
                         onClick={() => changePortal(item.key, item.path)}
                       >
                         <Icon name={item.icon} className="w-4 h-4 opacity-70" />
@@ -634,16 +815,16 @@ export default function DashboardLayout() {
               }
             ]}
             customTrigger={
-              <button className="flex items-center w-full min-w-0 text-left hover:bg-gray-100/80 p-1.5 rounded-xl transition-all outline-none">
-                <div className="h-9 w-9 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold text-xs shrink-0">
+              <button className="flex items-center w-full min-w-0 text-left hover:bg-white/10 p-1.5 rounded-xl transition-all outline-none">
+                <div className="h-8 w-8 rounded-full bg-[#168e87] border border-white/40 flex items-center justify-center text-white font-bold text-xs shrink-0 shadow">
                   {initials}
                 </div>
                 {isExpanded && (
-                  <div className="ml-3 min-w-0 flex-1 pr-2 relative">
-                    <p className="text-xs font-bold text-gray-800 truncate leading-tight">
+                  <div className="ml-2.5 min-w-0 flex-1 pr-1 relative">
+                    <p className="text-xs font-bold text-white truncate leading-tight">
                       {user?.nombre_completo || user?.usuario || "Usuario"}
                     </p>
-                    <p className="text-[10px] font-semibold text-gray-400 truncate leading-none mt-0.5">
+                    <p className="text-[10px] font-semibold text-[#b9d1cd] truncate leading-none mt-0.5">
                       {user?.cargo_nombre || "Miembro"}
                     </p>
                   </div>

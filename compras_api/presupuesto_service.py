@@ -119,7 +119,16 @@ def obtener_resumen_presupuesto(id_apertura, tipo_gasto_id=None, exclude_id=None
 
     for oc in oc_qs:
         monto = float(oc.monto_dolares or 0.0)
-        tg = oc.tipo_gasto_id or 2
+        tg = oc.tipo_gasto_id
+        if not tg:
+            cog_prefix = str(oc.cog or oc.codigo or "").strip()[:2]
+            if cog_prefix == "04": tg = 3
+            elif cog_prefix == "05": tg = 4
+            elif cog_prefix == "06": tg = 5
+            elif cog_prefix == "01": tg = 1
+            elif cog_prefix == "02": tg = 2
+            else: tg = 2
+
         programado_total += monto
         if rubro_gasto_ids is not None:
             if cat_key == "otros":
@@ -133,6 +142,17 @@ def obtener_resumen_presupuesto(id_apertura, tipo_gasto_id=None, exclude_id=None
     for pas in pasajes_qs:
         monto = float(pas.monto_dolares or 0.0)
         tg = pas.tipo_gasto_id or 4
+        cog_prefix = str(pas.cog or pas.codigo or "").strip()[:2]
+        mov_p = str(pas.tipo_movimiento or "").strip()
+        if tg in (1, 2) and (cog_prefix == "05" or mov_p == "4"):
+            tg = 4
+        elif tg in (1, 2) and (cog_prefix == "04" or mov_p == "3"):
+            tg = 3
+        elif tg in (1, 2) and (cog_prefix == "06" or mov_p == "5"):
+            tg = 5
+        elif not tg or tg in (1, 2):
+            tg = 4
+
         programado_total += monto
         if rubro_gasto_ids is not None:
             if cat_key == "otros":
@@ -145,7 +165,16 @@ def obtener_resumen_presupuesto(id_apertura, tipo_gasto_id=None, exclude_id=None
 
     for cc in caja_qs:
         monto = float(cc.monto_dolares or 0.0)
-        tg = cc.tipo_gasto_id or 1
+        tg = cc.tipo_gasto_id
+        if not tg:
+            cog_prefix = str(cc.cog or cc.codigo or "").strip()[:2]
+            if cog_prefix == "04": tg = 3
+            elif cog_prefix == "05": tg = 4
+            elif cog_prefix == "06": tg = 5
+            elif cog_prefix == "01": tg = 1
+            elif cog_prefix == "02": tg = 2
+            else: tg = 4
+
         programado_total += monto
         if rubro_gasto_ids is not None:
             if cat_key == "otros":

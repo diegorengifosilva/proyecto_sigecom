@@ -443,7 +443,6 @@ class Gerencia(models.Model):
     def __str__(self):
         return self.nombre
 
-
 class TipoSolicitud(models.Model):
     id_tipo = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=100)
@@ -457,5 +456,54 @@ class TipoSolicitud(models.Model):
     def __str__(self):
         return self.nombre
 
+class TipoDocumento(models.Model):
+    id_tipo_documento = models.AutoField(
+        primary_key=True, 
+        db_column='id_tipo_documento'
+    )
+    codigo = models.CharField(
+        max_length=10, 
+        unique=True, 
+        db_column='codigo'
+    )
+    nombre = models.CharField(
+        max_length=100, 
+        db_column='nombre'
+    )
+    activo = models.BooleanField(
+        default=True, 
+        db_column='activo'
+    )
 
+    class Meta:
+        managed = False
+        db_table = 'tipo_documento'
+        verbose_name = 'Tipo de Documento'
+        verbose_name_plural = 'Tipos de Documento'
+
+    def __str__(self):
+        return f"{self.codigo} - {self.nombre}"
+
+class TipoConcepto(models.Model):
+    id_tipo_concepto = models.IntegerField(
+        primary_key=True, 
+        db_column='id_tipo_concepto'
+    )
+    nombre = models.CharField(
+        max_length=100, 
+        db_column='nombre'
+    )
+    activo = models.BooleanField(
+        default=True, 
+        db_column='activo'
+    )
+
+    class Meta:
+        managed = False
+        db_table = 'tipo_concepto'
+        verbose_name = 'Tipo de Concepto'
+        verbose_name_plural = 'Tipos de Conceptos'
+
+    def __str__(self):
+        return f"{self.id_tipo_concepto} - {self.nombre}"
 

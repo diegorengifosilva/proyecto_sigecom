@@ -21,7 +21,8 @@ from .models import (
     GuiaItem,
     GuiaSalida,
     SolicitudGastoEstadoHistorial,
-    SolicitudCajaChica
+    SolicitudCajaChica,
+    SolicitudCajaChicaComprobante
 )
 from django.contrib.auth import get_user_model
 from django.utils.timezone import localtime
@@ -212,7 +213,11 @@ class MisSolicitudesTablaSerializer(serializers.ModelSerializer):
         ]
 
     def get_solicitante_nombre(self, obj):
-        return obj.solicitante.get_full_name() or obj.solicitante.username
+        if not obj.solicitante:
+            return ""
+        if hasattr(obj.solicitante, "get_full_name"):
+            return obj.solicitante.get_full_name() or getattr(obj.solicitante, "username", "") or getattr(obj.solicitante, "usuario", "")
+        return getattr(obj.solicitante, "nombre_completo", "") or getattr(obj.solicitante, "username", "") or getattr(obj.solicitante, "usuario", "")
 
 # ========== Serializer para el detalle ==========
 class MisSolicitudesDetalleSerializer(serializers.ModelSerializer):
@@ -244,7 +249,11 @@ class MisSolicitudesDetalleSerializer(serializers.ModelSerializer):
         ]
 
     def get_solicitante_nombre(self, obj):
-        return obj.solicitante.get_full_name() or obj.solicitante.username
+        if not obj.solicitante:
+            return ""
+        if hasattr(obj.solicitante, "get_full_name"):
+            return obj.solicitante.get_full_name() or getattr(obj.solicitante, "username", "") or getattr(obj.solicitante, "usuario", "")
+        return getattr(obj.solicitante, "nombre_completo", "") or getattr(obj.solicitante, "username", "") or getattr(obj.solicitante, "usuario", "")
 
 # ========== Serializer historial ==========
 class SolicitudGastoEstadoHistorialSerializer(serializers.ModelSerializer):
@@ -655,6 +664,12 @@ class SolicitudCajaChicaSerializer(serializers.ModelSerializer):
     fecha_transferencia_corta = serializers.SerializerMethodField()
     fecha_liquidacion_corta = serializers.SerializerMethodField()
     tipo_solicitud_nombre = serializers.SerializerMethodField()
+    fecha_rendicion_corta = serializers.SerializerMethodField()
+    fecha_recepcion_corta = serializers.SerializerMethodField()
+    total_rendido = serializers.SerializerMethodField()
+    saldo_rendicion = serializers.SerializerMethodField()
+    comprobantes = serializers.SerializerMethodField()
+    planilla_movilidad = serializers.SerializerMethodField()
 
     class Meta:
         model = SolicitudCajaChica
@@ -708,6 +723,23 @@ class SolicitudCajaChicaSerializer(serializers.ModelSerializer):
             'tipo_gasto',
             'tipo_gasto_nombre',
             'nombre',
+            # Campos de Liquidación SIGECOM 4.0
+            'monto_entregado',
+            'fecha_rendicion',
+            'fecha_rendicion_corta',
+            'monto_rendicion',
+            'total_rendido',
+            'saldo_rendicion',
+            'reintegro',
+            'monto_reintegro',
+            'devolucion',
+            'monto_devolucion',
+            'devolucion_igv',
+            'fecha_recepcion',
+            'fecha_recepcion_corta',
+            'aprobado_rendicion',
+            'comprobantes',
+            'planilla_movilidad',
         ]
 
     def get_id_registro(self, obj):
@@ -811,5 +843,173 @@ class SolicitudCajaChicaSerializer(serializers.ModelSerializer):
         if obj.tipo_moneda in ('S', 's', 'PEN', 'pen'):
             return float(obj.monto_soles or 0.00)
         return 0.00
+
+    def get_fecha_rendicion_corta(self, obj):
+        if not obj.fecha_rendicion:
+            return ""
+        try:
+            return obj.fecha_rendicion.strftime("%d-%m-%Y")
+        except:
+            return str(obj.fecha_rendicion)
+
+    def get_fecha_recepcion_corta(self, obj):
+        if not obj.fecha_recepcion:
+            return ""
+        try:
+            return obj.fecha_recepcion.strftime("%d-%m-%Y")
+        except:
+            return str(obj.fecha_recepcion)
+
+    def get_total_rendido(self, obj):
+        if obj.total_rendido is not None and float(obj.total_rendido) > 0:
+            return float(obj.total_rendido)
+        try:
+            from caja_chica_api.models import SolicitudCajaChicaComprobante
+            s = SolicitudCajaChicaComprobante.objects.filter(id_registro=obj).aggregate(models.Sum('importe'))['importe__sum']
+            if s is not None and float(s) > 0:
+                return float(s)
+        except:
+            pass
+        return float(obj.total_rendido or 0.00)
+
+    def get_saldo_rendicion(self, obj):
+        if obj.saldo_rendicion is not None:
+            return float(obj.saldo_rendicion)
+        tot = self.get_total_rendido(obj)
+        presupuesto = float(obj.monto_entregado or obj.monto_soles or obj.monto_rendicion or 0.00)
+        reintegro = float(obj.monto_reintegro or obj.reintegro or 0.00)
+        devolucion = float(obj.monto_devolucion or obj.devolucion or 0.00)
+        return round(presupuesto + reintegro - devolucion - tot, 2)
+
+    def get_comprobantes(self, obj):
+        from caja_chica_api.models import SolicitudCajaChicaComprobante, VcMovOrdenSoliLiq
+        # 1. Consultar en la tabla oficial SolicitudCajaChicaComprobante
+        try:
+            items = SolicitudCajaChicaComprobante.objects.filter(
+                id_registro=obj
+            ).select_related('id_tipo_documento', 'id_tipo_concepto').order_by('orden', 'id_comprobante')
+            
+            if items.exists():
+                res = []
+                for it in items:
+                    doc_tipo = it.id_tipo_documento.codigo if it.id_tipo_documento else ''
+                    num_doc = (it.numero_documento or '').strip()
+                    if 'PLANILLA' in (it.detalle or '').upper() or doc_tipo == 'PLL':
+                        doc_str = num_doc if num_doc else 'P000000'
+                    elif num_doc and doc_tipo:
+                        doc_str = f"{doc_tipo} {num_doc}".strip()
+                    elif num_doc:
+                        doc_str = num_doc
+                    elif doc_tipo:
+                        doc_str = doc_tipo
+                    else:
+                        doc_str = 'S/N'
+                    
+                    fec_str = it.fecha.strftime('%Y-%m-%d') if it.fecha else ''
+                    res.append({
+                        "id": it.id_comprobante,
+                        "id_comprobante": it.id_comprobante,
+                        "num": it.orden,
+                        "orden": it.orden,
+                        "fecha": fec_str,
+                        "documento": doc_str,
+                        "tipo_doc": doc_tipo,
+                        "id_tipo_documento": it.id_tipo_documento_id,
+                        "tipo_documento_nombre": it.id_tipo_documento.nombre if it.id_tipo_documento else '',
+                        "numero": num_doc,
+                        "numero_documento": num_doc,
+                        "ruc": it.ruc or '',
+                        "proveedor": it.razon_social or '',
+                        "razon_social": it.razon_social or '',
+                        "detalle": it.detalle or '',
+                        "concepto": it.id_tipo_concepto.nombre if it.id_tipo_concepto else '',
+                        "id_tipo_concepto": it.id_tipo_concepto_id if it.id_tipo_concepto_id else None,
+                        "igv": float(it.igv or 0.00),
+                        "importe": float(it.importe or 0.00),
+                    })
+                return res
+        except Exception as e:
+            logger.warning(f"Error consultando SolicitudCajaChicaComprobante: {e}")
+
+        # 2. Fallback histórico en VcMovOrdenSoliLiq
+        items_old = VcMovOrdenSoliLiq.objects.filter(reg=obj.id_registro).order_by('num')
+        res = []
+        for it in items_old:
+            doc_str = ""
+            if it.dot == 'PLL' or 'PLANILLA' in (it.cod or '').upper():
+                doc_str = it.don if it.don else "P000000"
+            else:
+                parts = [p for p in [it.dot, it.dos, it.don] if p]
+                doc_str = "-".join(parts) if parts else (it.don or "")
+            
+            res.append({
+                "id": it.num,
+                "id_comprobante": it.num,
+                "num": it.num,
+                "orden": it.num,
+                "fecha": it.fec or "",
+                "documento": doc_str,
+                "tipo_doc": it.dot or "",
+                "serie": it.dos or "",
+                "numero": it.don or "",
+                "ruc": it.prc or "",
+                "proveedor": it.prn or "",
+                "razon_social": it.prn or "",
+                "codigo_concepto": it.coc or "",
+                "detalle": it.cod or "",
+                "concepto": it.cod or "",
+                "igv": 0.00,
+                "importe": float(it.imp or 0.00),
+            })
+        return res
+
+    def get_planilla_movilidad(self, obj):
+        from caja_chica_api.models import SolicitudCajaChicaPlanilla, VcMovOrdenSoliLiqMov
+        items = SolicitudCajaChicaPlanilla.objects.filter(id_registro=obj.id_registro).select_related(
+            'id_trabajador', 'id_registro__id_destinatario', 'id_registro__id_solicitante'
+        ).order_by('orden', 'id_planilla')
+        
+        if items.exists():
+            res = []
+            for idx, it in enumerate(items, 1):
+                trab_nombre = ""
+                u = it.id_trabajador or obj.id_destinatario or obj.id_solicitante
+                if u:
+                    if hasattr(u, "get_full_name"):
+                        trab_nombre = u.get_full_name() or getattr(u, "username", "") or getattr(u, "usuario", "")
+                    else:
+                        trab_nombre = getattr(u, "nombre_completo", "") or getattr(u, "username", "") or getattr(u, "usuario", "") or str(u)
+
+                res.append({
+                    "id_planilla": it.id_planilla,
+                    "id": it.id_planilla,
+                    "num": idx,
+                    "orden": idx,
+                    "fecha": it.fecha.strftime("%Y-%m-%d") if it.fecha else "",
+                    "fecha_corta": it.fecha.strftime("%d/%m/%Y") if it.fecha else "",
+                    "motivo": it.motivo or "MOVILIDAD",
+                    "destino": it.destino or "",
+                    "id_trabajador": it.id_trabajador_id,
+                    "trabajador": trab_nombre,
+                    "persona": trab_nombre,
+                    "monto": float(it.monto or 0.00),
+                })
+            return res
+
+        mov_items = VcMovOrdenSoliLiqMov.objects.filter(reg=obj.id_registro).order_by('num')
+        return [{
+            "id": it.num,
+            "id_planilla": None,
+            "num": idx,
+            "orden": idx,
+            "fecha": it.fec or "",
+            "fecha_corta": it.fec or "",
+            "motivo": it.mot or "MOVILIDAD",
+            "destino": it.des or "",
+            "id_trabajador": None,
+            "trabajador": it.per or "",
+            "persona": it.per or "",
+            "monto": float(it.mon or 0.00),
+        } for idx, it in enumerate(mov_items, 1)]
 
 

@@ -128,30 +128,68 @@ export const StatusBadge = ({ status }) => {
 
 export const ERPTable = ({
   headers,
+  columns,
+  data,
   children,
   mobileCards,
   loading,
   onSort,
   sortConfig,
-  pagination
+  pagination,
+  pageSize,
+  currentPage,
+  totalItems,
+  onPageChange,
+  emptyMessage,
+  rowKey = "id",
+  onRowClick
 }) => {
   const [isEditingPage, setIsEditingPage] = React.useState(false);
   const [inputPageVal, setInputPageVal] = React.useState("");
 
-  React.useEffect(() => {
-    if (pagination) {
-      setInputPageVal(String(pagination.currentPage));
+  // Normalizar encabezados tanto si se pasa 'headers' como si se pasa 'columns'
+  const resolvedHeaders = React.useMemo(() => {
+    if (Array.isArray(headers)) return headers;
+    if (Array.isArray(columns)) {
+      return columns.map((col) => ({
+        key: col.key,
+        label: col.title || col.label || col.key || "",
+        className: col.className || (col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"),
+      }));
     }
-  }, [pagination?.currentPage]);
+    return [];
+  }, [headers, columns]);
+
+  // Normalizar objeto de paginación
+  const resolvedPagination = React.useMemo(() => {
+    if (pagination) return pagination;
+    if (totalItems !== undefined && typeof onPageChange === "function") {
+      const ps = pageSize || 10;
+      return {
+        currentPage: currentPage || 1,
+        totalPages: Math.ceil(totalItems / ps) || 1,
+        totalItems,
+        pageSize: ps,
+        onPageChange,
+      };
+    }
+    return null;
+  }, [pagination, totalItems, onPageChange, pageSize, currentPage]);
+
+  React.useEffect(() => {
+    if (resolvedPagination) {
+      setInputPageVal(String(resolvedPagination.currentPage));
+    }
+  }, [resolvedPagination?.currentPage]);
 
   const handlePageSubmit = () => {
     setIsEditingPage(false);
-    if (!pagination) return;
+    if (!resolvedPagination) return;
     const pageNum = parseInt(inputPageVal, 10);
-    if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= pagination.totalPages) {
-      pagination.onPageChange(pageNum);
+    if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= resolvedPagination.totalPages) {
+      resolvedPagination.onPageChange(pageNum);
     } else {
-      setInputPageVal(String(pagination.currentPage));
+      setInputPageVal(String(resolvedPagination.currentPage));
     }
   };
 
@@ -160,8 +198,8 @@ export const ERPTable = ({
       handlePageSubmit();
     } else if (e.key === 'Escape') {
       setIsEditingPage(false);
-      if (pagination) {
-        setInputPageVal(String(pagination.currentPage));
+      if (resolvedPagination) {
+        setInputPageVal(String(resolvedPagination.currentPage));
       }
     }
   };
@@ -176,11 +214,11 @@ export const ERPTable = ({
       setInputPageVal("");
       return;
     }
-    if (!pagination) return;
+    if (!resolvedPagination) return;
     const num = parseInt(val, 10);
     if (!isNaN(num)) {
-      if (num > pagination.totalPages) {
-        setInputPageVal(String(pagination.totalPages));
+      if (num > resolvedPagination.totalPages) {
+        setInputPageVal(String(resolvedPagination.totalPages));
       } else if (num < 1) {
         setInputPageVal("1");
       } else {
@@ -189,6 +227,38 @@ export const ERPTable = ({
     }
   };
 
+  // Renderizar filas declarativas si se pasa data y columns
+  const renderedContent = children || (
+    Array.isArray(data) && data.length > 0 && Array.isArray(columns) ? (
+      data.map((row, rowIdx) => (
+        <tr
+          key={row[rowKey] || row.id_registro || rowIdx}
+          onClick={() => onRowClick && onRowClick(row, rowIdx)}
+          className={`transition-colors ${
+            onRowClick
+              ? "cursor-pointer hover:bg-amber-50/40 select-none group"
+              : "hover:bg-slate-50/70"
+          }`}
+        >
+          {columns.map((col, colIdx) => (
+            <td
+              key={colIdx}
+              className={`px-4 py-2.5 text-xs text-slate-700 ${col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"} ${col.className || ""}`}
+            >
+              {typeof col.render === "function" ? col.render(row[col.key], row, rowIdx) : (row[col.key] ?? "-")}
+            </td>
+          ))}
+        </tr>
+      ))
+    ) : (
+      <tr>
+        <td colSpan={resolvedHeaders.length || 1} className="px-6 py-12 text-center text-gray-400 text-xs font-semibold">
+          {emptyMessage || "No hay registros disponibles"}
+        </td>
+      </tr>
+    )
+  );
+
   return (
     <div className="bg-white shadow-sm border border-gray-200 rounded-xl overflow-hidden transition-all duration-300 hover:shadow-md flex flex-col h-full">
       {/* Vista Escritorio / Tabletas */}
@@ -196,7 +266,7 @@ export const ERPTable = ({
         <table className="min-w-full table-auto divide-y divide-gray-200">
           <thead className="bg-gray-50/80 sticky top-0 z-10 backdrop-blur-md">
             <tr>
-              {headers.map((h, i) => (
+              {resolvedHeaders.map((h, i) => (
                 <th
                   key={i}
                   onClick={() => onSort && h.key && onSort(h.key)}
@@ -217,14 +287,14 @@ export const ERPTable = ({
           <tbody className="bg-white divide-y divide-gray-200 relative">
             {loading ? (
               <tr>
-                <td colSpan={headers.length} className="px-6 py-12 text-center text-gray-400">
+                <td colSpan={resolvedHeaders.length || 1} className="px-6 py-12 text-center text-gray-400">
                   <div className="flex flex-col items-center justify-center space-y-3">
                     <LucideIcons.Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
                     <span className="text-sm font-medium animate-pulse">Cargando datos...</span>
                   </div>
                 </td>
               </tr>
-            ) : children}
+            ) : renderedContent}
           </tbody>
         </table>
       </div>
@@ -248,7 +318,7 @@ export const ERPTable = ({
       {pagination && (
         <div className="bg-gray-50/50 px-4 py-2 border-t border-gray-100 flex items-center justify-between">
           <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest truncate">
-            {pagination.from} - {pagination.to} de {pagination.total}
+            {(pagination.from !== undefined ? pagination.from : (pagination.total || pagination.totalItems ? ((pagination.currentPage - 1) * (pagination.pageSize || 10) + 1) : 0))} - {(pagination.to !== undefined ? pagination.to : Math.min(pagination.currentPage * (pagination.pageSize || 10), pagination.total ?? pagination.totalItems ?? 0))} de {(pagination.total !== undefined ? pagination.total : (pagination.totalItems ?? 0))}
           </div>
           <div className="flex items-center space-x-1.5">
             {/* Primero << */}

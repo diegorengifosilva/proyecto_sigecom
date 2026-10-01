@@ -17,9 +17,6 @@ from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseU
 
 from django.db import models
 
-##=========##
-## USUARIO ##
-##=========##
 class VcTabAreas(models.Model):
     codigo = models.IntegerField(primary_key=True)
     nombre = models.CharField(max_length=150)
@@ -141,17 +138,6 @@ class SegUsuario(models.Model):
         except VcTabBancos.DoesNotExist:
             return ""
 
-#========================================================================================
-
-##====================##
-## PANTALLA PRINCIPAL ##
-##====================##
-
-#========================================================================================
-
-##====================##
-## SOLICITUD DE GASTO ##
-##====================##
 class Solicitud(models.Model):
     # Estados
     ESTADOS = [
@@ -224,18 +210,6 @@ class SolicitudGastoEstadoHistorial(models.Model):
     def __str__(self):
         return f"{self.solicitud.numero_solicitud}: {self.estado_anterior} → {self.estado_nuevo}"
 
-#========================================================================================
-
-##=========================##
-## ATENCIÓN DE SOLICITUDES ##
-##=========================##
-
-
-#========================================================================================
-
-##===============##
-## LIQUIDACIONES ##
-##===============##
 class DocumentoGasto(models.Model):
     solicitud = models.ForeignKey(
         "Solicitud",
@@ -413,17 +387,6 @@ class RazonSocial(models.Model):
     def __str__(self):
         return f"{self.ruc} - {self.razon_social}"
 
-#========================================================================================
-
-##===========================##
-## APROBACIÓN DE LIQUIDACIÓN ##
-##===========================##
-
-#========================================================================================
-
-##============##
-## CAJA CHICA ##
-##============##
 class CajaDiaria(models.Model):
     fecha = models.DateField(unique=True)  # Un registro por día
     monto_base = models.DecimalField(max_digits=12, decimal_places=2, default=0)  # monto puro ingresado por usuario
@@ -444,17 +407,6 @@ class CajaDiaria(models.Model):
             f"Obs: {self.observaciones}"
         )
 
-#========================================================================================
-
-##=========================##
-## REGISTRO DE ACTIVIDADES ##
-##=========================##
-
-#========================================================================================
-
-##==================##
-## GUÍAS DE SALIDAS ##
-##==================##
 class GuiaSalida(models.Model):
     ESTADOS = (
         ('Pendiente', 'Pendiente'),
@@ -482,29 +434,6 @@ class GuiaItem(models.Model):
 
     def __str__(self):
         return f"{self.cantidad} x {self.descripcion}"
-
-#========================================================================================
-
-##=========================##
-## ESTADÍSTICAS Y REPORTES ##
-##=========================##
-
-#========================================================================================
-
-##===============##
-## EDITAR PERFIL ##
-##===============##
-
-#========================================================================================
-
-##====================##
-## CAMBIAR CONTRASEÑA ##
-##====================##
-
-#========================================================================================
-
-
-
 
 class Notificacion(models.Model):
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
@@ -692,6 +621,7 @@ class EstadoCaja(models.Model):
 
 
 
+
 class SolicitudCajaChica(models.Model):
     id_registro = models.AutoField(primary_key=True)
     id_apertura = models.ForeignKey(
@@ -763,6 +693,18 @@ class SolicitudCajaChica(models.Model):
         blank=True, 
         db_column='tipo_movimiento'
     )
+    monto_entregado = models.DecimalField(max_digits=12, decimal_places=2, default=0.00, null=True, blank=True, db_column='monto_entregado')
+    fecha_rendicion = models.DateTimeField(null=True, blank=True, db_column='fecha_rendicion')
+    monto_rendicion = models.DecimalField(max_digits=12, decimal_places=2, default=0.00, null=True, blank=True, db_column='monto_rendicion')
+    total_rendido = models.DecimalField(max_digits=12, decimal_places=2, default=0.00, null=True, blank=True, db_column='total_rendido')
+    saldo_rendicion = models.DecimalField(max_digits=12, decimal_places=2, default=0.00, null=True, blank=True, db_column='saldo_rendicion')
+    reintegro = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, db_column='reintegro')
+    monto_reintegro = models.DecimalField(max_digits=12, decimal_places=2, default=0.00, null=True, blank=True, db_column='monto_reintegro')
+    devolucion = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, db_column='devolucion')
+    monto_devolucion = models.DecimalField(max_digits=12, decimal_places=2, default=0.00, null=True, blank=True, db_column='monto_devolucion')
+    devolucion_igv = models.DecimalField(max_digits=12, decimal_places=2, default=0.00, null=True, blank=True, db_column='devolucion_igv')
+    fecha_recepcion = models.DateTimeField(null=True, blank=True, db_column='fecha_recepcion')
+    aprobado_rendicion = models.CharField(max_length=1, default='0', null=True, blank=True, db_column='aprobado_rendicion')
 
     class Meta:
         managed = False
@@ -774,5 +716,207 @@ class SolicitudCajaChica(models.Model):
 
     def __str__(self):
         return f"Solicitud Caja Chica {self.cog or self.codigo or self.id_registro} - {self.concepto or ''}"
+
+class SolicitudCajaChicaComprobante(models.Model):
+    # ── IDENTIFICADOR Y RELACIÓN PRINCIPAL ──────────────────────
+    id_comprobante = models.AutoField(
+        primary_key=True,
+        db_column='id_comprobante'
+    )
+    id_registro = models.ForeignKey(
+        'SolicitudCajaChica',
+        on_delete=models.CASCADE,
+        db_column='id_registro',
+        related_name='comprobantes'
+    )
+
+    # ── CONTROL Y FECHA ─────────────────────────────────────────
+    orden = models.IntegerField(
+        default=1,
+        db_column='orden'
+    )
+    fecha = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_column='fecha'
+    )
+
+    # ── TIPO DE DOCUMENTO Y CONCEPTO (FKs) ──────────────────────
+    id_tipo_documento = models.ForeignKey(
+        'core.TipoDocumento',
+        on_delete=models.PROTECT,
+        db_column='id_tipo_documento',
+        null=True,
+        blank=True,
+        related_name='comprobantes_caja_chica'
+    )
+    id_tipo_concepto = models.ForeignKey(
+        'core.TipoConcepto',
+        on_delete=models.PROTECT,
+        db_column='id_tipo_concepto',
+        null=True,
+        blank=True,
+        related_name='comprobantes_caja_chica'
+    )
+
+    # ── DATOS FISCALES Y EMISOR ─────────────────────────────────
+    numero_documento = models.CharField(
+        max_length=100,
+        null=True,
+        blank=True,
+        db_column='numero_documento'
+    )
+    ruc = models.CharField(
+        max_length=20,
+        null=True,
+        blank=True,
+        db_column='ruc'
+    )
+    razon_social = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        db_column='razon_social'
+    )
+    detalle = models.CharField(
+        max_length=500,
+        null=True,
+        blank=True,
+        db_column='detalle'
+    )
+
+    # ── VALORES ECONÓMICOS ──────────────────────────────────────
+    igv = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0.00,
+        db_column='igv'
+    )
+    importe = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0.00,
+        db_column='importe'
+    )
+
+    class Meta:
+        managed = False
+        db_table = 'solicitud_caja_chica_comprobante'
+        verbose_name = 'Comprobante de Solicitud de Caja Chica'
+        verbose_name_plural = 'Comprobantes de Solicitud de Caja Chica'
+        ordering = ['orden']
+
+    def __str__(self):
+        doc_tipo = self.id_tipo_documento.codigo if self.id_tipo_documento else "DOC"
+        return f"{doc_tipo} {self.numero_documento or 'S/N'} - {self.razon_social or 'Sin Razón Social'} ({self.importe})"
+
+class SolicitudCajaChicaPlanilla(models.Model):
+    # ── IDENTIFICADOR Y RELACIONES PRINCIPALES ──────────────────
+    id_planilla = models.AutoField(
+        primary_key=True,
+        db_column='id_planilla'
+    )
+    id_registro = models.ForeignKey(
+        'SolicitudCajaChica',
+        on_delete=models.CASCADE,
+        db_column='id_registro',
+        related_name='planillas'
+    )
+    id_trabajador = models.ForeignKey(
+        'users.Usuario',
+        on_delete=models.SET_NULL,
+        to_field='id_usuario',
+        db_column='id_trabajador',
+        null=True,
+        blank=True,
+        related_name='planillas_movilidad'
+    )
+
+    # ── CONTROL Y FECHAS ────────────────────────────────────────
+    orden = models.IntegerField(
+        default=1,
+        db_column='orden'
+    )
+    fecha_registro = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_column='fecha_registro'
+    )
+    fecha = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_column='fecha'
+    )
+
+    # ── DETALLE DEL TRASLADO ────────────────────────────────────
+    motivo = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        db_column='motivo'
+    )
+    destino = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        db_column='destino'
+    )
+
+    # ── VALOR ECONÓMICO ─────────────────────────────────────────
+    monto = models.DecimalField(
+        max_digits=11,
+        decimal_places=2,
+        default=0.00,
+        db_column='monto'
+    )
+
+    class Meta:
+        managed = False
+        db_table = 'solicitud_caja_chica_planilla'
+        verbose_name = 'Planilla de Movilidad de Solicitud de Caja Chica'
+        verbose_name_plural = 'Planillas de Movilidad de Solicitud de Caja Chica'
+        ordering = ['orden']
+
+    def __str__(self):
+        trabajador_nombre = (self.id_trabajador.get_full_name() if hasattr(self.id_trabajador, "get_full_name") else str(self.id_trabajador)) if self.id_trabajador else "Sin Asignar"
+        return f"Planilla #{self.orden} - Solicitud #{self.id_registro_id} - {trabajador_nombre} ({self.monto})"
+
+class VcMovOrdenSoliLiq(models.Model):
+    reg = models.IntegerField(primary_key=True)
+    num = models.IntegerField(default=1)
+    fec = models.CharField(max_length=10, blank=True, null=True)
+    dot = models.CharField(max_length=3, blank=True, null=True)
+    dos = models.CharField(max_length=10, blank=True, null=True)
+    don = models.CharField(max_length=25, blank=True, null=True)
+    prc = models.CharField(max_length=15, blank=True, null=True)
+    prn = models.CharField(max_length=120, blank=True, null=True)
+    coc = models.CharField(max_length=10, blank=True, null=True)
+    cod = models.CharField(max_length=150, blank=True, null=True)
+    imp = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+
+    class Meta:
+        managed = False
+        db_table = 'vc_mov_orden_soli_liq'
+
+    def __str__(self):
+        return f"Doc {self.reg}-{self.num} ({self.cod}: {self.imp})"
+
+class VcMovOrdenSoliLiqMov(models.Model):
+    reg = models.IntegerField(primary_key=True)
+    fecr = models.CharField(max_length=10, blank=True, null=True)
+    num = models.IntegerField(default=0)
+    fec = models.CharField(max_length=10, blank=True, null=True)
+    mot = models.CharField(max_length=100, blank=True, null=True)
+    des = models.CharField(max_length=100, blank=True, null=True)
+    per = models.CharField(max_length=100, blank=True, null=True)
+    mon = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+
+    class Meta:
+        managed = False
+        db_table = 'vc_mov_orden_soli_liq_mov'
+
+    def __str__(self):
+        return f"Mov {self.reg}-{self.num} ({self.des}: {self.mon})"
+
 
 

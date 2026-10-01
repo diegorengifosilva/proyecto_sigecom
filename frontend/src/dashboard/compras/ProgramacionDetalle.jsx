@@ -203,6 +203,34 @@ export default function ProgramacionDetalle({ idApertura }) {
     return item.id_solicitud || item.id_pasaje || item.id_registro_directo || (String(item.id_registro).includes('_') ? item.id_registro.split('_')[1] : item.id_registro);
   };
 
+  const getSolCategoryGasto = (s) => {
+    const cog = String(s.cog || s.codigo || "").trim();
+    const prefix = cog.length >= 2 ? cog.substring(0, 2) : "";
+    if (prefix === "04") return 3; // Mano de Obra
+    if (prefix === "05") return 4; // Gastos de Servicio
+    if (prefix === "06") return 5; // Otros
+    if (prefix === "01") return 1; // Equipos
+    if (prefix === "02") return 2; // Materiales
+
+    if (s.categoria_solicitud === "pasaje" || s.transporte || String(s.tipo || "").toLowerCase().includes("pasaje")) {
+      const mov = String(s.tipo_movimiento || "").trim();
+      if (mov === "4") return 4;
+      if (mov === "3") return 3;
+      if (mov === "5") return 5;
+      const tg = Number(s.tipo_gasto);
+      if (tg === 3 || tg === 4 || tg === 5) return tg;
+      return 4; // Por defecto pasajes son Gastos de Servicio
+    }
+
+    const tg = Number(s.tipo_gasto);
+    if (tg >= 1 && tg <= 5) return tg;
+
+    const mov = Number(s.tipo_movimiento);
+    if (mov >= 1 && mov <= 5) return mov;
+
+    return tg || mov || 5;
+  };
+
   const handleDuplicarGrupo = async (item) => {
     try {
       const categoria = getCategoriaFromSol(item);
@@ -538,25 +566,6 @@ export default function ProgramacionDetalle({ idApertura }) {
 
   const solicitudes = data.solicitudes || [];
 
-  const suministrosApertura = data.apertura_suministros || [];
-  const serviciosApertura = data.apertura_servicios || [];
-
-  const getCategoryItems = (catId) => {
-    if (catId === "suministros") {
-      return suministrosApertura.filter(s => s.id_tipo_gasto === 1 || s.id_tipo_gasto === 2);
-    }
-    if (catId === "mano_obra") {
-      return serviciosApertura.filter(s => s.id_tipo_gasto === 3);
-    }
-    if (catId === "costo_servicios") {
-      return serviciosApertura.filter(s => s.id_tipo_gasto === 4);
-    }
-    if (catId === "otros") {
-      return serviciosApertura.filter(s => s.id_tipo_gasto === 5 || !s.id_tipo_gasto);
-    }
-    return [];
-  };
-
   // Totales Generales
   const totalPresupuesto = Number(data.presupuesto || 0);
   const totalProgramado = solicitudes.reduce((sum, s) => sum + Number(s.monto_dolares || 0), 0);
@@ -664,16 +673,22 @@ export default function ProgramacionDetalle({ idApertura }) {
                   <div className="p-5 space-y-4">
                     {categories
                       .filter(cat => {
-                        const presentIds = data.tipos_gasto_presentes;
-                        if (!presentIds) return true;
-                        return (cat.gastoIds || cat.movIds).some(id => presentIds.includes(id));
+                        const budget = cat.budgetKeys.reduce((sum, key) => sum + Number(data[key] || 0), 0);
+                        const catSols = solicitudes.filter(s => {
+                          const gasto = getSolCategoryGasto(s);
+                          if (cat.id === "suministros") return gasto === 1 || gasto === 2;
+                          if (cat.id === "mano_obra") return gasto === 3;
+                          if (cat.id === "costo_servicios") return gasto === 4;
+                          if (cat.id === "otros") return gasto === 5 || (gasto < 1 || gasto > 5 || !gasto);
+                          return (cat.gastoIds || cat.movIds).includes(gasto);
+                        });
+                        return budget > 0 || catSols.length > 0;
                       })
                       .map((cat) => {
                       const budget = cat.budgetKeys.reduce((sum, key) => sum + Number(data[key] || 0), 0);
-                      const catItems = getCategoryItems(cat.id);
                       const catSols = solicitudes
                         .filter(s => {
-                          const gasto = Number(s.tipo_gasto !== undefined && s.tipo_gasto !== null ? s.tipo_gasto : s.tipo_movimiento);
+                          const gasto = getSolCategoryGasto(s);
                           if (cat.id === "suministros") return gasto === 1 || gasto === 2;
                           if (cat.id === "mano_obra") return gasto === 3;
                           if (cat.id === "costo_servicios") return gasto === 4;
@@ -689,7 +704,7 @@ export default function ProgramacionDetalle({ idApertura }) {
                       const programmedSum = catSols.reduce((sum, s) => sum + Number(s.monto_dolares || 0), 0);
                       const availableSum = Math.max(0, budget - programmedSum);
 
-                      if (budget === 0 && catSols.length === 0 && catItems.length === 0) return null;
+                      if (budget === 0 && catSols.length === 0) return null;
 
                       const isExpanded = expandedCategories.includes(cat.id);
 
@@ -708,15 +723,12 @@ export default function ProgramacionDetalle({ idApertura }) {
                               )}
                               <cat.icon className={`w-4.5 h-4.5 ${cat.color} shrink-0`} />
                               <span className="text-[12px] font-black text-slate-800 uppercase tracking-widest">{cat.name}</span>
-                              <span className="px-2 py-0.5 bg-slate-200/90 text-slate-700 text-[9px] font-black rounded-full uppercase" title="Ítems presupuestados en esta categoría">
-                                {catItems.length} {catItems.length === 1 ? "Ítem" : "Ítems"}
-                              </span>
                               {catSols.length > 0 ? (
-                                <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200/60 text-[9px] font-black rounded-full uppercase" title="Solicitudes de gasto registradas">
+                                <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200/60 text-[9px] font-black rounded-full uppercase" title="Partidas / Solicitudes de gasto registradas">
                                   {catSols.length} {catSols.length === 1 ? "Solicitud" : "Solicitudes"}
                                 </span>
                               ) : (
-                                <span className="px-2 py-0.5 bg-slate-100 text-slate-400 text-[9px] font-bold rounded-full uppercase" title="Sin solicitudes de gasto aún">
+                                <span className="px-2 py-0.5 bg-slate-100 text-slate-400 text-[9px] font-bold rounded-full uppercase" title="Sin solicitudes registradas aún">
                                   0 Solicitudes
                                 </span>
                               )}
@@ -749,102 +761,13 @@ export default function ProgramacionDetalle({ idApertura }) {
                                 transition={{ duration: 0.15 }}
                                 className="overflow-hidden bg-white"
                               >
-                                {/* SECCIÓN 1: ÍTEMS PRESUPUESTADOS DE LA APERTURA */}
-                                {catItems.length > 0 && (
-                                  <div className="border-b border-slate-200/80 bg-slate-50/40">
-                                    <div className="px-5 py-2.5 bg-slate-100/70 border-b border-slate-200/60 flex items-center justify-between">
-                                      <div className="flex items-center gap-2">
-                                        <cat.icon className={`w-3.5 h-3.5 ${cat.color}`} />
-                                        <span className="text-[10px] font-black text-slate-700 uppercase tracking-wider">
-                                          Ítems Presupuestados ({cat.name})
-                                        </span>
-                                      </div>
-                                      <span className="text-[9.5px] font-bold text-slate-500 uppercase">
-                                        {catItems.length} {catItems.length === 1 ? "Registro" : "Registros"} en Orden
-                                      </span>
-                                    </div>
-                                    <div className="overflow-x-auto">
-                                      <table className="w-full text-left border-collapse text-xs">
-                                        <thead>
-                                          <tr className="bg-slate-50 text-slate-500 text-[9.5px] font-black uppercase tracking-wider border-b border-slate-200/60">
-                                            <th className="px-4 py-2 w-12 text-center">N°</th>
-                                            <th className="px-4 py-2 w-36">Código</th>
-                                            <th className="px-4 py-2">Descripción / Concepto</th>
-                                            <th className="px-4 py-2 w-28 text-center">Cant. / UM</th>
-                                            <th className="px-4 py-2 w-32 text-right">Costo Unit.</th>
-                                            <th className="px-4 py-2 w-32 text-right">Presupuesto</th>
-                                            <th className="px-4 py-2 w-32 text-center">Cronograma</th>
-                                          </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100 bg-white">
-                                          {catItems.map((item, idx) => {
-                                            const isGroupHeader = item.nivel === 0;
-                                            const code = item.codigo_item || item.codigo_servicio || (isGroupHeader ? `GRP-${item.codigo_grupo || idx + 1}` : "—");
-                                            const desc = item.descripcion || item.descripcion_item || item.nombre_grupo || item.nombre_servicio || "Sin descripción";
-                                            const cant = Number(item.cantidad || item.horas || 1);
-                                            const um = item.tipo_unidad || (item.horas ? "HRS" : "UNI");
-                                            const unitCost = Number(item.costo_precio || 0);
-                                            const totalCost = Number(item.costo_total || 0);
-                                            
-                                            return (
-                                              <tr 
-                                                key={item.id_registro || idx}
-                                                className={`transition-colors ${isGroupHeader ? "bg-slate-50/60 font-semibold text-slate-900" : "hover:bg-slate-50/80 text-slate-700"}`}
-                                              >
-                                                <td className="px-4 py-2 text-center text-slate-400 font-mono text-[11px]">
-                                                  {idx + 1}
-                                                </td>
-                                                <td className="px-4 py-2 font-mono font-bold text-slate-800 text-[11px] whitespace-nowrap">
-                                                  {code}
-                                                </td>
-                                                <td className="px-4 py-2">
-                                                  <div className="flex flex-col">
-                                                    <span className="font-semibold text-slate-800 text-xs line-clamp-2" title={desc}>
-                                                      {desc}
-                                                    </span>
-                                                    {item.proveedor && (
-                                                      <span className="text-[10px] text-slate-400 truncate mt-0.5">
-                                                        Prov: {item.proveedor}
-                                                      </span>
-                                                    )}
-                                                  </div>
-                                                </td>
-                                                <td className="px-4 py-2 text-center font-bold text-slate-700 whitespace-nowrap">
-                                                  {cant} <span className="text-[10px] font-normal text-slate-400">{um}</span>
-                                                </td>
-                                                <td className="px-4 py-2 text-right font-bold text-slate-600 whitespace-nowrap">
-                                                  {formatCurrency(unitCost)}
-                                                </td>
-                                                <td className="px-4 py-2 text-right font-black text-slate-900 whitespace-nowrap">
-                                                  {formatCurrency(totalCost)}
-                                                </td>
-                                                <td className="px-4 py-2 text-center whitespace-nowrap">
-                                                  {item.fini ? (
-                                                    <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
-                                                      {item.fini} {item.fmax ? `al ${item.fmax}` : ""}
-                                                    </span>
-                                                  ) : (
-                                                    <span className="text-[10px] font-bold text-slate-400">
-                                                      Por programar
-                                                    </span>
-                                                  )}
-                                                </td>
-                                              </tr>
-                                            );
-                                          })}
-                                        </tbody>
-                                      </table>
-                                    </div>
-                                  </div>
-                                )}
-
-                                {/* SECCIÓN 2: SOLICITUDES DE GASTO */}
+                                {/* PARTIDAS / SOLICITUDES DE GASTO REGISTRADAS */}
                                 <div className="px-5 py-3 bg-slate-50 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
-                                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Solicitudes de Gasto</span>
+                                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Partidas Registradas</span>
                                   <div className="flex items-center gap-2">
                                     <button
                                       onClick={() => {
-                                        setSelectedCategoryForOrden({ ...cat, budget, programmedSum, availableSum, items: catItems });
+                                        setSelectedCategoryForOrden({ ...cat, budget, programmedSum, availableSum });
                                         setOrdenCompraModalOpen(true);
                                       }}
                                       className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-black rounded-lg border border-emerald-200/60 bg-emerald-50/30 text-emerald-700 hover:bg-emerald-50 transition-colors shadow-sm active:scale-95 cursor-pointer"
@@ -854,7 +777,7 @@ export default function ProgramacionDetalle({ idApertura }) {
                                     </button>
                                     <button
                                       onClick={() => {
-                                        setSelectedCategoryForPasaje({ ...cat, budget, programmedSum, availableSum, items: catItems });
+                                        setSelectedCategoryForPasaje({ ...cat, budget, programmedSum, availableSum });
                                         setPasajeTransporteDefault("A");
                                         setPasajeModalOpen(true);
                                       }}
@@ -865,7 +788,7 @@ export default function ProgramacionDetalle({ idApertura }) {
                                     </button>
                                     <button
                                       onClick={() => {
-                                        setSelectedCategoryForPasaje({ ...cat, budget, programmedSum, availableSum, items: catItems });
+                                        setSelectedCategoryForPasaje({ ...cat, budget, programmedSum, availableSum });
                                         setPasajeTransporteDefault("T");
                                         setPasajeModalOpen(true);
                                       }}
@@ -876,7 +799,7 @@ export default function ProgramacionDetalle({ idApertura }) {
                                     </button>
                                     <button
                                       onClick={() => {
-                                        setSelectedCategoryForCajaChica({ ...cat, budget, programmedSum, availableSum, items: catItems });
+                                        setSelectedCategoryForCajaChica({ ...cat, budget, programmedSum, availableSum });
                                         setCajaChicaModalOpen(true);
                                       }}
                                       className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-black rounded-lg border border-purple-200/60 bg-purple-50/30 text-purple-700 hover:bg-purple-50 transition-colors shadow-sm active:scale-95"

@@ -17,11 +17,12 @@ const fetchRepresentantes = async () => {
   return data.filter(r => r.nombre_representante !== null && r.nombre_representante.trim() !== "");
 };
 
-export default function TablaRepresentantes() {
+export default function TablaRepresentantes({ pageSize: propPageSize } = {}) {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, tableAreaRef] = useResponsivePageSize();
+  const [responsivePageSize, tableAreaRef] = useResponsivePageSize();
+  const pageSize = propPageSize || responsivePageSize;
   
   // ESTADOS PARA EL MODAL
   const [modalOpen, setModalOpen] = useState(false);

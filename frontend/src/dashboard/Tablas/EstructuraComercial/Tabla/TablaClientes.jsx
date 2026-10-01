@@ -20,12 +20,14 @@ const fetchClientes = async () => {
 export default function TablaClientes({
   title = "Empresas Clientes",
   subtitle = "Directorio de clientes y empresas registradas",
-  buttonLabel = "Nuevo Cliente"
+  buttonLabel = "Nuevo Cliente",
+  pageSize: propPageSize
 }) {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, tableAreaRef] = useResponsivePageSize();
+  const [responsivePageSize, tableAreaRef] = useResponsivePageSize();
+  const pageSize = propPageSize || responsivePageSize;
 
   // ESTADOS PARA EL MODAL
   const [modalOpen, setModalOpen] = useState(false);
