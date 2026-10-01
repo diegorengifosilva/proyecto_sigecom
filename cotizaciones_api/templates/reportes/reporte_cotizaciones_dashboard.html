@@ -81,6 +81,36 @@ table{
     font-size:12px;
 }
 
+.wrap-aperturas{
+    width:max-content;
+    max-width:100%;
+    margin:0 auto;
+}
+
+.tabla-aperturas{
+    width:auto;
+    margin:0 auto;
+    table-layout:auto;
+    font-size:11px;
+}
+
+.tabla-aperturas thead th{
+    padding:6px 8px;
+    white-space:nowrap;
+    font-size:10px;
+    letter-spacing:0;
+}
+
+.tabla-aperturas tbody td{
+    padding:5px 8px;
+    white-space:nowrap;
+}
+
+.tabla-aperturas .total-final td{
+    font-size:11px;
+    padding:6px 8px;
+}
+
 /* encabezado */
 thead th{
     background:#008080;
@@ -144,7 +174,7 @@ tbody tr:hover{
 </style>
 </head>
 <body>
-<div id="report-content-wrapper">
+<div id="report-content-wrapper" class="{% if es_aperturas %}wrap-aperturas{% endif %}">
     <div class="header">
         <div>
             <img class="logo-img" src="{% static 'logo.png' %}" alt="Logo Empresa">
@@ -163,16 +193,47 @@ tbody tr:hover{
             AGRUPADO POR ÁREA
         </h3>
 
-        <table id="tabla_reporte_dashboard">
+        <table id="tabla_reporte_dashboard" class="{% if es_aperturas %}tabla-aperturas{% endif %}">
             <thead>
+                {% if es_aperturas %}
+                <tr>
+                    <th>Nombre</th>
+                    <th>Equipos</th>
+                    <th>Materiales</th>
+                    <th>H.H.</th>
+                    <th>H.H. O.Area</th>
+                    <th>Costo Entrega</th>
+                    <th>Servicios</th>
+                    <th>Otros</th>
+                    <th>Utilidad</th>
+                    <th>Importe</th>
+                    <th>O</th>
+                </tr>
+                {% else %}
                 <tr>
                     <th>ÁREA</th>
                     <th>N° {{ tipo_registro_label }}</th>
                     <th>IMPORTE TOTAL</th>
                 </tr>
+                {% endif %}
             </thead>
             <tbody>
                 {% for row in resultados %}
+                {% if es_aperturas %}
+                <tr>
+                    <td style="font-weight: 600;">{{ row.area }}</td>
+                    <td class="text-right" data-num="{{ row.equipos }}">{{ row.equipos|format_custom }}</td>
+                    <td class="text-right" data-num="{{ row.materiales }}">{{ row.materiales|format_custom }}</td>
+                    <td class="text-right" data-num="{{ row.hh }}">{{ row.hh|format_custom }}</td>
+                    <td class="text-right" data-num="{{ row.hh_oarea }}">{{ row.hh_oarea|format_custom }}</td>
+                    <td class="text-right" data-num="{{ row.entrega }}">{{ row.entrega|format_custom }}</td>
+                    <td class="text-right" data-num="{{ row.servicios }}">{{ row.servicios|format_custom }}</td>
+                    <td class="text-right" data-num="{{ row.otros }}">{{ row.otros|format_custom }}</td>
+                    <td class="text-right" data-num="{{ row.utilidad }}">{{ row.utilidad|format_custom }}</td>
+                    <td class="text-right" data-num="{{ row.importe }}" style="font-weight: 700;">{{ row.importe|format_custom }}</td>
+                    <td class="text-center" data-num="{{ row.cantidad }}">{{ row.cantidad }}</td>
+                </tr>
+                {% else %}
                 <tr>
                     <td style="font-weight: 600;">{{ row.area }}</td>
                     <td class="text-center" data-num="{{ row.cantidad }}">{{ row.cantidad }}</td>
@@ -180,14 +241,30 @@ tbody tr:hover{
                         {{ row.importe|format_custom:"$" }}
                     </td>
                 </tr>
+                {% endif %}
                 {% empty %}
                 <tr>
-                    <td colspan="3" class="text-center">
+                    <td colspan="{% if es_aperturas %}11{% else %}3{% endif %}" class="text-center">
                         No existen datos para los filtros seleccionados
                     </td>
                 </tr>
                 {% endfor %}
                 
+                {% if es_aperturas %}
+                <tr class="total-final">
+                    <td style="text-align:left; font-weight: bold;">TOTAL GENERAL</td>
+                    <td class="text-right" data-num="{{ totales_ap.equipos }}">{{ totales_ap.equipos|format_custom }}</td>
+                    <td class="text-right" data-num="{{ totales_ap.materiales }}">{{ totales_ap.materiales|format_custom }}</td>
+                    <td class="text-right" data-num="{{ totales_ap.hh }}">{{ totales_ap.hh|format_custom }}</td>
+                    <td class="text-right" data-num="{{ totales_ap.hh_oarea }}">{{ totales_ap.hh_oarea|format_custom }}</td>
+                    <td class="text-right" data-num="{{ totales_ap.entrega }}">{{ totales_ap.entrega|format_custom }}</td>
+                    <td class="text-right" data-num="{{ totales_ap.servicios }}">{{ totales_ap.servicios|format_custom }}</td>
+                    <td class="text-right" data-num="{{ totales_ap.otros }}">{{ totales_ap.otros|format_custom }}</td>
+                    <td class="text-right" data-num="{{ totales_ap.utilidad }}">{{ totales_ap.utilidad|format_custom }}</td>
+                    <td class="text-right" data-num="{{ totales_ap.importe }}">{{ totales_ap.importe|format_custom }}</td>
+                    <td class="text-center" data-num="{{ totales_ap.cantidad }}">{{ totales_ap.cantidad }}</td>
+                </tr>
+                {% else %}
                 <tr class="total-final">
                     <td style="text-align:left; font-weight: bold;">TOTAL GENERAL</td>
                     <td></td>
@@ -195,6 +272,7 @@ tbody tr:hover{
                         {{ total_general|format_custom:"$" }}
                     </td>
                 </tr>
+                {% endif %}
             </tbody>
         </table>
     </div>
@@ -214,6 +292,7 @@ document.addEventListener("DOMContentLoaded", function(){
 function exportarExcelReal(){
     const tabla = document.getElementById("tabla_reporte_dashboard");
     const filas = tabla.querySelectorAll("tr");
+    const colSpan = {{ es_aperturas|yesno:"11,3" }};
 
     let excel = `
     <table border="1" style="border-collapse:collapse;font-family:Segoe UI;font-size:12px;">`;
@@ -221,16 +300,16 @@ function exportarExcelReal(){
     /* ===== TITULO ===== */
     excel += `
     <tr>
-        <td colspan="3" style="font-size:18px;font-weight:bold;text-align:center;background:#0f766e;color:white;padding:10px;">
+        <td colspan="${colSpan}" style="font-size:18px;font-weight:bold;text-align:center;background:#0f766e;color:white;padding:10px;">
             {{ titulo }}
         </td>
     </tr>
     <tr>
-        <td colspan="3" style="text-align:center;font-weight:bold;padding:6px;background:#f8fafc;">
+        <td colspan="${colSpan}" style="text-align:center;font-weight:bold;padding:6px;background:#f8fafc;">
             AGRUPADO POR ÁREA
         </td>
     </tr>
-    <tr><td colspan="3"></td></tr>
+    <tr><td colspan="${colSpan}"></td></tr>
     `;
 
     /* ===== TABLA ===== */
@@ -245,7 +324,9 @@ function exportarExcelReal(){
             }
 
             if (cell.classList.contains("text-right")) {
-                style += "text-align:right;mso-number-format:'$#,##0.00';";
+                style += colSpan === 11
+                    ? "text-align:right;mso-number-format:'#,##0.00';"
+                    : "text-align:right;mso-number-format:'$#,##0.00';";
             } else if (cell.classList.contains("text-center")) {
                 style += "text-align:center;";
             }

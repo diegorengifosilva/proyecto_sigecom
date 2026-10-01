@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  Loader, Search, MoreHorizontal, ChartSpline, Plus, Edit2, Trash2
+import { useNavigate, useLocation } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { 
+  Loader, Search, Plus
 } from "lucide-react";
 import api from "@/services/api";
-import { toast } from "react-toastify";
 import Table from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import ClienteModal from "../Modal/ClienteModal";
 import useResponsivePageSize from "@/hook/useResponsivePageSize";
 
 const fetchClientes = async () => {
@@ -23,76 +22,26 @@ export default function TablaClientes({
   buttonLabel = "Nuevo Cliente",
   pageSize: propPageSize
 }) {
-  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [responsivePageSize, tableAreaRef] = useResponsivePageSize();
   const pageSize = propPageSize || responsivePageSize;
 
-  // ESTADOS PARA EL MODAL
-  const [modalOpen, setModalOpen] = useState(false);
-  const [selectedCliente, setSelectedCliente] = useState(null);
+  const basePath = location.pathname.includes("/maestro/compras") ? "/maestro/compras" : "/maestro/comercial";
 
   const { data: clientes = [], isLoading, isFetching } = useQuery({
     queryKey: ["maestra-clientes"],
     queryFn: fetchClientes,
   });
 
-  // MUTACIÓN PARA GUARDAR/ACTUALIZAR
-  const saveMutation = useMutation({
-    mutationFn: async (formData) => {
-      const esEdicion = !!selectedCliente;
-      if (esEdicion) {
-        return await api.put(`core/clientes/`, formData);
-      } else {
-        return await api.post("core/clientes/", formData);
-      }
-    },
-    onSuccess: (response) => {
-      queryClient.invalidateQueries(["maestra-clientes"]);
-      const mensaje = response.data?.message || "Operación exitosa";
-      toast.success(mensaje, {
-        description: `La empresa ${selectedCliente ? 'se actualizó' : 'se registró'} correctamente.`
-      });
-      setModalOpen(false);
-      setSelectedCliente(null);
-    },
-    onError: (error) => {
-      const msg = error.response?.data?.error || "Error al procesar";
-      toast.error("No se pudo guardar la empresa", {
-        description: msg
-      });
-    }
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: async (idCliente) => {
-      return await api.delete(`core/clientes/`, {
-        data: { id_cliente: idCliente }
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries(["maestra-clientes"]);
-      toast.success("Empresa eliminada correctamente");
-      setModalOpen(false);
-      setSelectedCliente(null);
-    },
-    onError: (error) => {
-      const msg = error.response?.data?.error || "Error al eliminar";
-      toast.error("No se pudo eliminar", {
-        description: msg
-      });
-    }
-  });
-
   const handleEdit = (cliente) => {
-    setSelectedCliente(cliente);
-    setModalOpen(true);
+    navigate(`${basePath}/${cliente.id_cliente}`);
   };
 
   const handleNew = () => {
-    setSelectedCliente(null);
-    setModalOpen(true);
+    navigate(`${basePath}/nuevo`);
   };
 
   const clientesFiltrados = clientes.filter(c =>
@@ -128,7 +77,7 @@ export default function TablaClientes({
 
         <Button
           onClick={handleNew}
-          className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 h-8.5 text-xs font-bold uppercase tracking-wider rounded-lg shadow-sm flex items-center gap-1.5 self-start sm:self-auto shrink-0"
+          className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 h-8.5 text-xs font-bold uppercase tracking-wider rounded-lg shadow-sm flex items-center gap-1.5 self-start sm:self-auto shrink-0 cursor-pointer"
         >
           <Plus size={14} strokeWidth={3} />
           {buttonLabel}
@@ -189,26 +138,17 @@ export default function TablaClientes({
             </span>,
 
             <div key="est" className="flex justify-center">
-              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase border ${
-                cliente.activo === true || cliente.activo === "1"
+              <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase border ${
+                cliente.activo === true || cliente.activo === "1" || cliente.activo === 1
                   ? "bg-emerald-50 text-emerald-700 border-emerald-100"
                   : "bg-slate-50 text-slate-500 border-slate-100"
                 }`}>
-                {(cliente.activo === true || cliente.activo === "1") ? "Activo" : "Inactivo"}
+                {(cliente.activo === true || cliente.activo === "1" || cliente.activo === 1) ? "Activo" : "Inactivo"}
               </span>
             </div>
           ]}
         />
       </div>
-
-      <ClienteModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        clienteData={selectedCliente}
-        clientes={clientes}
-        onGuardar={(data) => saveMutation.mutate(data)}
-        onEliminar={(idCliente) => deleteMutation.mutate(idCliente)}
-      />
     </div>
   );
 }

@@ -1,8 +1,6 @@
 import api from "@/services/api";
+import { roundMoney, moneyTotal } from "@/utils/money";
 
-// =====================
-// UTIL
-// =====================
 const toNumber = (v) => Number(v) || 0;
 
 // =====================
@@ -21,13 +19,13 @@ export const normalizarRittal = (item, tcamb = 3.355, cantidad = 1, tpr, proveed
     marca: item.marca ?? item.proveedor ?? "",
     unidad: item.unidad ?? "UNI",
     cantidad,
-    costoPrecio: +costoPrecio.toFixed(2),
-    utilidad: +utilidad.toFixed(2),
-    porcentaje: costoPrecio ? +((utilidad / costoPrecio) * 100).toFixed(2) : 0,
-    costoTotal: +(costoPrecio * cantidad).toFixed(2),
-    ventaPrecio: +precioVenta.toFixed(2),
-    ventaTotal: +(precioVenta * cantidad).toFixed(2),
-    utilidadTotal: +(utilidad * cantidad).toFixed(2),
+    costoPrecio: roundMoney(costoPrecio),
+    utilidad: roundMoney(utilidad),
+    porcentaje: costoPrecio ? roundMoney((utilidad / costoPrecio) * 100) : 0,
+    costoTotal: moneyTotal(costoPrecio, cantidad),
+    ventaPrecio: roundMoney(precioVenta),
+    ventaTotal: moneyTotal(precioVenta, cantidad),
+    utilidadTotal: moneyTotal(utilidad, cantidad),
   };
 };
 
@@ -38,7 +36,7 @@ export const normalizarPhoenix = (item, tcamb = 3.355, cantidad = 1, tpr, provee
   let factorCosto = 0.67;
   let factorGranCliente = 0.76;
 
-  const precioCosto = +(precioLista * factorCosto).toFixed(2);
+  const precioCosto = roundMoney(precioLista * factorCosto);
 
   return {
     tpr, // 👈 CLAVE
@@ -56,7 +54,7 @@ export const normalizarPhoenix = (item, tcamb = 3.355, cantidad = 1, tpr, provee
     ventaTotal: precioCosto * cantidad,
     utilidadTotal: 0,
     precioLista,
-    granCliente: +(precioLista * factorGranCliente).toFixed(2),
+    granCliente: roundMoney(precioLista * factorGranCliente),
     usuario: precioCosto,
   };
 };
@@ -87,13 +85,13 @@ export const normalizarAlmLista = (item, tcamb = 3.355, cantidad = 1, tpr, prove
     marca: item.proveedor ?? "",
     unidad: item.um ?? "UNI",
     cantidad,
-    costoPrecio: +costo.toFixed(2),
-    utilidad: +utilidad.toFixed(2),
-    porcentaje: costo ? +((utilidad / costo) * 100).toFixed(2) : 0,
-    costoTotal: +(costo * cantidad).toFixed(2),
-    ventaPrecio: +precioLista.toFixed(2),
-    ventaTotal: +(precioLista * cantidad).toFixed(2),
-    utilidadTotal: +(utilidad * cantidad).toFixed(2),
+    costoPrecio: roundMoney(costo),
+    utilidad: roundMoney(utilidad),
+    porcentaje: costo ? roundMoney((utilidad / costo) * 100) : 0,
+    costoTotal: moneyTotal(costo, cantidad),
+    ventaPrecio: roundMoney(precioLista),
+    ventaTotal: moneyTotal(precioLista, cantidad),
+    utilidadTotal: moneyTotal(utilidad, cantidad),
   };
 };
 
@@ -136,12 +134,12 @@ export const normalizarRockwell = (item, tcamb = 1, cantidad = 1, tpr, proveedor
     marca: item.proveedor ?? "",
     unidad: item.pgc ?? "UNI",
     cantidad,
-    costoPrecio: +costoPrecio.toFixed(2),
-    utilidad: +utilidad.toFixed(2),
+    costoPrecio: roundMoney(costoPrecio),
+    utilidad: roundMoney(utilidad),
     porcentaje: 0,
-    costoTotal: +(costoPrecio * cantidad).toFixed(2),
-    ventaPrecio: +costoPrecio.toFixed(2),
-    ventaTotal: +(costoPrecio * cantidad).toFixed(2),
+    costoTotal: moneyTotal(costoPrecio, cantidad),
+    ventaPrecio: roundMoney(costoPrecio),
+    ventaTotal: moneyTotal(costoPrecio, cantidad),
     utilidadTotal: 0,
   };
 };

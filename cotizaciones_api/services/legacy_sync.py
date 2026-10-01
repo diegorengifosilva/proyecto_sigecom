@@ -4,6 +4,9 @@ import re
 import threading
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from functools import wraps
+from pathlib import Path
+from django.conf import settings
 from django.db import connections, transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -16,6 +19,28 @@ logger = logging.getLogger(__name__)
 
 # Executor global para tareas en segundo plano
 SYNC_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="LegacySyncThread")
+
+# Interruptor de réplica a SIGECOM 4.0 (db_vc).
+# 1) Archivo legacy_sync.off en la raíz del proyecto → apagado (se lee en cada llamada).
+# 2) SIGECOM_LEGACY_SYNC=0 / LEGACY_SYNC_ENABLED=False → apagado.
+def is_legacy_sync_enabled():
+    try:
+        off_file = Path(settings.BASE_DIR) / "legacy_sync.off"
+        if off_file.exists():
+            return False
+        return bool(getattr(settings, "LEGACY_SYNC_ENABLED", True))
+    except Exception:
+        return True
+
+
+def require_legacy_sync(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not is_legacy_sync_enabled():
+            logger.info("[SyncLegado] Deshabilitado; se omite %s", fn.__name__)
+            return None
+        return fn(*args, **kwargs)
+    return wrapper
 
 # Cerradura global por ID de cotización para evitar concurrencia en escrituras
 _cotizacion_locks = defaultdict(threading.Lock)
@@ -317,6 +342,9 @@ def _ejecutar_sincronizacion_legada(cotizacion_id: int):
     Traduce la cotización de proyecto_sigecom.cotizaciones e inserta o actualiza
     en la tabla legado db_vc.vc_mov_cotizaciones.
     """
+    if not is_legacy_sync_enabled():
+        logger.info("[SyncLegado] Omitido (apagado) cotización ID %s", cotizacion_id)
+        return
     lock = get_lock_for_cotizacion(cotizacion_id)
     lock.acquire()
     try:
@@ -570,6 +598,9 @@ def disparar_sincronizacion_legada(cotizacion_id: int, delay: float = 0.6):
     Si ocurren múltiples guardados consecutivos para la misma cotización dentro de la ventana
     de `delay` segundos, se cancela la réplica previa y se ejecuta una sola sincronización consolidada.
     """
+    if not is_legacy_sync_enabled():
+        logger.info("[SyncLegado] Omitido (apagado) disparo cotización ID %s", cotizacion_id)
+        return
     try:
         def enqueue():
             with _debounce_cotizacion_lock:
@@ -587,11 +618,19 @@ def disparar_sincronizacion_legada(cotizacion_id: int, delay: float = 0.6):
         logger.error(f"[SyncLegado] No se pudo encolar la sincronización para cotización ID {cotizacion_id}: {str(e)}", exc_info=True)
 
 
-def _ejecutar_eliminacion_legada(cotizacion_id: int):
+def _ejecutar_eliminacion_legada(cotizacion_id: int, close_connections=True):
     """
-    Función de fondo que se ejecuta en un hilo secundario.
     Elimina los registros correspondientes en la BD legada db_vc.
+    close_connections=False si se llama en el hilo del request.
     """
+    if not is_legacy_sync_enabled():
+        logger.info("[SyncLegado] Omitido (apagado) eliminación cotización ID %s", cotizacion_id)
+        return
+    with _debounce_cotizacion_lock:
+        prev_timer = _debounce_cotizacion_timers.pop(cotizacion_id, None)
+        if prev_timer:
+            prev_timer.cancel()
+
     lock = get_lock_for_cotizacion(cotizacion_id)
     lock.acquire()
     try:
@@ -609,19 +648,26 @@ def _ejecutar_eliminacion_legada(cotizacion_id: int):
 
     except Exception as e:
         logger.error(f"[SyncLegado] Error durante la eliminación legada de cotización ID {cotizacion_id}: {str(e)}", exc_info=True)
+        raise
     finally:
-        connections.close_all()
+        if close_connections:
+            connections.close_all()
         lock.release()
 
 
 def disparar_eliminacion_legada(cotizacion_id: int):
     """
-    Registra la tarea de eliminación para que se ejecute en segundo plano
-    inmediatamente después de confirmarse el COMMIT en la base local.
+    Ejecuta la eliminación en 4.0 justo después del COMMIT (sin hilo aparte).
     """
     try:
-        transaction.on_commit(lambda: SYNC_EXECUTOR.submit(_ejecutar_eliminacion_legada, cotizacion_id))
-        logger.debug(f"[SyncLegado] Tarea de eliminación registrada en on_commit para cotización ID: {cotizacion_id}")
+        def run():
+            _ejecutar_eliminacion_legada(cotizacion_id, close_connections=False)
+        connection = transaction.get_connection()
+        if connection.in_atomic_block:
+            transaction.on_commit(run)
+        else:
+            run()
+        logger.debug(f"[SyncLegado] Eliminación legada programada para cotización ID: {cotizacion_id}")
     except Exception as e:
         logger.error(f"[SyncLegado] No se pudo encolar la eliminación legada para cotización ID {cotizacion_id}: {str(e)}", exc_info=True)
 
@@ -1729,7 +1775,7 @@ def disparar_quitar_orden_usu_por_diff(quote_codigo, old_resp, new_resp):
         )
 
 
-def _ejecutar_sincronizacion_apertura_legada(apertura_id: int):
+def _ejecutar_sincronizacion_apertura_legada(apertura_id: int, close_connections=True):
     """
     Función de fondo que sincroniza un registro de CotizacionApertura
     con la tabla legacy db_vc.vc_mov_orden.
@@ -1740,9 +1786,22 @@ def _ejecutar_sincronizacion_apertura_legada(apertura_id: int):
         logger.info(f"[SyncLegado] Iniciando sincronización de apertura ID: {apertura_id}")
         
         try:
-            ap = CotizacionApertura.objects.select_related('orden_plazo_unidad', 'id_registro').get(id_apertura=apertura_id)
+            ap = CotizacionApertura.objects.select_related(
+                'orden_plazo_unidad',
+                'id_registro',
+                'id_registro__id_cliente',
+                'id_registro__id_creador',
+                'id_registro__id_comercial',
+            ).get(id_apertura=apertura_id)
         except CotizacionApertura.DoesNotExist:
             logger.warning(f"[SyncLegado] CotizacionApertura ID {apertura_id} no existe en la BD local. Abortando sync.")
+            return
+
+        if not ap.fecha_orden:
+            logger.info(
+                "[SyncLegado] OC %s sin fecha de emisión: no se envía a 4.0 hasta que se complete.",
+                apertura_id,
+            )
             return
 
         db_alias = "legacy" if "legacy" in connections else "default"
@@ -1753,12 +1812,18 @@ def _ejecutar_sincronizacion_apertura_legada(apertura_id: int):
                     onpla, odpla, otco, oceq, ocma, ocrh, ocen, ocse, ocot, num_regc,
                     adj, resp, totfa, salfa, oobs, des_a, des_t, des_m, des_p, doc,
                     anno_a, uti_des, prio, poceq, pocma, pocrh, pocse, pocot, pger,
-                    do1, do2, do3, ti1, ti2, ti3, envio, pres
+                    do1, do2, do3, ti1, ti2, ti3, envio, pres,
+                    cotin, cotit, cotif, refer, empre, nombr, area, estad, regus, fecus,
+                    fpago, codir, cargr, teler, movir, mailr, lugar, plazo,
+                    tot_d, tot_c, por_c, tot_s, tmone, tcamb, igv, valid
                 ) VALUES (
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s, %s, %s
                 ) ON DUPLICATE KEY UPDATE
                     anno = VALUES(anno),
@@ -1806,7 +1871,33 @@ def _ejecutar_sincronizacion_apertura_legada(apertura_id: int):
                     ti2 = VALUES(ti2),
                     ti3 = VALUES(ti3),
                     envio = VALUES(envio),
-                    pres = VALUES(pres)
+                    pres = VALUES(pres),
+                    cotin = VALUES(cotin),
+                    cotit = VALUES(cotit),
+                    cotif = VALUES(cotif),
+                    refer = VALUES(refer),
+                    empre = VALUES(empre),
+                    nombr = VALUES(nombr),
+                    area = VALUES(area),
+                    estad = VALUES(estad),
+                    regus = VALUES(regus),
+                    fecus = VALUES(fecus),
+                    fpago = VALUES(fpago),
+                    codir = VALUES(codir),
+                    cargr = VALUES(cargr),
+                    teler = VALUES(teler),
+                    movir = VALUES(movir),
+                    mailr = VALUES(mailr),
+                    lugar = VALUES(lugar),
+                    plazo = VALUES(plazo),
+                    tot_d = VALUES(tot_d),
+                    tot_c = VALUES(tot_c),
+                    por_c = VALUES(por_c),
+                    tot_s = VALUES(tot_s),
+                    tmone = VALUES(tmone),
+                    tcamb = VALUES(tcamb),
+                    igv = VALUES(igv),
+                    valid = VALUES(valid)
             """
             
             from django.utils.timezone import is_aware, localtime
@@ -1817,6 +1908,23 @@ def _ejecutar_sincronizacion_apertura_legada(apertura_id: int):
                     val = localtime(val)
                 return val.replace(tzinfo=None)
             
+            cot_id = ap.id_registro_id
+            cot = None
+            if cot_id:
+                cot = Cotizacion.objects.select_related(
+                    "id_cliente", "id_creador", "id_comercial", "id_representante",
+                    "id_unidad_tiempo_entrega_suministros",
+                    "id_unidad_tiempo_entrega_servicios",
+                    "id_unidad_tiempo_validez",
+                ).filter(id_registro=cot_id).first()
+            if cot is None:
+                cot = getattr(ap, "id_registro", None)
+            quote_codigo = (getattr(cot, "codigo", None) or "").strip() if cot else ""
+            cotit_val = (str(cot.id_tipo_id)[:1] if cot and cot.id_tipo_id else "") or ""
+            cotif_val = None
+            if cot and cot.fecha:
+                cotif_val = cot.fecha.date() if hasattr(cot.fecha, "date") else cot.fecha
+
             ofec_val = to_local_naive(ap.fecha_orden)
             ofece_val = to_local_naive(ap.fecha_entrega)
             ofecf_val = to_local_naive(ap.fecha_factura)
@@ -1826,6 +1934,44 @@ def _ejecutar_sincronizacion_apertura_legada(apertura_id: int):
             odpla_val = ap.orden_plazo_unidad.nombre[0].upper() if (ap.orden_plazo_unidad and ap.orden_plazo_unidad.nombre) else ""
             num_regc_val = str(ap.id_registro_id) if ap.id_registro_id is not None else ""
             adj_val = str(ap.id_apertura) if ap.orden_adjunta else ""
+            refer_val = (cot.referencia or "")[:200] if cot else ""
+            empre_val = cot.id_cliente_id if cot else None
+            nombr_val = ((cot.representante_nombre or "")[:70] if cot else "")
+            if not nombr_val and cot and getattr(cot, "id_cliente", None):
+                nombr_val = (cot.id_cliente.nombre or "")[:70]
+            area_val = getattr(cot, "id_area", None) if cot else None
+            area_legacy = "0" if area_val == 10 else (str(area_val) if area_val is not None else "0")
+            estad_legacy = "1"
+            creador = getattr(cot, "id_creador", None) if cot else None
+            comercial = getattr(cot, "id_comercial", None) if cot else None
+            regus_val = ""
+            if creador and getattr(creador, "usuario", None):
+                regus_val = (creador.usuario or "")[:200]
+            elif comercial and getattr(comercial, "usuario", None):
+                regus_val = (comercial.usuario or "")[:200]
+            if not regus_val:
+                regus_val = "sigecom5"
+            fecus_val = timezone.now().date()
+
+            map_unidad = {'DI': 'D', 'SE': 'S', 'ME': 'M'}
+            ut_sum = getattr(cot, "id_unidad_tiempo_entrega_suministros", None) if cot else None
+            ut_ser = getattr(cot, "id_unidad_tiempo_entrega_servicios", None) if cot else None
+            fpago_val = (cot.forma_pago or "")[:100] if cot else ""
+            codir_val = str(cot.id_representante_id or "")[:5] if cot else ""
+            cargr_val = (cot.representante_cargo or "")[:70] if cot else ""
+            teler_val = (cot.representante_telefono or "")[:50] if cot else ""
+            movir_val = (cot.representante_movil or "")[:50] if cot else ""
+            mailr_val = (cot.representante_correo or "")[:50] if cot else ""
+            lugar_val = (cot.lugar or "")[:50] if cot else ""
+            plazo_val = cot.entrega_suministros if cot else None
+            tot_d_val = map_unidad.get(ut_sum.codigo, 'D') if ut_sum else 'D'
+            tot_c_val = cot.total_cotizacion if cot else None
+            por_c_val = cot.entrega_servicios if cot else None
+            tot_s_val = map_unidad.get(ut_ser.codigo, 'D') if ut_ser else 'D'
+            tmone_val = (cot.tipo_moneda or "S")[:1] if cot else "S"
+            tcamb_val = cot.tipo_cambio if cot else None
+            igv_val = (cot.igv or "N")[:1] if cot else "N"
+            valid_val = cot.validez_oferta if cot else None
             
             resp_items = [x.strip() for x in re.split(r'[;,]', ap.responsables or '') if x.strip() and '@' in x]
             resp_legacy = ",".join(resp_items) + ("," if resp_items else "")
@@ -1835,14 +1981,14 @@ def _ejecutar_sincronizacion_apertura_legada(apertura_id: int):
                 ap.orden_plazo_valor, odpla_val, ap.presupuesto, ap.orden_compra_equipos, ap.orden_compra_materiales, ap.orden_compra_hh, ap.orden_compra_entrega, ap.orden_compra_costo_servicios, ap.orden_compra_otros, num_regc_val,
                 adj_val, resp_legacy, ap.totfa, ap.salfa, ap.oobs, ap.des_a, ap.des_t, ap.des_m, ap.des_p, ap.doc,
                 ap.anno_a, ap.uti_des, ap.prio, ap.poceq, ap.pocma, ap.pocrh, ap.pocse, ap.pocot, ap.pger,
-                ap.do1, ap.do2, ap.do3, ap.ti1, ap.ti2, ap.ti3, ap.envio, ap.pres
+                ap.do1, ap.do2, ap.do3, ap.ti1, ap.ti2, ap.ti3, ap.envio, ap.pres,
+                quote_codigo or None, cotit_val, cotif_val, refer_val, empre_val, nombr_val, area_legacy, estad_legacy, regus_val, fecus_val,
+                fpago_val, codir_val, cargr_val, teler_val, movir_val, mailr_val, lugar_val, plazo_val,
+                tot_d_val, tot_c_val, por_c_val, tot_s_val, tmone_val, tcamb_val, igv_val, valid_val,
             ]
             
             cursor.execute(sql, params)
 
-            quote_codigo = ""
-            if ap.id_registro_id:
-                quote_codigo = getattr(ap.id_registro, "codigo", None) or ""
             _sincronizar_orden_usu_legado(cursor, quote_codigo, ap.responsables)
             
         logger.info(f"[SyncLegado] Sincronización exitosa para apertura ID: {apertura_id}")
@@ -1850,18 +1996,22 @@ def _ejecutar_sincronizacion_apertura_legada(apertura_id: int):
     except Exception as e:
         logger.error(f"[SyncLegado] Error durante la sincronización de la apertura ID {apertura_id}: {str(e)}", exc_info=True)
     finally:
-        connections.close_all()
+        if close_connections:
+            connections.close_all()
         lock.release()
 
 
 def disparar_sincronizacion_apertura_legada(apertura_id: int):
-    """
-    Registra la tarea de sincronización de apertura en segundo plano
-    inmediatamente después del COMMIT.
-    """
+    """Sincroniza la apertura a 4.0 justo después del COMMIT (sin hilo aparte)."""
     try:
-        transaction.on_commit(lambda: SYNC_EXECUTOR.submit(_ejecutar_sincronizacion_apertura_legada, apertura_id))
-        logger.debug(f"[SyncLegado] Tarea de sincronización de apertura registrada en on_commit para ID: {apertura_id}")
+        def run():
+            _ejecutar_sincronizacion_apertura_legada(apertura_id, close_connections=False)
+        connection = transaction.get_connection()
+        if connection.in_atomic_block:
+            transaction.on_commit(run)
+        else:
+            run()
+        logger.debug(f"[SyncLegado] Sincronización de apertura programada para ID: {apertura_id}")
     except Exception as e:
         logger.error(f"[SyncLegado] No se pudo encolar la sincronización para apertura ID {apertura_id}: {str(e)}", exc_info=True)
 
@@ -1898,6 +2048,18 @@ def disparar_eliminacion_apertura_legada(apertura_id: int):
         logger.debug(f"[SyncLegado] Tarea de eliminación de apertura registrada en on_commit para ID: {apertura_id}")
     except Exception as e:
         logger.error(f"[SyncLegado] No se pudo encolar la eliminación para apertura ID {apertura_id}: {str(e)}", exc_info=True)
+
+
+def _gate_legacy_sync_functions():
+    for name, obj in list(globals().items()):
+        if not callable(obj):
+            continue
+        if name.startswith("disparar_") or name.startswith("_ejecutar_"):
+            globals()[name] = require_legacy_sync(obj)
+
+
+_gate_legacy_sync_functions()
+
 
 
 

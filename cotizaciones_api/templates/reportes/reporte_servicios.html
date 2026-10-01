@@ -289,7 +289,7 @@ document.getElementById("btnExcel_servicios").addEventListener("click", function
     tableToExcel(
         "tabla_servicios",   // id del contenedor
         "{{ num_reg }}",       // nombre de la hoja
-        "REPORTE_SERVICIOS.xls"  // nombre del archivo
+        "{{ nombre_excel|default:'reporte_servicios' }}.xls"
     );
 });
 
@@ -434,7 +434,7 @@ var ctx = { worksheet: sheetName, table: prepararTablaParaExcel(tableId) };
             tableToExcel(
                 "tabla_servicios",
                 "{{ num_reg }}",
-                "{{ num_reg }}.xls"
+                "{{ nombre_excel|default:'reporte_servicios' }}.xls"
             );
 
             setTimeout(() => window.close(), 700);

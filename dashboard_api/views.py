@@ -1,6 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
-from django.db.models import Sum, Count, Avg, ExpressionWrapper, F, DecimalField, Q
+from django.db.models import Sum, Count, Avg, ExpressionWrapper, F, DecimalField, Q, Case, When, Value, CharField
 from django.db.models.functions import Coalesce, ExtractMonth
 from django.http import JsonResponse, HttpResponse
 from rest_framework import status
@@ -62,6 +62,40 @@ def _mes_apertura(ap):
     if f_oc:
         return f_oc.month
     return ap.mes or 1
+
+
+ESTADO_ANULADO = 4
+
+
+def _filtro_anno_a_apertura(qs, anno):
+    anno_s = str(int(anno))
+    return qs.filter(
+        Q(anno_a=anno_s)
+        | ((Q(anno_a__isnull=True) | Q(anno_a="")) & Q(anno=anno))
+    )
+
+
+def _split_moneda(qs, amount_field, moneda_lookup):
+    grouped = (
+        qs.annotate(
+            _mon=Case(
+                When(**{f"{moneda_lookup}__istartswith": "D"}, then=Value("D")),
+                default=Value("S"),
+                output_field=CharField(),
+            )
+        )
+        .values("_mon")
+        .annotate(total=Coalesce(Sum(amount_field), Decimal("0.00")))
+    )
+    soles = Decimal("0.00")
+    dolares = Decimal("0.00")
+    for row in grouped:
+        total = row["total"] or Decimal("0.00")
+        if row["_mon"] == "D":
+            dolares = total
+        else:
+            soles += total
+    return soles, dolares
 
 
 def _logrado_desde_oc(ap, cot):
@@ -270,13 +304,29 @@ def kpis_dashboard(request):
     # ==========================================
     # 1. QUERIES BASE (Cotizaciones y Ventas)
     # ==========================================
-    # Cotizaciones (Ofertas)
-    qs_cot_anual = Cotizacion.objects.filter(anno=anno)
-    qs_cot_prev = Cotizacion.objects.filter(anno=anno_para_mes_anterior, mes=mes_anterior_num)
+    # 4.0: INNER JOIN cliente/área, tot_c nativo, anuladas suman 0
+    qs_cot_anual = (
+        Cotizacion.objects.filter(año_apertura=anno)
+        .exclude(id_estado_id=11)
+        .filter(id_cliente__isnull=False)
+        .exclude(Q(id_area__isnull=True) | Q(id_area=0))
+    )
+    qs_cot_prev = (
+        Cotizacion.objects.filter(año_apertura=anno_para_mes_anterior, mes=mes_anterior_num)
+        .exclude(id_estado_id=11)
+        .filter(id_cliente__isnull=False)
+        .exclude(Q(id_area__isnull=True) | Q(id_area=0))
+    )
 
-    # Ventas Reales (Órdenes de Compra Adjudicadas estado_orden=1)
-    qs_ventas_anual = CotizacionApertura.objects.filter(anno=anno, estado_orden=1)
-    qs_ventas_prev = CotizacionApertura.objects.filter(anno=anno_para_mes_anterior, estado_orden=1)
+    # Ventas Reales (Órdenes de Compra Adjudicadas estado_orden=1), año operativo anno_a
+    qs_ventas_anual = _filtro_anno_a_apertura(
+        CotizacionApertura.objects.filter(estado_orden_id=1, id_registro__isnull=False),
+        anno,
+    )
+    qs_ventas_prev = _filtro_anno_a_apertura(
+        CotizacionApertura.objects.filter(estado_orden_id=1, id_registro__isnull=False),
+        anno_para_mes_anterior,
+    )
 
     if personal:
         qs_cot_anual = qs_cot_anual.filter(id_comercial=request.user)
@@ -288,28 +338,21 @@ def kpis_dashboard(request):
     qs_ventas_mes = qs_ventas_anual.filter(mes=mes_actual_num)
     qs_ventas_prev = qs_ventas_prev.filter(mes=mes_anterior_num)
 
-    cot_anual = qs_cot_anual.aggregate(
-        cant=Count("id_registro"),
-        monto=Coalesce(Sum("total_cotizacion"), Decimal("0.00")),
-    )
-    cot_mes = qs_cot_mes.aggregate(
-        cant=Count("id_registro"),
-        monto=Coalesce(Sum("total_cotizacion"), Decimal("0.00")),
-    )
-    cot_prev = qs_cot_prev.aggregate(
-        cant=Count("id_registro"),
-        monto=Coalesce(Sum("total_cotizacion"), Decimal("0.00")),
-    )
-    ven_anual = qs_ventas_anual.aggregate(
-        cant=Count("id_apertura"),
-        monto=Coalesce(Sum("total_orden"), Decimal("0.00")),
-    )
-    ven_mes = qs_ventas_mes.aggregate(
-        monto=Coalesce(Sum("total_orden"), Decimal("0.00")),
-    )
-    ven_prev = qs_ventas_prev.aggregate(
-        monto=Coalesce(Sum("total_orden"), Decimal("0.00")),
-    )
+    qs_cot_monto_anual = qs_cot_anual.exclude(id_estado_id=ESTADO_ANULADO)
+    qs_cot_monto_mes = qs_cot_mes.exclude(id_estado_id=ESTADO_ANULADO)
+    qs_cot_monto_prev = qs_cot_prev.exclude(id_estado_id=ESTADO_ANULADO)
+
+    cot_anual = qs_cot_anual.aggregate(cant=Count("id_registro"))
+    cot_mes = qs_cot_mes.aggregate(cant=Count("id_registro"))
+    cot_prev = qs_cot_prev.aggregate(cant=Count("id_registro"))
+    ven_anual = qs_ventas_anual.aggregate(cant=Count("id_apertura"))
+
+    cot_soles_anual, cot_usd_anual = _split_moneda(qs_cot_monto_anual, "total_cotizacion", "tipo_moneda")
+    cot_soles_mes, cot_usd_mes = _split_moneda(qs_cot_monto_mes, "total_cotizacion", "tipo_moneda")
+    cot_soles_prev, cot_usd_prev = _split_moneda(qs_cot_monto_prev, "total_cotizacion", "tipo_moneda")
+    ven_soles_anual, ven_usd_anual = _split_moneda(qs_ventas_anual, "total_orden", "id_registro__tipo_moneda")
+    ven_soles_mes, ven_usd_mes = _split_moneda(qs_ventas_mes, "total_orden", "id_registro__tipo_moneda")
+    ven_soles_prev, ven_usd_prev = _split_moneda(qs_ventas_prev, "total_orden", "id_registro__tipo_moneda")
 
     def calc_var(actual, anterior):
         if anterior and anterior != 0:
@@ -320,13 +363,13 @@ def kpis_dashboard(request):
     cant_anual = cot_anual["cant"] or 0
     var_cant = calc_var(cant_mes, cot_prev["cant"] or 0)
 
-    monto_cot_mes = cot_mes["monto"]
-    monto_cot_anual = cot_anual["monto"]
-    var_monto_cot = calc_var(monto_cot_mes, cot_prev["monto"])
+    monto_cot_mes = cot_usd_mes
+    monto_cot_anual = cot_usd_anual
+    var_monto_cot = calc_var(monto_cot_mes, cot_usd_prev)
 
-    monto_v_mes = ven_mes["monto"]
-    monto_v_anual = ven_anual["monto"]
-    var_v = calc_var(monto_v_mes, ven_prev["monto"])
+    monto_v_mes = ven_usd_mes
+    monto_v_anual = ven_usd_anual
+    var_v = calc_var(monto_v_mes, ven_usd_prev)
     cant_ventas_anual = ven_anual["cant"] or 0
 
     # --- KPI 4: Efectividad (% Conversión de Monto) ---
@@ -347,11 +390,19 @@ def kpis_dashboard(request):
         "cotizaciones_mes": cant_mes,
         "monto_total": {
             "anual": float(monto_cot_anual),
+            "soles": float(cot_soles_anual),
+            "dolares": float(cot_usd_anual),
             "variacion": var_monto_cot
         },
         "monto_mes": float(monto_cot_mes),
+        "monto_mes_soles": float(cot_soles_mes),
+        "monto_mes_dolares": float(cot_usd_mes),
         "ventas_reales_anual": float(monto_v_anual),
+        "ventas_reales_anual_soles": float(ven_soles_anual),
+        "ventas_reales_anual_dolares": float(ven_usd_anual),
         "ventas_reales_mes": float(monto_v_mes),
+        "ventas_reales_mes_soles": float(ven_soles_mes),
+        "ventas_reales_mes_dolares": float(ven_usd_mes),
         "ventas_variacion": var_v,
         "porcentaje_aprobacion": efec_anual,
         "porcentaje_aprobacion_mes": efec_mes,
@@ -379,9 +430,12 @@ def tendencias_dashboard(request):
         base_ids = None
         anno_int = int(anno_buscado)
 
-    ventas_rows = CotizacionApertura.objects.filter(
-        anno=int(anno_buscado),
-        estado_orden=1,
+    ventas_rows = _filtro_anno_a_apertura(
+        CotizacionApertura.objects.filter(
+            estado_orden_id=1,
+            id_registro__isnull=False,
+        ),
+        int(anno_buscado),
     ).values(
         "total_orden",
         "orden_compra_equipos",

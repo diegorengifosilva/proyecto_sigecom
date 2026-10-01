@@ -7,6 +7,8 @@ import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
 import * as LucideIcons from 'lucide-react';
 import api, { API_URL, downloadAttachment } from '@/services/api';
 import { toast } from '../../utils/toast';
+import { origenUtilidadDesdeCampo, aplicarTotalesSuministro, aplicarTotalesServicio } from '@/utils/utilidadBidireccional';
+import { roundMoney, moneyTotal } from '@/utils/money';
 import { quillListKeyboard, quillServiceModules } from '@/utils/quillListKeyboard';
 import { motion, AnimatePresence } from 'framer-motion';
 import SelectField from '../../components/ui/SelectField';
@@ -38,7 +40,7 @@ import RegistroItemModal from '../Suministros/RegistroItemModal';
 import RegistroItemBuscadorModal from '../Suministros/RegistroItemBuscadorModal';
 import ServicioModal from '../Servicios/ServicioModal';
 import { useCotizacionAcciones } from '@/hook/useCotizacionAcciones';
-import { useCotizacionSuministros, recalculateGroupSuministrosValues } from '@/hook/useCotizacionSuministros';
+import { useCotizacionSuministros, recalculateGroupSuministrosValues, sameSuministroId, envioGrupoValue, prorratearEnvioItem } from '@/hook/useCotizacionSuministros';
 import { useCotizacionServicios } from '@/hook/useCotizacionServicios';
 import { ClienteAutocomplete, RepresentanteAutocomplete, ProductoAutocomplete, TipoPersonalAutocomplete, TipoGastoDetalleAutocomplete, UnidadMedidaAutocomplete, MarcaAutocomplete } from '@/components/comercial/CotizacionAutocompletes';
 import { calcularItemSegunProveedor, resolverEndpointPorProveedor } from '@/dashboard/Suministros/tables/tablaUtils';
@@ -537,7 +539,7 @@ const handleRowKeyDown = (e, submitFn) => {
     e.stopPropagation();
     lastFocusedInput = e.target;
     const row = e.currentTarget;
-    const detailsButton = row.querySelector("button[title='Detalles Adicionales']") || row.querySelector("button[title*='Resumen']");
+    const detailsButton = row.querySelector("button[title='Especificaciones de Suministro']") || row.querySelector("button[title*='Resumen']");
     if (detailsButton) {
       // Radix UI trigger responds to pointerdown and mousedown
       detailsButton.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
@@ -561,7 +563,7 @@ const handleRowKeyDown = (e, submitFn) => {
   }
 
   const row = e.currentTarget;
-  const inputs = Array.from(row.querySelectorAll("input, select, button[title='Detalles Adicionales'], button[title*='Resumen']")).filter(input => {
+  const inputs = Array.from(row.querySelectorAll("input, select, button[title='Especificaciones de Suministro'], button[title*='Resumen']")).filter(input => {
     return input.type !== "hidden" && !input.disabled && !input.readOnly;
   });
   const currentIndex = inputs.indexOf(target);
@@ -570,7 +572,7 @@ const handleRowKeyDown = (e, submitFn) => {
   if (e.key === "Alt") {
     e.preventDefault();
     e.stopPropagation();
-    const btn = row.querySelector("button[title='Detalles Adicionales']") || row.querySelector("button[title*='Resumen']");
+    const btn = row.querySelector("button[title='Especificaciones de Suministro']") || row.querySelector("button[title*='Resumen']");
     if (btn) {
       btn.click();
     }
@@ -728,12 +730,18 @@ const ServicioItemResumenPopover = ({ item, categoria, formatMoneySymbolSafe }) 
   const cantidad = Number(item.cantidad_hombres || 0);
   const dias = isCat06 ? 1 : Number(item.cantidad_dias || 1);
   const costoUnit = Number(item.costo_hombre_dia || 0);
-  const cotizadoUnit = Number(item.cotizado_hombre_dia || 0);
+  const utilidadUnit = Number(item.utilidad || 0);
+  const cotizadoUnit = roundMoney(Number(costoUnit) + Number(utilidadUnit));
 
   const totalUnits = cantidad * (dias > 0 ? dias : 1);
-  const costoTotal = Number((totalUnits * (isCat05 ? cotizadoUnit : costoUnit)).toFixed(2));
-  const cotizadoTotal = Number(item.cotizado_total || (totalUnits * cotizadoUnit).toFixed(2));
-  const utilidadTotal = Number((cotizadoTotal - costoTotal).toFixed(2));
+  const costoTotal = moneyTotal(isCat05 ? Number(item.cotizado_hombre_dia || costoUnit) : costoUnit, totalUnits);
+  const cotizadoTotal = Number(
+    (item.cotizado_total != null && item.cotizado_total !== ""
+      ? item.cotizado_total
+      : moneyTotal(cotizadoUnit, totalUnits)
+    )
+  );
+  const utilidadTotal = moneyTotal(utilidadUnit, totalUnits);
 
   let title = "Resumen de Mano de Obra";
   if (isCat05) title = "Resumen de Gastos de Servicio";
@@ -846,6 +854,316 @@ const ServicioItemResumenPopover = ({ item, categoria, formatMoneySymbolSafe }) 
   );
 };
 
+const normalizeTiempoEntrega = (value) => {
+  if (value === "" || value === undefined || value === null) return 0;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const resolveIdMedida = (form, unidadesMedida = []) => {
+  if (form?.id_medida) return form.id_medida;
+  if (form?.id_unidad) return form.id_unidad;
+  const raw = String(form?.tipo_unidad || form?.unidad || "UNI").trim().toUpperCase();
+  const found = (unidadesMedida || []).find(u =>
+    String(u.nombre || "").toUpperCase() === raw ||
+    String(u.codigo || "").toUpperCase() === raw
+  );
+  return found?.id_medida;
+};
+
+const labelUnidadTiempo = (id) => {
+  if (Number(id) === 3) return "Meses";
+  if (Number(id) === 2) return "Semanas";
+  return "Días";
+};
+
+const SuministroEspecificacionesPopover = ({
+  values,
+  isReadOnly = false,
+  isVenta = true,
+  formatMoney,
+  unidadesMedida = [],
+  setUnidadesMedida,
+  onPatch,
+  observacionValue,
+  onObservacionChange,
+  showObservacionInput = false,
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [editingField, setEditingField] = useState(null);
+  const [tiempoDraft, setTiempoDraft] = useState("");
+  const [unidadDraft, setUnidadDraft] = useState(1);
+  const [coords, setCoords] = useState(null);
+  const triggerRef = useRef(null);
+  const popoverRef = useRef(null);
+
+  const updateCoords = () => {
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setCoords({
+        top: rect.top + window.scrollY,
+        left: rect.left + window.scrollX
+      });
+    }
+  };
+
+  const closePanel = () => {
+    setEditingField(null);
+    setIsOpen(false);
+  };
+
+  const togglePanel = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isOpen) {
+      closePanel();
+      return;
+    }
+    updateCoords();
+    setIsOpen(true);
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClickOutside = (e) => {
+      if (triggerRef.current?.contains(e.target)) return;
+      if (popoverRef.current?.contains(e.target)) return;
+      if (e.target.closest?.(".autocomplete-dropdown-portal, [data-radix-popper-content-wrapper], [role='listbox']")) return;
+      closePanel();
+    };
+    const handleKey = (e) => {
+      if (e.key === "Escape") {
+        if (editingField) {
+          setEditingField(null);
+        } else {
+          closePanel();
+        }
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    window.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("keydown", handleKey);
+    };
+  }, [isOpen, editingField]);
+
+  const startEditUnidad = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isReadOnly) return;
+    setEditingField("unidad");
+  };
+
+  const startEditTiempo = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isReadOnly) return;
+    setTiempoDraft(values?.tiempo_entrega === 0 || values?.tiempo_entrega ? String(values.tiempo_entrega) : "");
+    setUnidadDraft(values?.id_unidad_tiempo_entrega || 1);
+    setEditingField("tiempo");
+  };
+
+  const commitUnidad = (unit) => {
+    onPatch?.({
+      id_medida: unit.id_medida,
+      tipo_unidad: unit.nombre || unit.codigo || "UNI"
+    });
+    setEditingField(null);
+  };
+
+  const commitTiempo = () => {
+    onPatch?.({
+      tiempo_entrega: normalizeTiempoEntrega(tiempoDraft),
+      id_unidad_tiempo_entrega: Number(unidadDraft) || 1
+    });
+    setEditingField(null);
+  };
+
+  useEffect(() => {
+    if (editingField !== "unidad") return;
+    const t = setTimeout(() => {
+      popoverRef.current?.querySelector(".u-medida-input")?.focus();
+    }, 30);
+    return () => clearTimeout(t);
+  }, [editingField]);
+
+  const handleTiempoContainerBlur = (e) => {
+    if (e.currentTarget.contains(e.relatedTarget)) return;
+    commitTiempo();
+  };
+
+  const tipoUnidadLabel = values?.tipo_unidad || values?.unidad || "UNI";
+  const tiempoLabel = `${normalizeTiempoEntrega(values?.tiempo_entrega)} ${labelUnidadTiempo(values?.id_unidad_tiempo_entrega)}`;
+  const resolvedIdMedida = resolveIdMedida(values, unidadesMedida);
+
+  const itemCantidad = Number(values?.cantidad || 0);
+  const itemCostoPrecio = Number(values?.costo_precio || 0);
+  const itemCostoEnvio = Number(values?.costo_envio || 0);
+  const itemPrecioVenta = Number(values?.precio_venta || 0);
+  const itemVentaTotal = Number(values?.venta_total || 0);
+  const itemUtilidad = Number(values?.utilidad || 0);
+  const costoTotal = itemCostoPrecio * itemCantidad;
+  const costoConEnvioPorUnidad = itemCostoPrecio + itemCostoEnvio;
+  const utilidadTotal = itemUtilidad * itemCantidad;
+
+  return (
+    <div className="relative" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={togglePanel}
+        className={cn(
+          "p-1 rounded transition-all",
+          isOpen ? "text-indigo-600 bg-indigo-50" : "text-gray-400 hover:text-indigo-600 hover:bg-indigo-50"
+        )}
+        title="Especificaciones de Suministro"
+      >
+        <Icon name="trending-up" className="h-3.5 w-3.5" />
+      </button>
+      {isOpen && coords && createPortal(
+        <div
+          ref={popoverRef}
+          style={{
+            position: "absolute",
+            left: coords.left,
+            top: coords.top,
+            zIndex: 9999,
+            pointerEvents: "auto"
+          }}
+          data-sigecom-especificaciones="1"
+          onClick={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
+          <div className="absolute right-0 mr-2 top-0 w-fit min-w-[320px] max-w-[450px] bg-white rounded-xl shadow-xl border border-gray-200 p-3.5 text-left text-xs space-y-3.5 animate-in fade-in zoom-in-95 duration-100 select-text">
+            <div className="flex items-center gap-1.5 text-slate-500 font-bold text-[10px] uppercase tracking-wider border-b border-gray-100 pb-1.5">
+              <Icon name="info" className="h-3.5 w-3.5 text-slate-400" />
+              <span>Especificaciones de Suministro</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-[11px]">
+              <div
+                className={cn(
+                  "bg-slate-50 p-2 rounded-lg border border-slate-100",
+                  !isReadOnly && "cursor-text hover:border-indigo-200"
+                )}
+                onDoubleClick={startEditUnidad}
+                title={!isReadOnly ? "Doble clic para editar" : undefined}
+              >
+                <span className="block font-bold text-gray-400 text-[9px] uppercase tracking-wide mb-0.5">U. Medida</span>
+                {editingField === "unidad" ? (
+                  <UnidadMedidaAutocomplete
+                    idMedida={resolvedIdMedida}
+                    fallbackLabel={tipoUnidadLabel}
+                    unidadesMedida={unidadesMedida}
+                    onSelect={commitUnidad}
+                    onAddMedida={(newUnit) => {
+                      setUnidadesMedida?.(prev => [...prev, newUnit]);
+                      commitUnidad(newUnit);
+                    }}
+                  />
+                ) : (
+                  <span className="font-bold text-gray-700 uppercase">{tipoUnidadLabel}</span>
+                )}
+              </div>
+              <div
+                className={cn(
+                  "bg-slate-50 p-2 rounded-lg border border-slate-100",
+                  !isReadOnly && "cursor-text hover:border-indigo-200"
+                )}
+                onDoubleClick={startEditTiempo}
+                title={!isReadOnly ? "Doble clic para editar" : undefined}
+              >
+                <span className="block font-bold text-gray-400 text-[9px] uppercase tracking-wide mb-0.5">Tiempo Entrega</span>
+                {editingField === "tiempo" ? (
+                  <div className="flex gap-1.5" onBlur={handleTiempoContainerBlur}>
+                    <input
+                      type="number"
+                      autoFocus
+                      className="w-2/3 border border-gray-200 rounded px-2 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold text-gray-700"
+                      value={tiempoDraft}
+                      onChange={(e) => setTiempoDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          commitTiempo();
+                        }
+                      }}
+                      placeholder="0"
+                    />
+                    <select
+                      className="w-1/3 border border-gray-200 rounded px-1 py-1 text-[10px] focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold text-gray-700 bg-white"
+                      value={unidadDraft}
+                      onChange={(e) => setUnidadDraft(parseInt(e.target.value, 10))}
+                    >
+                      <option value={1}>Días</option>
+                      <option value={2}>Semanas</option>
+                      <option value={3}>Meses</option>
+                    </select>
+                  </div>
+                ) : (
+                  <span className="font-bold text-gray-700">{tiempoLabel}</span>
+                )}
+              </div>
+            </div>
+
+            {showObservacionInput ? (
+              <div className="flex flex-col gap-1">
+                <span className="font-bold text-gray-400 uppercase text-[9px]">Observación:</span>
+                <input
+                  type="text"
+                  className="w-full border border-gray-200 rounded px-2 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-indigo-500 text-gray-700"
+                  value={observacionValue || ""}
+                  onChange={(e) => onObservacionChange?.(e.target.value.toUpperCase())}
+                  placeholder="Observación..."
+                  disabled={isReadOnly}
+                />
+              </div>
+            ) : values?.observacion ? (
+              <div className="bg-slate-50 p-2 rounded-lg border border-slate-100 text-[11px]">
+                <span className="block font-bold text-gray-400 text-[9px] uppercase tracking-wide mb-0.5">Observación</span>
+                <span className="text-gray-600 italic font-medium">{values.observacion}</span>
+              </div>
+            ) : null}
+
+            <div className="bg-emerald-50/40 border border-emerald-100 rounded-xl p-3 space-y-2 shadow-inner">
+              <div className="flex items-center gap-1.5 text-emerald-800 font-extrabold text-[10px] uppercase tracking-wider">
+                <Icon name="calculator" className="h-3.5 w-3.5" />
+                <span>Resumen de Venta</span>
+              </div>
+              <div className="space-y-1 text-[11px]">
+                <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-200/30">
+                  <span>Costo Total:</span>
+                  <span className="font-semibold text-gray-700">{formatMoney(costoTotal)}</span>
+                </div>
+                {isVenta && (
+                  <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-200/30">
+                    <span>Costo con Envío:</span>
+                    <span className="font-semibold text-gray-700">{formatMoney(costoConEnvioPorUnidad)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-200/30">
+                  <span>Precio Venta:</span>
+                  <span className="font-semibold text-gray-700">{formatMoney(itemPrecioVenta)}</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-800 py-0.5 border-b border-slate-200/50 font-bold">
+                  <span>Venta Total:</span>
+                  <span className="text-slate-900 font-black text-xs">{formatMoney(itemVentaTotal)}</span>
+                </div>
+                <div className="flex justify-between items-center text-emerald-900 pt-0.5 font-bold">
+                  <span>Utilidad Total:</span>
+                  <span className="text-emerald-600 font-black text-xs">{formatMoney(utilidadTotal)}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+};
+
 const EditableGroupRow = ({
   tipo,
   onSave,
@@ -917,7 +1235,7 @@ const EditableGroupRow = ({
     venta_total: 0,
     tipo_unidad: 'UNI',
     observacion: '',
-    tiempo_entrega: '',
+    tiempo_entrega: 0,
     id_unidad_tiempo_entrega: 1
   });
 
@@ -1067,55 +1385,40 @@ const EditableGroupRow = ({
     let porcentajeEnvio = Number(next.porcentaje_envio || 0);
 
     if (isVenta) {
-      if (tipoVenta === "T") {
-        porcentajeEnvio = totalCostoItems > 0 ? (costoPrecio / totalCostoItems) * 100 : 0;
-        costoEnvio = (porcentajeEnvio / 100) * groupCostoEnvio;
-      } else if (tipoVenta === "P") {
-        costoEnvio = cantidad > 0 ? groupCostoEnvio / cantidad : 0;
-        porcentajeEnvio = costoPrecio > 0 ? ((costoEnvio / costoPrecio) * 100) : 0;
-      }
+      const prorateado = prorratearEnvioItem(next, groupCostoEnvio, totalCostoItems, tipoVenta);
+      costoEnvio = prorateado.costoEnvio;
+      porcentajeEnvio = prorateado.porcentajeEnvio;
     } else {
       costoEnvio = 0;
       porcentajeEnvio = 0;
     }
 
     const costoConEnvio = costoPrecio + costoEnvio;
-    next.costo_envio = Number(costoEnvio.toFixed(2));
-    next.porcentaje_envio = Number(porcentajeEnvio.toFixed(2));
-    next.costo_con_envio = Number(costoConEnvio.toFixed(2));
 
-    let porcentajeUtil = Number(next.porcentaje_utilidad || 0);
-
-    // Safeguard: cap utility percentage at 100%
-    if (porcentajeUtil > 100) {
-      porcentajeUtil = 100;
-      next.porcentaje_utilidad = 100;
+    const origenCampo = origenUtilidadDesdeCampo(fieldModificado);
+    const origen = origenCampo === null
+      ? (next.utilidad_origen === "monto" ? "monto" : "porcentaje")
+      : origenCampo;
+    const tot = aplicarTotalesSuministro({
+      costoPrecio,
+      cantidad,
+      costoEnvio,
+      porcentajeEnvio,
+      utilidad: next.utilidad,
+      porcentaje: next.porcentaje_utilidad,
+      origen,
+    });
+    next.costo_envio = tot.costo_envio;
+    next.porcentaje_envio = tot.porcentaje_envio;
+    next.costo_con_envio = tot.costo_con_envio;
+    next.utilidad = tot.utilidad;
+    next.porcentaje_utilidad = tot.porcentaje_utilidad;
+    if (origen === "monto" || origen === "porcentaje") {
+      next.utilidad_origen = origen;
     }
-
-    let utilidadUnit = (costoConEnvio * porcentajeUtil) / 100;
-
-    if (fieldModificado === 'utilidad') {
-      utilidadUnit = Number(next.utilidad || 0);
-      
-      // Safeguard: cap utility amount at costoConEnvio
-      if (utilidadUnit > costoConEnvio) {
-        utilidadUnit = costoConEnvio;
-        next.utilidad = costoConEnvio;
-      }
-      
-      porcentajeUtil = costoConEnvio > 0 ? (utilidadUnit / costoConEnvio) * 100 : 0;
-      next.porcentaje_utilidad = Number(porcentajeUtil.toFixed(2));
-    } else if (fieldModificado === 'porcentaje_utilidad') {
-      next.utilidad = Number(utilidadUnit.toFixed(2));
-    } else {
-      next.utilidad = Number(utilidadUnit.toFixed(2));
-      next.porcentaje_utilidad = Number(porcentajeUtil.toFixed(2));
-    }
-
-    const ventaPrecio = costoConEnvio + Number(next.utilidad || 0);
-    next.precio_venta = Number(ventaPrecio.toFixed(2));
-    next.venta_total = Number((ventaPrecio * cantidad).toFixed(2));
-    next.costo_total = Number((costoPrecio * cantidad).toFixed(2));
+    next.precio_venta = tot.precio_venta;
+    next.venta_total = tot.venta_total;
+    next.costo_total = tot.costo_total;
 
     return next;
   };
@@ -1126,51 +1429,48 @@ const EditableGroupRow = ({
     const isCat06 = next.categoria === "06";
     const isCat04 = next.categoria === "04";
     const dias = isCat06 ? 1 : Number(next.cantidad_dias || 0);
-    const horas = Number(next.horas || 8);
-    
+
     if (isCat04 || isCat06) {
       const costo = Number(next.costo_hombre_dia || 0);
       const totalUnits = cantidad * (isCat04 ? (dias > 0 ? dias : 1) : 1);
-      const costoTotal = totalUnits * costo;
-      
+
       let pct = Number(next.porcentaje || 0);
       if (pct > 100) {
         pct = 100;
         next.porcentaje = 100;
       }
-      
-      let utilidadUnit = costo * (pct / 100);
-      
-      if (fieldModificado === 'utilidad') {
-        utilidadUnit = Number(next.utilidad || 0);
-        if (utilidadUnit > costo && costo > 0) {
-          utilidadUnit = costo;
-          next.utilidad = costo;
-        }
-        pct = costo > 0 ? (utilidadUnit / costo) * 100 : 0;
-        next.porcentaje = Number(pct.toFixed(2));
-      } else if (fieldModificado === 'porcentaje') {
-        next.utilidad = Number(utilidadUnit.toFixed(2));
-      } else {
-        next.utilidad = Number(utilidadUnit.toFixed(2));
-        next.porcentaje = Number(pct.toFixed(2));
+
+      const origenCampo = origenUtilidadDesdeCampo(fieldModificado);
+      const origen = origenCampo === null
+        ? (next.utilidad_origen === "monto" ? "monto" : "porcentaje")
+        : origenCampo;
+      const tot = aplicarTotalesServicio({
+        costoUnit: costo,
+        totalUnits,
+        utilidad: next.utilidad,
+        porcentaje: pct,
+        origen,
+      });
+      next.utilidad = tot.utilidad;
+      next.porcentaje = tot.porcentaje;
+      if (origen === "monto" || origen === "porcentaje") {
+        next.utilidad_origen = origen;
       }
-      
+
       if (isCat06) {
         next.cantidad_dias = 1;
       }
-      
-      const cotizadoUnit = costo + Number(next.utilidad || 0);
-      next.costo_total = Number(costoTotal.toFixed(2));
-      next.cotizado_hombre_dia = Number(cotizadoUnit.toFixed(2));
-      next.cotizado_total = Number((totalUnits * next.cotizado_hombre_dia).toFixed(2));
+
+      next.costo_total = tot.costo_total;
+      next.cotizado_hombre_dia = tot.cotizado_hombre_dia;
+      next.cotizado_total = tot.cotizado_total;
     } else if (next.categoria === "05") {
       const precio = Number(next.cotizado_hombre_dia || next.costo_hombre_dia || 0);
       const totalUnits = cantidad * (dias > 0 ? dias : 1);
-      next.costo_hombre_dia = precio;
-      next.cotizado_hombre_dia = precio;
-      next.costo_total = Number((totalUnits * precio).toFixed(2));
-      next.cotizado_total = Number((totalUnits * precio).toFixed(2));
+      next.costo_hombre_dia = roundMoney(precio);
+      next.cotizado_hombre_dia = roundMoney(precio);
+      next.costo_total = moneyTotal(precio, totalUnits);
+      next.cotizado_total = moneyTotal(precio, totalUnits);
       next.porcentaje = 0;
       next.utilidad = 0;
     }
@@ -1287,7 +1587,7 @@ const EditableGroupRow = ({
       venta_total: 0,
       tipo_unidad: 'UNI',
       observacion: '',
-      tiempo_entrega: '',
+      tiempo_entrega: 0,
       id_unidad_tiempo_entrega: 1
     });
   };
@@ -1313,7 +1613,10 @@ const EditableGroupRow = ({
       descripcion_item: item.descripcion_item.toUpperCase()
     };
     
-    const recalculated = recalculateServiceItem(candidateItem, "costo_hombre_dia");
+    const fieldModificado = (item.utilidad !== undefined && item.utilidad !== null && item.utilidad !== "")
+      ? "utilidad"
+      : "costo_hombre_dia";
+    const recalculated = recalculateServiceItem(candidateItem, fieldModificado);
     setTempItems(prev => [...prev, recalculated]);
     
     setItem(resetValue);
@@ -1483,61 +1786,61 @@ const EditableGroupRow = ({
       const finalHombres = Number(next.cantidad_hombres || 0);
       const finalDias = Number(next.cantidad_dias || 0);
       const finalCosto = Number(next.costo_hombre_dia || 0);
-      let finalPorcentaje = Number(next.porcentaje || 0);
-      
       const totalUnits = finalHombres * (finalDias > 0 ? finalDias : 1);
-      const newCostoTotal = totalUnits * finalCosto;
-      let utilUnit = finalCosto * (finalPorcentaje / 100);
 
-      if (fieldModificado === 'utilidad') {
-        utilUnit = Number(value || 0);
-        finalPorcentaje = finalCosto > 0 ? (utilUnit / finalCosto) * 100 : 0;
-        next.porcentaje = Number(finalPorcentaje.toFixed(2));
-        next.utilidad = Number(utilUnit.toFixed(2));
-      } else {
-        next.utilidad = Number(utilUnit.toFixed(2));
+      const origenCampo = origenUtilidadDesdeCampo(fieldModificado);
+      const origen = origenCampo === null
+        ? (next.utilidad_origen === "monto" ? "monto" : "porcentaje")
+        : origenCampo;
+      const tot = aplicarTotalesServicio({
+        costoUnit: finalCosto,
+        totalUnits,
+        utilidad: next.utilidad,
+        porcentaje: next.porcentaje,
+        origen,
+      });
+      next.utilidad = tot.utilidad;
+      next.porcentaje = tot.porcentaje;
+      if (origen === "monto" || origen === "porcentaje") {
+        next.utilidad_origen = origen;
       }
-
-      const newCotizadoHD = finalCosto + utilUnit;
-      const newCotizadoTotal = totalUnits * newCotizadoHD;
-      
-      next.costo_total = Number(newCostoTotal.toFixed(2));
-      next.cotizado_total = Number(newCotizadoTotal.toFixed(2));
-      next.cotizado_hombre_dia = Number(newCotizadoHD.toFixed(2));
+      next.costo_total = tot.costo_total;
+      next.cotizado_total = tot.cotizado_total;
+      next.cotizado_hombre_dia = tot.cotizado_hombre_dia;
     } else if (cat === "05") {
       const finalHombres = Number(next.cantidad_hombres || 0);
       const finalDias = Number(next.cantidad_dias || 0);
       const precio = Number(next.cotizado_hombre_dia || next.costo_hombre_dia || 0);
       const totalUnits = finalHombres * (finalDias > 0 ? finalDias : 1);
-      next.costo_hombre_dia = precio;
-      next.cotizado_hombre_dia = precio;
-      next.costo_total = Number((totalUnits * precio).toFixed(2));
-      next.cotizado_total = Number((totalUnits * precio).toFixed(2));
+      next.costo_hombre_dia = roundMoney(precio);
+      next.cotizado_hombre_dia = roundMoney(precio);
+      next.costo_total = moneyTotal(precio, totalUnits);
+      next.cotizado_total = moneyTotal(precio, totalUnits);
       next.porcentaje = 0;
       next.utilidad = 0;
     } else if (cat === "06") {
       const finalCant = Number(next.cantidad_hombres || 0);
       const finalCosto = Number(next.costo_hombre_dia || 0);
-      let finalPorcentaje = Number(next.porcentaje || 0);
-      
-      const newCostoTotal = finalCant * finalCosto;
-      let utilUnit = finalCosto * (finalPorcentaje / 100);
 
-      if (fieldModificado === 'utilidad') {
-        utilUnit = Number(value || 0);
-        finalPorcentaje = finalCosto > 0 ? (utilUnit / finalCosto) * 100 : 0;
-        next.porcentaje = Number(finalPorcentaje.toFixed(2));
-        next.utilidad = Number(utilUnit.toFixed(2));
-      } else {
-        next.utilidad = Number(utilUnit.toFixed(2));
+      const origenCampo = origenUtilidadDesdeCampo(fieldModificado);
+      const origen = origenCampo === null
+        ? (next.utilidad_origen === "monto" ? "monto" : "porcentaje")
+        : origenCampo;
+      const tot = aplicarTotalesServicio({
+        costoUnit: finalCosto,
+        totalUnits: finalCant,
+        utilidad: next.utilidad,
+        porcentaje: next.porcentaje,
+        origen,
+      });
+      next.utilidad = tot.utilidad;
+      next.porcentaje = tot.porcentaje;
+      if (origen === "monto" || origen === "porcentaje") {
+        next.utilidad_origen = origen;
       }
-
-      const newCotizadoHD = finalCosto + utilUnit;
-      const newCotizadoTotal = finalCant * newCotizadoHD;
-      
-      next.costo_total = Number(newCostoTotal.toFixed(2));
-      next.cotizado_total = Number(newCotizadoTotal.toFixed(2));
-      next.cotizado_hombre_dia = Number(newCotizadoHD.toFixed(2));
+      next.costo_total = tot.costo_total;
+      next.cotizado_total = tot.cotizado_total;
+      next.cotizado_hombre_dia = tot.cotizado_hombre_dia;
     }
     return next;
   };
@@ -1552,7 +1855,12 @@ const EditableGroupRow = ({
         return acc + Number(it.costo_precio || 0) * Number(it.cantidad || 0);
       }, 0) + Number(updatedForm.costo_precio || 0) * Number(updatedForm.cantidad || 0);
 
-      updatedForm = recalculateRowValues(updatedForm, 'porcentaje_utilidad', Number(tempData.costoEnvio || 0), totalCostoItems);
+      updatedForm = recalculateRowValues(
+        updatedForm,
+        updatedForm.utilidad_origen === "monto" ? "utilidad" : "porcentaje_utilidad",
+        Number(tempData.costoEnvio || 0),
+        totalCostoItems
+      );
     } else {
       // Servicios
       const cat = editingTempItemForm.categoria;
@@ -1561,16 +1869,21 @@ const EditableGroupRow = ({
         const finalDias = Number(updatedForm.cantidad_dias || 0);
         const finalCosto = Number(updatedForm.costo_hombre_dia || 0);
         const finalPorcentaje = Number(updatedForm.porcentaje || 0);
-        
-        const newCostoTotal = finalHombres * finalDias * finalCosto;
-        const newUtilUnit = finalCosto * (finalPorcentaje / 100);
-        const newCotizadoHD = finalCosto + newUtilUnit;
-        const newCotizadoTotal = totalUnits * newCotizadoHD;
-        
-        updatedForm.costo_total = Number(newCostoTotal.toFixed(2));
-        updatedForm.utilidad = Number(newUtilUnit.toFixed(2));
-        updatedForm.cotizado_total = Number(newCotizadoTotal.toFixed(2));
-        updatedForm.cotizado_hombre_dia = Number(newCotizadoHD.toFixed(2));
+        const totalUnits = finalHombres * (finalDias > 0 ? finalDias : 1);
+        const origen = updatedForm.utilidad_origen === "porcentaje" ? "porcentaje" : "monto";
+        const tot = aplicarTotalesServicio({
+          costoUnit: finalCosto,
+          totalUnits,
+          utilidad: updatedForm.utilidad,
+          porcentaje: finalPorcentaje,
+          origen,
+        });
+        updatedForm.costo_total = tot.costo_total;
+        updatedForm.utilidad = tot.utilidad;
+        updatedForm.porcentaje = tot.porcentaje;
+        updatedForm.utilidad_origen = origen;
+        updatedForm.cotizado_total = tot.cotizado_total;
+        updatedForm.cotizado_hombre_dia = tot.cotizado_hombre_dia;
 
         const min = parseFloat(updatedForm.costo_min || 0);
         const max = parseFloat(updatedForm.costo_max || 0);
@@ -1581,22 +1894,25 @@ const EditableGroupRow = ({
         const finalHombres = Number(updatedForm.cantidad_hombres || 0);
         const finalDias = Number(updatedForm.cantidad_dias || 0);
         const precio = Number(updatedForm.cotizado_hombre_dia || 0);
-        const newTotal = finalHombres * finalDias * precio;
-        updatedForm.cotizado_total = Number(newTotal.toFixed(2));
+        updatedForm.cotizado_total = moneyTotal(precio, finalHombres * finalDias);
       } else if (cat === "06") {
         const finalCant = Number(updatedForm.cantidad_hombres || 0);
         const finalCosto = Number(updatedForm.costo_hombre_dia || 0);
         const finalPorcentaje = Number(updatedForm.porcentaje || 0);
-        
-        const newCostoTotal = finalCant * finalCosto;
-        const newUtilUnit = finalCosto * (finalPorcentaje / 100);
-        const newCotizadoHD = finalCosto + newUtilUnit;
-        const newCotizadoTotal = finalCant * newCotizadoHD;
-        
-        updatedForm.costo_total = Number(newCostoTotal.toFixed(2));
-        updatedForm.utilidad = Number(newUtilUnit.toFixed(2));
-        updatedForm.cotizado_total = Number(newCotizadoTotal.toFixed(2));
-        updatedForm.cotizado_hombre_dia = Number(newCotizadoHD.toFixed(2));
+        const origen = updatedForm.utilidad_origen === "porcentaje" ? "porcentaje" : "monto";
+        const tot = aplicarTotalesServicio({
+          costoUnit: finalCosto,
+          totalUnits: finalCant,
+          utilidad: updatedForm.utilidad,
+          porcentaje: finalPorcentaje,
+          origen,
+        });
+        updatedForm.costo_total = tot.costo_total;
+        updatedForm.utilidad = tot.utilidad;
+        updatedForm.porcentaje = tot.porcentaje;
+        updatedForm.utilidad_origen = origen;
+        updatedForm.cotizado_total = tot.cotizado_total;
+        updatedForm.cotizado_hombre_dia = tot.cotizado_hombre_dia;
       }
     }
 
@@ -1742,8 +2058,8 @@ const EditableGroupRow = ({
         </div>
 
         <div className="flex items-center gap-4">
-          {/* Condicional: Costo Envío para Venta (Total o Parcial) */}
-          {isVenta && canExpand && (
+          {/* Envío solo al crear un grupo nuevo (con nombre). El envío de grupos existentes se edita en su cabecera. */}
+          {isVenta && isExpanded && (
             <div className="flex items-center gap-1.5 ml-2 px-2.5 py-1 bg-blue-50 border border-blue-100 rounded-lg focus-within:border-blue-400 transition-colors shadow-2xs">
               <span className="text-[9.5px] font-black text-blue-700 uppercase">
                 {tipoVenta === "P" ? "Envío Unit:" : "Envío Tot:"}
@@ -3220,7 +3536,7 @@ const EditableGroupRow = ({
                       <col className="col-money" />
                       {isVenta && <col className="col-money" />}
                       <col className="col-util" />
-                      {!ocultarTotalesMap['draft'] && (
+                      {true && (
                         <>
                           <col className="col-money" />
                           <col className="col-money" />
@@ -3247,7 +3563,7 @@ const EditableGroupRow = ({
                         </th>
                         {isVenta && <th>Envío</th>}
                         <th>Utilidad</th>
-                        {!ocultarTotalesMap['draft'] && (
+                        {true && (
                           <>
                             <th>
                               <div className="th-stack">
@@ -3429,7 +3745,7 @@ const EditableGroupRow = ({
                                   </div>
                                 </div>
                               </td>
-                              {!ocultarTotalesMap['draft'] && (
+                              {true && (
                                 <>
                                   <td className="px-4 py-1 text-right text-[11px] text-gray-500 font-semibold">
                                     {formatMoneySymbolSafe(editingTempItemForm.precio_venta)}
@@ -3499,7 +3815,7 @@ const EditableGroupRow = ({
                                 <span className="text-[9px] text-gray-400">{item.porcentaje_utilidad || 0}%</span>
                               </div>
                             </td>
-                            {!ocultarTotalesMap['draft'] && (
+                            {true && (
                               <>
                                 <td className="px-4 py-1.5 text-[11px] text-right text-gray-600 font-medium">
                                   {formatMoneySymbolSafe(item.precio_venta || item.costo_precio)}
@@ -3735,7 +4051,7 @@ const EditableGroupRow = ({
                             </div>
                           </div>
                         </td>
-                        {!ocultarTotalesMap['draft'] && (
+                        {true && (
                           <>
                             {/* Precio unitario */}
                             <td className="px-4 py-1.5 text-center text-[11.5px] font-semibold text-gray-500">
@@ -3750,122 +4066,15 @@ const EditableGroupRow = ({
                         <td className="px-4 py-1.5 text-center align-middle">
                           <div className="flex items-center justify-center gap-1">
                             {canExpand && (
-                              <ActionMenu
-                                title="Logística y Detalles del Nuevo Ítem"
-                                align="end"
-                                closeOnSelect={false}
-                                contentClassName="min-w-[300px]"
-                                customTrigger={
-                                  <button
-                                    type="button"
-                                    className="p-1 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg border border-gray-200 shadow-sm transition-colors flex items-center justify-center"
-                                    title="Detalles Adicionales"
-                                  >
-                                    <Icon name="ellipsis-vertical" className="h-3.5 w-3.5" />
-                                  </button>
-                                }
-                              >
-                                <div 
-                                  className="p-3 space-y-3 text-xs text-left bg-white"
-                                  onKeyDown={handleDetailsKeyDown}
-                                 >
-                                  {/* U. Medida */}
-                                  <div className="flex flex-col gap-1">
-                                    <span className="font-bold text-gray-400 uppercase text-[9px]">U. Medida:</span>
-                                    <UnidadMedidaAutocomplete
-                                      idMedida={newItem.id_medida}
-                                      unidadesMedida={unidadesMedida}
-                                      onSelect={(unit) => {
-                                        setNewItem(prev => ({
-                                          ...prev,
-                                          id_medida: unit.id_medida,
-                                          tipo_unidad: unit.nombre
-                                        }));
-                                      }}
-                                      onAddMedida={(newUnit) => {
-                                        setUnidadesMedida(prev => [...prev, newUnit]);
-                                        setNewItem(prev => ({
-                                          ...prev,
-                                          id_medida: newUnit.id_medida,
-                                          tipo_unidad: newUnit.nombre
-                                        }));
-                                      }}
-                                    />
-                                  </div>
-                                  {/* Tiempo Entrega */}
-                                  <div className="flex flex-col gap-1">
-                                    <span className="font-bold text-gray-400 uppercase text-[9px]">Tiempo Entrega:</span>
-                                    <div className="flex gap-2">
-                                      <input
-                                        type="number"
-                                        className="w-2/3 border border-gray-200 rounded px-2 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold text-gray-700"
-                                        value={newItem.tiempo_entrega || ""}
-                                        onChange={e => handleNewItemChange("tiempo_entrega", e.target.value)}
-                                        placeholder="Días"
-                                      />
-                                      <select
-                                        className="w-1/3 border border-gray-200 rounded px-1 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold text-gray-750"
-                                        value={newItem.id_unidad_tiempo_entrega || 1}
-                                        onChange={e => handleNewItemChange("id_unidad_tiempo_entrega", parseInt(e.target.value, 10))}
-                                      >
-                                        <option value={1}>DÍAS</option>
-                                        <option value={2}>SEMANAS</option>
-                                      </select>
-                                    </div>
-                                  </div>
-
-                                  {/* RESUMEN DE VENTA */}
-                                  {(() => {
-                                    const itemCantidad = Number(newItem.cantidad || 0);
-                                    const itemCostoPrecio = Number(newItem.costo_precio || 0);
-                                    const itemCostoEnvio = Number(newItem.costo_envio || 0);
-                                    const itemPrecioVenta = Number(newItem.precio_venta || 0);
-                                    const itemVentaTotal = Number(newItem.venta_total || 0);
-                                    const itemUtilidad = Number(newItem.utilidad || 0);
-
-                                    const costoTotal = itemCostoPrecio * itemCantidad;
-                                    const costoConEnvioPorUnidad = itemCostoPrecio + itemCostoEnvio;
-                                    const precioVentaUnit = itemPrecioVenta;
-                                    const ventaTotal = isVenta ? itemVentaTotal : costoTotal;
-                                    const utilidadTotal = itemUtilidad * itemCantidad;
-
-                                    return (
-                                      <div className="bg-teal-50/50 border border-teal-100 rounded-xl p-3 space-y-2 shadow-inner mt-2">
-                                        <div className="flex items-center gap-2 text-teal-700">
-                                          <Icon name="trending-up" className="h-3.5 w-3.5" />
-                                          <span className="text-[10px] font-black uppercase tracking-tight">Resumen de Venta</span>
-                                        </div>
-                                        <div className="space-y-1 text-[11px]">
-                                          <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-100/50">
-                                            <span>Costo Total:</span>
-                                            <span className="font-semibold text-gray-700">{formatMoneySymbolSafe(costoTotal)}</span>
-                                          </div>
-                                          {isVenta && (
-                                            <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-100/50">
-                                              <span>Costo con Envío:</span>
-                                              <span className="font-semibold text-gray-700">{formatMoneySymbolSafe(costoConEnvioPorUnidad)}</span>
-                                            </div>
-                                          )}
-                                          <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-100/50">
-                                            <span>Precio Venta:</span>
-                                            <span className="font-semibold text-gray-700">{formatMoneySymbolSafe(precioVentaUnit)}</span>
-                                          </div>
-                                          <div className="flex justify-between items-center text-teal-800 py-0.5 border-b border-teal-100/50 font-black">
-                                            <span>Venta Total:</span>
-                                            <span className="text-teal-700 text-[12px]">{formatMoneySymbolSafe(ventaTotal)}</span>
-                                          </div>
-                                          {isVenta && (
-                                            <div className="flex justify-between items-center text-emerald-800 py-0.5 font-bold">
-                                              <span>Utilidad Total:</span>
-                                              <span className="text-emerald-600">{formatMoneySymbolSafe(utilidadTotal)}</span>
-                                            </div>
-                                          )}
-                                        </div>
-                                      </div>
-                                    );
-                                  })()}
-                                </div>
-                              </ActionMenu>
+                              <SuministroEspecificacionesPopover
+                                values={newItem}
+                                isReadOnly={false}
+                                isVenta={isVenta}
+                                formatMoney={formatMoneySymbolSafe}
+                                unidadesMedida={unidadesMedida}
+                                setUnidadesMedida={setUnidadesMedida}
+                                onPatch={(patch) => setNewItem(prev => ({ ...prev, ...patch }))}
+                              />
                             )}
                           </div>
                         </td>
@@ -3885,6 +4094,13 @@ const EditableGroupRow = ({
   );
 };
 
+const normalizeCondicionesHtml = (html) =>
+  String(html || "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/<p><br\s*\/?><\/p>/gi, "")
+    .replace(/<p>\s*<\/p>/gi, "")
+    .trim();
+
 const CondicionesEditor = React.forwardRef(({ initialValue, onChange, isReadOnly, placeholder, modules, ...props }, ref) => {
   const [localValue, setLocalValue] = React.useState(initialValue);
 
@@ -3892,19 +4108,19 @@ const CondicionesEditor = React.forwardRef(({ initialValue, onChange, isReadOnly
     setLocalValue(initialValue);
   }, [initialValue]);
 
-  React.useEffect(() => {
-    const timer = setTimeout(() => {
-      onChange(localValue);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [localValue, onChange]);
+  const handleChange = (value, _delta, source) => {
+    setLocalValue(value);
+    if (source === "user" && typeof onChange === "function") {
+      onChange(value);
+    }
+  };
 
   return (
     <ReactQuill
       ref={ref}
       theme="snow"
       value={localValue}
-      onChange={setLocalValue}
+      onChange={handleChange}
       readOnly={isReadOnly}
       placeholder={placeholder}
       modules={modules}
@@ -4300,6 +4516,14 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       ...prev,
       [codigoGrupo]: newValue
     }));
+    setGruposSuministros(prev => {
+      const gp = prev[codigoGrupo];
+      if (!gp) return prev;
+      return {
+        ...prev,
+        [codigoGrupo]: { ...gp, total_por_grupo: newValue ? 1 : 0 }
+      };
+    });
 
     // Sincronizar en base de datos
     const gp = Object.values(gruposSuministros).find(g => g.codigo_grupo === codigoGrupo);
@@ -4315,9 +4539,15 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     }
   };
 
-  const isReadOnly = Number(data?.estado_envio ?? 0) === 2;
+  const isEnviado = Number(data?.estado_envio ?? 0) === 2;
+  const estadoNombre = String(data?.estado_nombre || "").trim().toLowerCase();
+  const isAdjudicado =
+    Number(data?.id_estado) === 1 ||
+    estadoNombre === "adjudicado" ||
+    estadoNombre === "adjudicada";
+  const isReadOnly = isEnviado || isAdjudicado;
   const isVenta = data?.id_tipo === "V";
-  const tipoVenta = data?.tipo_venta;
+  const tipoVenta = String(data?.tipo_venta || "").trim().toUpperCase();
   const canEdit = !isReadOnly;
   const quillRef = useRef(null);
 
@@ -4534,7 +4764,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
               let totalCostoItems = 0;
               const foundGroup = gruposSuministros[targetGroup];
               if (foundGroup) {
-                groupCostoEnvio = Number(data?.tipo_venta === "P" ? (foundGroup.costo_envio_unidad || foundGroup.costo_envio || 0) : (foundGroup.costo_envio_total || foundGroup.costo_envio || 0));
+                groupCostoEnvio = envioGrupoValue(foundGroup, data?.tipo_venta);
                 const items = foundGroup.items || [];
                 const existingCosto = items.reduce((acc, it) => acc + (Number(it.costo_precio || 0) * Number(it.cantidad || 0)), 0);
                 const addCost = Number(updated.costo_precio || 0);
@@ -5576,55 +5806,38 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     let porcentajeEnvio = Number(next.porcentaje_envio || 0);
 
     if (isVenta) {
-      if (tipoVenta === "T") {
-        porcentajeEnvio = totalCostoItems > 0 ? (costoPrecio / totalCostoItems) * 100 : 0;
-        costoEnvio = (porcentajeEnvio / 100) * groupCostoEnvio;
-      } else if (tipoVenta === "P") {
-        costoEnvio = cantidad > 0 ? groupCostoEnvio / cantidad : 0;
-        porcentajeEnvio = costoPrecio > 0 ? ((costoEnvio / costoPrecio) * 100) : 0;
-      }
+      const prorateado = prorratearEnvioItem(next, groupCostoEnvio, totalCostoItems, tipoVenta);
+      costoEnvio = prorateado.costoEnvio;
+      porcentajeEnvio = prorateado.porcentajeEnvio;
     } else {
       costoEnvio = 0;
       porcentajeEnvio = 0;
     }
 
-    const costoConEnvio = costoPrecio + costoEnvio;
-    next.costo_envio = Number(costoEnvio.toFixed(2));
-    next.porcentaje_envio = Number(porcentajeEnvio.toFixed(2));
-    next.costo_con_envio = Number(costoConEnvio.toFixed(2));
-
-    let porcentajeUtil = Number(next.porcentaje_utilidad || 0);
-
-    // Safeguard: cap utility percentage at 100%
-    if (porcentajeUtil > 100) {
-      porcentajeUtil = 100;
-      next.porcentaje_utilidad = 100;
+    const origenCampo = origenUtilidadDesdeCampo(fieldModificado);
+    const origen = origenCampo === null
+      ? (next.utilidad_origen === "monto" ? "monto" : "porcentaje")
+      : origenCampo;
+    const tot = aplicarTotalesSuministro({
+      costoPrecio,
+      cantidad,
+      costoEnvio,
+      porcentajeEnvio,
+      utilidad: next.utilidad,
+      porcentaje: next.porcentaje_utilidad,
+      origen,
+    });
+    next.costo_envio = tot.costo_envio;
+    next.porcentaje_envio = tot.porcentaje_envio;
+    next.costo_con_envio = tot.costo_con_envio;
+    next.utilidad = tot.utilidad;
+    next.porcentaje_utilidad = tot.porcentaje_utilidad;
+    if (origen === "monto" || origen === "porcentaje") {
+      next.utilidad_origen = origen;
     }
-
-    let utilidadUnit = (costoConEnvio * porcentajeUtil) / 100;
-
-    if (fieldModificado === 'utilidad') {
-      utilidadUnit = Number(next.utilidad || 0);
-      
-      // Safeguard: cap utility amount at costoConEnvio
-      if (utilidadUnit > costoConEnvio) {
-        utilidadUnit = costoConEnvio;
-        next.utilidad = costoConEnvio;
-      }
-      
-      porcentajeUtil = costoConEnvio > 0 ? (utilidadUnit / costoConEnvio) * 100 : 0;
-      next.porcentaje_utilidad = Number(porcentajeUtil.toFixed(2));
-    } else if (fieldModificado === 'porcentaje_utilidad') {
-      next.utilidad = Number(utilidadUnit.toFixed(2));
-    } else {
-      next.utilidad = Number(utilidadUnit.toFixed(2));
-      next.porcentaje_utilidad = Number(porcentajeUtil.toFixed(2));
-    }
-
-    const ventaPrecio = costoConEnvio + Number(next.utilidad || 0);
-    next.precio_venta = Number(ventaPrecio.toFixed(2));
-    next.venta_total = Number((ventaPrecio * cantidad).toFixed(2));
-    next.costo_total = Number((costoPrecio * cantidad).toFixed(2));
+    next.precio_venta = tot.precio_venta;
+    next.venta_total = tot.venta_total;
+    next.costo_total = tot.costo_total;
 
     return next;
   };
@@ -5644,17 +5857,17 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       let totalCostoItems = 0;
 
       Object.values(gruposSuministros || {}).forEach(gp => {
-        const found = gp.items?.some(it => it.id_suministro === editingItemId);
+        const found = gp.items?.some(it => sameSuministroId(it.id_suministro, editingItemId));
         if (found) {
           foundGroup = gp;
         }
       });
 
       if (foundGroup) {
-        groupCostoEnvio = Number(data?.tipo_venta === "P" ? (foundGroup.costo_envio_unidad || foundGroup.costo_envio || 0) : (foundGroup.costo_envio_total || foundGroup.costo_envio || 0));
+        groupCostoEnvio = envioGrupoValue(foundGroup, data?.tipo_venta);
         const items = foundGroup.items || [];
         totalCostoItems = items.reduce((acc, it) => {
-          const isCurrent = it.id_suministro === editingItemId;
+          const isCurrent = sameSuministroId(it.id_suministro, editingItemId);
           const cost = isCurrent && field === 'costo_precio' ? Number(cleanedValue) : Number(it.costo_precio || 0);
           const qty = isCurrent && field === 'cantidad' ? Number(cleanedValue) : Number(it.cantidad || 0);
           return acc + (cost * qty);
@@ -5679,7 +5892,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       let totalCostoItems = 0;
 
       if (foundGroup) {
-        groupCostoEnvio = Number(data?.tipo_venta === "P" ? (foundGroup.costo_envio_unidad || foundGroup.costo_envio || 0) : (foundGroup.costo_envio_total || foundGroup.costo_envio || 0));
+        groupCostoEnvio = envioGrupoValue(foundGroup, data?.tipo_venta);
         const items = foundGroup.items || [];
         const existingCosto = items.reduce((acc, it) => acc + (Number(it.costo_precio || 0) * Number(it.cantidad || 0)), 0);
 
@@ -5919,7 +6132,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
           costo_envio: 0,
           porcentaje_envio: 0,
           costo_con_envio: 0,
-          tiempo_entrega: "",
+          tiempo_entrega: 0,
           id_unidad_tiempo_entrega: 1,
           tipo_unidad: "UNI"
         }
@@ -5957,7 +6170,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     handleReporteServicios,
     isSuministrosDirty,
     saveSuministros,
-  } = useCotizacionSuministros(numReg);
+  } = useCotizacionSuministros(numReg, undefined, { codigo: data?.codigo, referencia: data?.referencia });
 
   useEffect(() => {
     if (!gruposSuministros) return;
@@ -5996,12 +6209,12 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     handleExportarGeneralServiciosXLS,
     isServiciosDirty,
     saveServicios,
-  } = useCotizacionServicios(numReg);
+  } = useCotizacionServicios(numReg, undefined, { codigo: data?.codigo, referencia: data?.referencia });
 
   const sortedGruposServicios = useMemo(() => {
     return Object.values(gruposServicios || {}).sort((a, b) => (a.orden || 0) - (b.orden || 0));
   }, [gruposServicios]);
-  const [expandedCategories, setExpandedCategories] = useState(['Suministros', 'Servicios', 'Condiciones', 'Cliente']);
+  const [expandedCategories, setExpandedCategories] = useState(['Suministros', 'Servicios', 'Cliente']);
   const [generalConditions, setGeneralConditions] = useState('');
   const [currentStatus, setCurrentStatus] = useState('');
   const [searchQueryNotas, setSearchQueryNotas] = useState('');
@@ -6211,6 +6424,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
   // Group header inline edit states
   const [editingGroupHeader, setEditingGroupHeader] = useState(null); // { codigo_grupo, campo: 'cantidad' | 'costo_envio' }
   const [editingHeaderValue, setEditingHeaderValue] = useState("");
+  const headerSaveLockRef = useRef(false);
 
 
 
@@ -6565,7 +6779,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     return keysToCompare.some(key => data[key] !== originalData[key]);
   }, [data, originalData]);
 
-  const isCondicionesDirty = generalConditions !== loadedConditionsRef.current;
+  const isCondicionesDirty =
+    normalizeCondicionesHtml(generalConditions) !== normalizeCondicionesHtml(loadedConditionsRef.current);
 
   const isDirty = isHeaderDirty || isSuministrosDirty || isServiciosDirty || isCondicionesDirty || isDescuentoDirty;
 
@@ -6619,7 +6834,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
   }, [isServiciosDirty, saveServicios, isReadOnly, refreshHeaderTotals]);
 
   const saveCondicionesInstantly = useCallback(async () => {
-    if (generalConditions === loadedConditionsRef.current || isReadOnly) return;
+    if (isReadOnly) return;
+    if (normalizeCondicionesHtml(generalConditions) === normalizeCondicionesHtml(loadedConditionsRef.current)) return;
     try {
       await api.post(`cotizaciones/condiciones-generales/${numReg}/`, { condiciones: generalConditions });
       loadedConditionsRef.current = generalConditions;
@@ -6724,12 +6940,12 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
         tipo_moneda: customData.tipo_moneda,
         tipo_cambio: customData.tipo_cambio,
         igv: customData.igv,
-        entrega_suministros: customData.entrega_suministros,
-        id_unidad_tiempo_entrega_suministros: customData.id_unidad_tiempo_entrega_suministros,
-        entrega_servicios: customData.entrega_servicios,
-        id_unidad_tiempo_entrega_servicios: customData.id_unidad_tiempo_entrega_servicios,
-        validez_oferta: customData.validez_oferta,
-        id_unidad_tiempo_validez: customData.id_unidad_tiempo_validez,
+        entrega_suministros: normalizeTiempoEntrega(customData.entrega_suministros),
+        id_unidad_tiempo_entrega_suministros: customData.id_unidad_tiempo_entrega_suministros || 1,
+        entrega_servicios: normalizeTiempoEntrega(customData.entrega_servicios),
+        id_unidad_tiempo_entrega_servicios: customData.id_unidad_tiempo_entrega_servicios || 1,
+        validez_oferta: normalizeTiempoEntrega(customData.validez_oferta),
+        id_unidad_tiempo_validez: customData.id_unidad_tiempo_validez || 1,
         id_area: customData.id_area,
         id_tipo: customData.id_tipo,
         tipo_venta: customData.tipo_venta,
@@ -6843,6 +7059,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
   });
 
   const handleSelectComercial = (user) => {
+    if (isReadOnly) return;
     const userId = user.id_usuario || user.id || user.dni;
     const updated = {
       ...data,
@@ -6861,6 +7078,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
   };
 
   const handleSelectTecnico = (user) => {
+    if (isReadOnly) return;
     const userId = user.id_usuario || user.id || user.dni;
     const updated = {
       ...data,
@@ -6885,9 +7103,23 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       return;
     }
 
+    const tiempoHeaderFields = {
+      entrega_suministros: "id_unidad_tiempo_entrega_suministros",
+      entrega_servicios: "id_unidad_tiempo_entrega_servicios",
+      validez_oferta: "id_unidad_tiempo_validez",
+    };
+
+    if (tiempoHeaderFields[field]) {
+      value = normalizeTiempoEntrega(value);
+    }
+
     let updatedState = null;
     setData(prev => {
       const newState = { ...prev, [field]: value };
+      const unitKey = tiempoHeaderFields[field];
+      if (unitKey && !newState[unitKey]) {
+        newState[unitKey] = 1;
+      }
 
       // 1. Si el tipo de cotización deja de ser Venta (V), 
       // reseteamos los campos logísticos (tipo_venta y costo_envio)
@@ -6947,7 +7179,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       if (firstGroup) {
         setTimeout(() => {
           setEditingGroupHeader({ codigo_grupo: firstGroup.codigo_grupo, campo: 'costo_envio' });
-          const costVal = activeTipoVenta === "P" ? (firstGroup.costo_envio_unidad || 0) : (firstGroup.costo_envio_total || 0);
+          const costVal = envioGrupoValue(firstGroup, activeTipoVenta);
           setEditingHeaderValue(String(costVal));
           
           // Desplazar al elemento span/input
@@ -7237,18 +7469,50 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
 
 
   const handleAgregarGrupoSuministro = async (form) => {
+    if (isReadOnly) return;
     const success = await hookAgregarGrupoSuministro(form, null, data?.tipo_venta);
     if (success) setOpenGrupoModal(false);
   };
 
-  const handleSaveHeaderEdit = (grupo) => {
-    if (!editingGroupHeader) return;
+  const commitGrupoEnvio = async (grupo, rawValue) => {
+    if (isReadOnly || headerSaveLockRef.current) return;
+    const rawVal = parseFloat(String(rawValue ?? "").replace(",", "."));
+    const newVal = Number.isFinite(rawVal) ? Number(rawVal.toFixed(2)) : 0;
+    const oldVal = Number(Number(envioGrupoValue(grupo, data?.tipo_venta)).toFixed(2));
+    if (Math.abs(newVal - oldVal) < 0.01) return;
+
+    headerSaveLockRef.current = true;
+    try {
+      hookAgregarGrupoSuministro({
+        _key: String(grupo.codigo_grupo),
+        nombre: (grupo.nombre_grupo || "").toUpperCase(),
+        cantidad: Number(grupo.cantidad || 1),
+        costoEnvio: newVal,
+        items: grupo.items
+      }, null, data?.tipo_venta);
+
+      let result = await saveSuministros(ocultarTotalesMap);
+      if (result?.skipped) {
+        await new Promise((r) => setTimeout(r, 250));
+        result = await saveSuministros(ocultarTotalesMap);
+      }
+      if (!result?.skipped) await refreshHeaderTotals();
+    } catch (err) {
+      console.error("Error al guardar envío del grupo:", err);
+      toast.error("Error al guardar el envío del grupo");
+    } finally {
+      headerSaveLockRef.current = false;
+    }
+  };
+
+  const handleSaveHeaderEdit = async (grupo) => {
+    if (isReadOnly || !editingGroupHeader || headerSaveLockRef.current) return;
     const { campo } = editingGroupHeader;
 
     let isChanged = false;
     let finalNombre = grupo.nombre_grupo || "";
     let finalCantidad = Number(grupo.cantidad || 1);
-    let finalCostoEnvio = Number(data?.tipo_venta === "P" ? (grupo.costo_envio_unidad || grupo.costo_envio || 0) : (grupo.costo_envio_total || grupo.costo_envio || 0));
+    let finalCostoEnvio = envioGrupoValue(grupo, data?.tipo_venta);
 
     if (campo === 'nombre') {
       const cleanVal = editingHeaderValue.trim();
@@ -7262,14 +7526,14 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     } else if (campo === 'costo_envio') {
       const rawVal = parseFloat(editingHeaderValue);
       const newVal = isNaN(rawVal) ? 0 : Number(rawVal.toFixed(2));
-      const oldVal = Number(finalCostoEnvio.toFixed(2));
+      const oldVal = Number(Number(finalCostoEnvio).toFixed(2));
       isChanged = Math.abs(newVal - oldVal) >= 0.01;
       finalCostoEnvio = newVal;
     }
 
     if (!isChanged) {
       setEditingGroupHeader(null);
-      return; // Salir silenciosamente si no hay cambio real
+      return;
     }
 
     const payload = {
@@ -7281,7 +7545,17 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     };
 
     hookAgregarGrupoSuministro(payload, null, data?.tipo_venta);
+    headerSaveLockRef.current = true;
     setEditingGroupHeader(null);
+    try {
+      const result = await saveSuministros(ocultarTotalesMap);
+      if (!result?.skipped) await refreshHeaderTotals();
+    } catch (err) {
+      console.error("Error al guardar cabecera de suministro:", err);
+      toast.error("Error al guardar el envío del grupo");
+    } finally {
+      headerSaveLockRef.current = false;
+    }
   };
 
   const handleAgregarItem = async (form) => {
@@ -7294,7 +7568,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
   const saveEditItem = async () => {
     let originalItem = null;
     for (const grupo of Object.values(gruposSuministros || {})) {
-      const found = grupo.items?.find(it => it.id_suministro === editingItemId);
+      const found = grupo.items?.find(it => sameSuministroId(it.id_suministro, editingItemId));
       if (found) {
         originalItem = found;
         break;
@@ -7330,7 +7604,25 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
     }
   };
 
+  const persistSuministroPatch = (item, patch) => {
+    if (isReadOnly) return;
+    hookSaveEditItem(
+      item.id_suministro,
+      {
+        ...item,
+        ...patch,
+        tiempo_entrega: patch.tiempo_entrega !== undefined
+          ? normalizeTiempoEntrega(patch.tiempo_entrega)
+          : normalizeTiempoEntrega(item.tiempo_entrega),
+        id_unidad_tiempo_entrega: patch.id_unidad_tiempo_entrega ?? item.id_unidad_tiempo_entrega ?? 1,
+      },
+      null,
+      data?.tipo_venta
+    );
+  };
+
   const handleConfirmGrupoServicio = async (form) => {
+    if (isReadOnly) return;
     await handleAgregarGrupoServicio({
       nombre: form.nombre,
       cantidad: form.cantidad,
@@ -7369,7 +7661,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       horas: Number(form.horas || 8),
       costo_hombre_dia: finalCosto,
       porcentaje: Number(form.porcentaje || 0),
-      utilidad: form.utilidad !== undefined && form.utilidad !== null ? Number(form.utilidad) : undefined
+      utilidad: form.utilidad !== undefined && form.utilidad !== null ? Number(form.utilidad) : undefined,
+      utilidad_origen: form.utilidad_origen || (form.utilidad !== undefined && form.utilidad !== null && form.utilidad !== "" ? "monto" : "porcentaje")
     };
     const success = await handleAgregarItemServicio(hookForm, grupoId, subgrupoId, data?.id_area);
     if (success) {
@@ -7436,6 +7729,8 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
       costo_hombre_dia: Number(form.costo_hombre_dia || 0),
       horas: 8,
       porcentaje: Number(form.porcentaje || 0),
+      utilidad: form.utilidad !== undefined && form.utilidad !== null ? Number(form.utilidad) : undefined,
+      utilidad_origen: form.utilidad_origen || (form.utilidad !== undefined && form.utilidad !== null && form.utilidad !== "" ? "monto" : "porcentaje")
     };
     const success = await handleAgregarItemServicio(hookForm, grupoId, subgrupoId, data?.id_area);
     if (success) {
@@ -7524,6 +7819,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
   };
 
   const handleStartEditingItemInline = (item, fieldName = null) => {
+    if (isReadOnly) return;
     setEditingItemServicioId(item.id_servicio);
     const formHombres = Number(item.cantidad_hombres || 0);
     const formDias = item.categoria === "06" ? 1 : Number(item.cantidad_dias || 0);
@@ -7550,8 +7846,9 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
 
   const renderGrupoSuministro = (grupo, gIdx, dndListeners = {}, dndAttributes = {}) => {
     const isExpanded = gruposExpandidos[grupo.codigo_grupo] !== false;
-    const tipoVenta = data?.tipo_venta;
-    const ocultarTotalesGrupo = !!ocultarTotalesMap[grupo.codigo_grupo];
+    const envioMostrado = envioGrupoValue(grupo, tipoVenta);
+    const totalPorGrupoReporte = !!ocultarTotalesMap[grupo.codigo_grupo];
+    const ocultarTotalesGrupo = false;
 
     return (
       <motion.div
@@ -7604,13 +7901,17 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 />
               ) : (
                 <span 
-                  className="font-black text-gray-800 text-[12px] uppercase tracking-wide cursor-pointer"
+                  className={cn(
+                    "font-black text-gray-800 text-[12px] uppercase tracking-wide",
+                    isReadOnly ? "cursor-default" : "cursor-pointer"
+                  )}
                   onDoubleClick={(e) => {
+                    if (isReadOnly) return;
                     e.stopPropagation();
                     setEditingGroupHeader({ codigo_grupo: grupo.codigo_grupo, campo: 'nombre' });
                     setEditingHeaderValue(grupo.nombre_grupo || "");
                   }}
-                  title="Doble clic para editar nombre del grupo"
+                  title={isReadOnly ? undefined : "Doble clic para editar nombre del grupo"}
                 >
                   {grupo.nombre_grupo}
                 </span>
@@ -7646,13 +7947,17 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 />
               ) : (
                 <span 
-                  className="text-[12px] font-black text-teal-950 cursor-pointer"
+                  className={cn(
+                    "text-[12px] font-black text-teal-950",
+                    isReadOnly ? "cursor-default" : "cursor-pointer"
+                  )}
                   onDoubleClick={(e) => {
+                    if (isReadOnly) return;
                     e.stopPropagation();
                     setEditingGroupHeader({ codigo_grupo: grupo.codigo_grupo, campo: 'cantidad' });
                     setEditingHeaderValue(String(grupo.cantidad || 1));
                   }}
-                  title="Doble clic para editar cantidad"
+                  title={isReadOnly ? undefined : "Doble clic para editar cantidad"}
                 >
                   {grupo.cantidad || 0}
                 </span>
@@ -7667,43 +7972,26 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                 <span className="text-[9px] font-black text-blue-500 uppercase">
                   {tipoVenta === "P" ? "Envío Unit:" : "Envío Tot:"}
                 </span>
-                {editingGroupHeader?.codigo_grupo === grupo.codigo_grupo && editingGroupHeader?.campo === 'costo_envio' ? (
-                  <input
-                    id={`input-envio-${grupo.codigo_grupo}`}
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    className="w-16 bg-transparent border border-blue-300 rounded text-[11.5px] font-black text-blue-800 text-center p-0 focus:ring-0 focus:outline-none"
-                    value={editingHeaderValue}
-                    onChange={(e) => setEditingHeaderValue(e.target.value)}
-                    onBlur={() => handleSaveHeaderEdit(grupo)}
-                    onFocus={(e) => e.target.select()}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleSaveHeaderEdit(grupo);
-                      if (e.key === "Escape") setEditingGroupHeader(null);
-                    }}
-                    autoFocus
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                ) : (
-                  <span 
-                    id={`span-envio-${grupo.codigo_grupo}`}
-                    className="text-[11.5px] font-black text-blue-700 cursor-pointer"
-                    onDoubleClick={(e) => {
-                      e.stopPropagation();
-                      setEditingGroupHeader({ codigo_grupo: grupo.codigo_grupo, campo: 'costo_envio' });
-                      const currentVal = tipoVenta === "P" ? (grupo.costo_envio_unidad || grupo.costo_envio || 0) : (grupo.costo_envio_total || grupo.costo_envio || 0);
-                      setEditingHeaderValue(String(currentVal));
-                    }}
-                    title={tipoVenta === "P" ? "Doble clic para editar envío unitario" : "Doble clic para editar envío total"}
-                  >
-                    {formatMoneySymbol(
-                      tipoVenta === "P" 
-                        ? (grupo.costo_envio_unidad || grupo.costo_envio || 0)
-                        : (grupo.costo_envio_total || grupo.costo_envio || 0)
-                    )}
-                  </span>
-                )}
+                <input
+                  id={`input-envio-${grupo.codigo_grupo}`}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className="w-16 bg-transparent border-none outline-none text-[11.5px] font-black text-blue-800 text-center p-0 focus:ring-0"
+                  defaultValue={envioMostrado}
+                  key={`envio-${grupo.codigo_grupo}-${envioMostrado}`}
+                  title={tipoVenta === "P" ? "Escribe el envío unitario y pulsa Enter" : "Escribe el envío total y pulsa Enter"}
+                  onFocus={(e) => e.target.select()}
+                  onBlur={(e) => commitGrupoEnvio(grupo, e.target.value)}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      e.currentTarget.blur();
+                    }
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                />
               </div>
             )}
 
@@ -7815,10 +8103,11 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                           activeEditField={activeEditField}
                           handleTriggerCreateProduct={handleTriggerCreateProduct}
                           renderInlineProductCreateForm={renderInlineProductCreateForm}
-                          ocultarTotales={ocultarTotalesGrupo}
+                          ocultarTotales={false}
                           numReg={numReg}
                           selectedItemIds={selectedItemIds}
                           handleToggleSelectItem={handleToggleSelectItem}
+                          persistSuministroPatch={persistSuministroPatch}
                         />
                       ))}
                     </SortableContext>
@@ -7844,7 +8133,10 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                         venta_total: 0,
                         costo_envio: 0,
                         porcentaje_envio: 0,
-                        costo_con_envio: 0
+                        costo_con_envio: 0,
+                        tipo_unidad: "UNI",
+                        tiempo_entrega: 0,
+                        id_unidad_tiempo_entrega: 1
                       };
                       const brandOptions = (proveedores || []).map(p => ({
                         id: String(p.id_marca).padStart(2, '0'),
@@ -8014,127 +8306,22 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                           {/* Acciones */}
                           <td className="px-3 py-1.5 text-center">
                             <div className="flex justify-center items-center gap-1">
-                              <ActionMenu
-                                title="Logística y Detalles del Nuevo Ítem"
-                                align="end"
-                                closeOnSelect={false}
-                                contentClassName="min-w-[300px]"
-                                customTrigger={
-                                  <button
-                                    type="button"
-                                    className="p-1 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded shadow-sm transition-colors flex items-center justify-center"
-                                    title="Detalles Adicionales"
-                                  >
-                                    <Icon name="ellipsis-vertical" className="h-3.5 w-3.5" />
-                                  </button>
-                                }
-                              >
-                                <div 
-                                  className="p-3 space-y-3 text-xs text-left"
-                                  onKeyDown={handleDetailsKeyDown}
-                                >
-                                  {/* U. Medida */}
-                                  <div className="flex flex-col gap-1">
-                                    <span className="font-bold text-gray-400 uppercase text-[9px]">U. Medida:</span>
-                                    <UnidadMedidaAutocomplete
-                                      idMedida={currentForm.id_medida}
-                                      unidadesMedida={unidadesMedida}
-                                      onSelect={(unit) => {
-                                        handleRowChange("id_medida", unit.id_medida, "add", grupo.codigo_grupo);
-                                        handleRowChange("tipo_unidad", unit.nombre, "add", grupo.codigo_grupo);
-                                      }}
-                                      onAddMedida={(newUnit) => {
-                                        setUnidadesMedida(prev => [...prev, newUnit]);
-                                        handleRowChange("id_medida", newUnit.id_medida, "add", grupo.codigo_grupo);
-                                        handleRowChange("tipo_unidad", newUnit.nombre, "add", grupo.codigo_grupo);
-                                      }}
-                                    />
-                                  </div>
-                                  <div className="flex flex-col gap-1">
-                                    <span className="font-bold text-gray-400 uppercase text-[9px]">Tiempo Entrega:</span>
-                                    <div className="flex gap-2">
-                                      <input
-                                        type="number"
-                                        className="w-2/3 border border-gray-200 rounded px-2 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold text-gray-700"
-                                        value={currentForm.tiempo_entrega === undefined || currentForm.tiempo_entrega === null ? "" : currentForm.tiempo_entrega}
-                                        onChange={e => handleRowChange("tiempo_entrega", e.target.value, "add", grupo.codigo_grupo)}
-                                        placeholder="0"
-                                      />
-                                      <select
-                                        className="w-1/3 border border-gray-200 rounded px-1 py-1 text-[10px] focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold text-gray-700 bg-white"
-                                        value={currentForm.id_unidad_tiempo_entrega || 1}
-                                        onChange={e => handleRowChange("id_unidad_tiempo_entrega", parseInt(e.target.value, 10), "add", grupo.codigo_grupo)}
-                                      >
-                                        <option value={1}>Días</option>
-                                        <option value={2}>Semanas</option>
-                                        <option value={3}>Meses</option>
-                                      </select>
-                                    </div>
-                                  </div>
-                                  {/* Observación */}
-                                  <div className="flex flex-col gap-1">
-                                    <span className="font-bold text-gray-400 uppercase text-[9px]">Observación:</span>
-                                    <input
-                                      type="text"
-                                      className="w-full border border-gray-200 rounded px-2 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-indigo-500 text-gray-700"
-                                      value={currentForm.observacion || ""}
-                                      onChange={e => handleRowChange("observacion", e.target.value.toUpperCase(), "add", grupo.codigo_grupo)}
-                                      placeholder="Observación..."
-                                    />
-                                  </div>
-
-                                  {/* RESUMEN DE VENTA */}
-                                  {(() => {
-                                    const qaCantidad = Number(currentForm.cantidad || 0);
-                                    const qaCostoPrecio = Number(currentForm.costo_precio || 0);
-                                    const qaCostoEnvio = Number(currentForm.costo_envio || 0);
-                                    const qaCostoConEnvio = Number(currentForm.costo_con_envio || 0);
-                                    const qaPrecioVenta = Number(currentForm.precio_venta || 0);
-                                    const qaVentaTotal = Number(currentForm.venta_total || 0);
-                                    const qaUtilidad = Number(currentForm.utilidad || 0);
-
-                                    const costoTotal = qaCostoPrecio * qaCantidad;
-                                    const costoConEnvioPorUnidad = qaCostoPrecio + qaCostoEnvio;
-                                    const costoConEnvioTotal = qaCostoConEnvio * qaCantidad;
-                                    const precioVentaUnit = qaPrecioVenta;
-                                    const ventaTotal = qaVentaTotal;
-                                    const utilidadTotal = qaUtilidad * qaCantidad;
-
-                                    return (
-                                      <div className="bg-teal-50/50 border border-teal-100 rounded-xl p-3 space-y-2 shadow-inner mt-2">
-                                        <div className="flex items-center gap-2 text-teal-700">
-                                          <Icon name="trending-up" className="h-3.5 w-3.5" />
-                                          <span className="text-[10px] font-black uppercase tracking-tight">Resumen de Venta</span>
-                                        </div>
-                                        <div className="space-y-1 text-[11px]">
-                                          <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-100/50">
-                                            <span>Costo Total:</span>
-                                            <span className="font-semibold text-gray-700">{formatMoneySymbol(costoTotal)}</span>
-                                          </div>
-                                          {isVenta && (
-                                            <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-100/50">
-                                              <span>Costo con Envío:</span>
-                                              <span className="font-semibold text-gray-700">{formatMoneySymbol(costoConEnvioPorUnidad)}</span>
-                                            </div>
-                                          )}
-                                          <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-100/50">
-                                            <span>Precio Venta:</span>
-                                            <span className="font-semibold text-gray-700">{formatMoneySymbol(precioVentaUnit)}</span>
-                                          </div>
-                                          <div className="flex justify-between items-center text-teal-800 py-0.5 border-b border-teal-100/50 font-black">
-                                            <span>Venta Total:</span>
-                                            <span className="text-teal-700 text-[12px]">{formatMoneySymbol(ventaTotal)}</span>
-                                          </div>
-                                          <div className="flex justify-between items-center text-emerald-800 py-0.5 font-bold">
-                                            <span>Utilidad Total:</span>
-                                            <span className="text-emerald-600">{formatMoneySymbol(utilidadTotal)}</span>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    );
-                                  })()}
-                                </div>
-                              </ActionMenu>
+                              <SuministroEspecificacionesPopover
+                                values={currentForm}
+                                isReadOnly={false}
+                                isVenta={isVenta}
+                                formatMoney={formatMoneySymbol}
+                                unidadesMedida={unidadesMedida}
+                                setUnidadesMedida={setUnidadesMedida}
+                                onPatch={(patch) => {
+                                  Object.entries(patch).forEach(([field, value]) => {
+                                    handleRowChange(field, value, "add", grupo.codigo_grupo);
+                                  });
+                                }}
+                                showObservacionInput
+                                observacionValue={currentForm.observacion || ""}
+                                onObservacionChange={(val) => handleRowChange("observacion", val, "add", grupo.codigo_grupo)}
+                              />
                             </div>
                           </td>
                         </tr>
@@ -8193,17 +8380,21 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
 
                   <div className="w-[1px] h-3.5 bg-gray-200 mx-0.5" />
 
-                  {/* Botón: OCULTAR/MOSTRAR TOTALES */}
+                  {/* Botón: TOTAL POR GRUPO (solo afecta PDF/Word) */}
                   <button
                     type="button"
-                    title="Ocultar/Mostrar Totales"
+                    title={totalPorGrupoReporte
+                      ? "Total por grupo activo: el PDF/Word oculta el precio de cada ítem y muestra el general del grupo"
+                      : "Total por grupo: en el PDF/Word muestra un solo precio unitario y total del grupo"}
                     onClick={(e) => {
                       e.stopPropagation();
                       toggleOcultarTotalesGrupo(grupo.codigo_grupo);
                     }}
-                    className="p-1.5 2xl:p-1 hover:bg-sky-50 rounded transition-colors"
+                    className={`p-1.5 2xl:p-1 rounded transition-colors ${
+                      totalPorGrupoReporte ? "bg-sky-100 hover:bg-sky-200" : "hover:bg-sky-50"
+                    }`}
                   >
-                    <Icon name={ocultarTotalesGrupo ? "eye-off" : "eye"} className="h-[12px] w-[12px] 2xl:h-3.5 2xl:w-3.5 text-sky-600" />
+                    <Icon name={totalPorGrupoReporte ? "eye-off" : "eye"} className={`h-[12px] w-[12px] 2xl:h-3.5 2xl:w-3.5 ${totalPorGrupoReporte ? "text-sky-700" : "text-sky-600"}`} />
                   </button>
 
                   {!isReadOnly && (
@@ -8241,6 +8432,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
 
   // --- INLINE EDITING LOGIC ---
   const startEditItem = (item, fieldName = null) => {
+    if (isReadOnly) return;
     setEditingItemId(item.id_suministro || item.id);
     setEditForm({ ...item });
     setActiveEditField(fieldName);
@@ -8502,7 +8694,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                     const num = parseFloat(val) || 0;
                     const formCosto = Number(form.costo_hombre_dia || 0);
                     const pct = formCosto > 0 ? (num / formCosto) * 100 : 0;
-                    setForm({ utilidad: val, porcentaje: Number(pct.toFixed(2)) });
+                    setForm({ utilidad: val, porcentaje: Number(pct.toFixed(2)), utilidad_origen: "monto" });
                   })}
                   onFocus={(e) => e.target.select()}
                 />
@@ -8513,7 +8705,12 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                   step="0.1"
                   className="w-full text-[10px] border border-gray-300 text-center rounded px-1 py-0.5 font-medium text-gray-500 bg-white"
                   value={form.porcentaje === undefined || form.porcentaje === null ? "" : form.porcentaje}
-                  onChange={(e) => setForm({ porcentaje: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => {
+                    const pct = parseFloat(e.target.value) || 0;
+                    const formCosto = Number(form.costo_hombre_dia || 0);
+                    const util = Number((formCosto * (pct / 100)).toFixed(2));
+                    setForm({ porcentaje: pct, utilidad: util, utilidad_origen: "porcentaje" });
+                  }}
                   onFocus={(e) => e.target.select()}
                 />
                 <span className="absolute right-1 text-[9px] text-gray-400">%</span>
@@ -8749,7 +8946,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                     const num = parseFloat(val) || 0;
                     const formCosto = Number(form.costo_hombre_dia || 0);
                     const pct = formCosto > 0 ? (num / formCosto) * 100 : 0;
-                    setForm({ utilidad: val, porcentaje: Number(pct.toFixed(2)) });
+                    setForm({ utilidad: val, porcentaje: Number(pct.toFixed(2)), utilidad_origen: "monto" });
                   })}
                   onFocus={(e) => e.target.select()}
                 />
@@ -8760,7 +8957,12 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                   step="0.1"
                   className="w-full text-[10px] border border-gray-300 text-center rounded px-1 py-0.5 font-medium text-gray-500 bg-white"
                   value={form.porcentaje === undefined || form.porcentaje === null ? "" : form.porcentaje}
-                  onChange={(e) => setForm({ porcentaje: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => {
+                    const pct = parseFloat(e.target.value) || 0;
+                    const formCosto = Number(form.costo_hombre_dia || 0);
+                    const util = Number((formCosto * (pct / 100)).toFixed(2));
+                    setForm({ porcentaje: pct, utilidad: util, utilidad_origen: "porcentaje" });
+                  }}
                   onFocus={(e) => e.target.select()}
                 />
                 <span className="absolute right-1 text-[9px] text-gray-400">%</span>
@@ -8975,7 +9177,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                       </div>
                       
                       {/* Integrated Toolbar */}
-                      {isDetailExpanded && (
+                      {isDetailExpanded && !isReadOnly && (
                         <div 
                           id={`srv-quill-toolbar-${grupo.id_servicio}`}
                           onClick={(e) => e.stopPropagation()}
@@ -10863,6 +11065,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
               >
                 <div className="p-6 space-y-6">
                   {/* EL "ESPEJO" PARA AGREGAR NUEVOS GRUPOS */}
+                  {!isReadOnly && (
                   <EditableGroupRow
                     tipo="01"
                     onSave={(data) => handleAgregarGrupoSuministro(data)}
@@ -10883,12 +11086,13 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                     ocultarTotalesMap={ocultarTotalesMap}
                     idRegistro={numReg}
                   />
+                  )}
 
                   {/* Renderizado de Grupos de Suministros */}
                   <DndContext
                     sensors={sensors}
                     collisionDetection={closestCenter}
-                    onDragEnd={handleDragEnd}
+                    onDragEnd={isReadOnly ? undefined : handleDragEnd}
                   >
                     <SortableContext
                       items={sortedGrupos.map(g => `grupo-${g.codigo_grupo}`)}
@@ -11010,14 +11214,14 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                       <div className="text-center py-8 border border-dashed border-gray-200 rounded-xl bg-gray-50/30">
                         <Icon name="package-2" className="h-5 w-5 text-gray-300 mx-auto mb-2" />
                         <p className="text-[10px] text-gray-400 uppercase font-bold tracking-tighter">
-                          No hay grupos de servicios registrados. Crea uno nuevo arriba.
+                          No hay grupos de servicios registrados{isReadOnly ? "." : ". Crea uno nuevo arriba."}
                         </p>
                       </div>
                     ) : (
                       <DndContext
                         sensors={sensorsServicios}
                         collisionDetection={closestCenter}
-                        onDragEnd={handleDragEndServicios}
+                        onDragEnd={isReadOnly ? undefined : handleDragEndServicios}
                       >
                         <SortableContext
                           items={sortedGruposServicios.map(g => `grupo-${g.id_servicio}`)}
@@ -11133,6 +11337,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
                               const textoInsertar = nota.descripcion || '';
                               quill.insertText(range.index, `${textoInsertar}\n`, { bold: false });
                               quill.setSelection(range.index + textoInsertar.length + 1);
+                              setGeneralConditions(quill.root.innerHTML);
                             }}
                             className={cn(
                               "flex items-start p-3 bg-white border border-gray-200 rounded-xl transition-all group",
@@ -12966,7 +13171,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
         onChange={(e) => {
           const file = e.target.files[0];
           if (file && xlsImportGrupoActivo) {
-            handleImportarDesdeXLS(file, xlsImportGrupoActivo, data?.tipo_cambio || 1);
+            handleImportarDesdeXLS(file, xlsImportGrupoActivo, data?.tipo_cambio || 1, data?.tipo_venta);
           }
           e.target.value = '';
         }}
@@ -13281,7 +13486,7 @@ const CotizacionDetalle = ({ esOportunidad = false }) => {
         >
           <div 
             onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl flex flex-col overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150 transition-all duration-300"
+            className="bg-white rounded-2xl shadow-2xl w-[88vw] max-w-6xl flex flex-col overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150 transition-all duration-300"
             style={{
               height: '88vh'
             }}
@@ -13722,7 +13927,8 @@ const SortableItemRow = ({
   ocultarTotales,
   numReg,
   selectedItemIds,
-  handleToggleSelectItem
+  handleToggleSelectItem,
+  persistSuministroPatch
 }) => {
   const {
     attributes,
@@ -13747,13 +13953,8 @@ const SortableItemRow = ({
 
   const itemId = item.id_suministro || item.id;
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
-  const hoverTimer = useRef(null);
   const deleteConfirmRef = useRef(null);
   const rowRef = useRef(null);
-  const triggerRef = useRef(null);
-  const [coords, setCoords] = useState(null);
   const marcaLabel = item.marca_nombre
     || proveedores.find(p => Number(p.id_marca) === Number(item.id_marca))?.nombre
     || "";
@@ -13770,7 +13971,7 @@ const SortableItemRow = ({
   };
 
   useEffect(() => {
-    if (editingItemId === itemId && activeEditField) {
+    if (sameSuministroId(editingItemId, itemId) && activeEditField) {
       const timer = setTimeout(() => {
         const rowEl = rowRef.current;
         if (rowEl) {
@@ -13791,7 +13992,7 @@ const SortableItemRow = ({
   }, [editingItemId, itemId, activeEditField]);
 
   useEffect(() => {
-    if (editingItemId !== itemId) return;
+    if (!sameSuministroId(editingItemId, itemId)) return;
 
     const handleClickOutside = (e) => {
       const rowEl = rowRef.current;
@@ -13800,6 +14001,8 @@ const SortableItemRow = ({
       if (e.target.closest(
         '[data-radix-popper-content-wrapper], ' +
         '[data-radix-portal], ' +
+        '[data-sigecom-especificaciones], ' +
+        '.autocomplete-dropdown-portal, ' +
         '.Toastify, ' +
         '.react-datepicker-popper, ' +
         '.quill, ' +
@@ -13825,7 +14028,7 @@ const SortableItemRow = ({
   }, [editingItemId, itemId, cancelEditItem]);
 
   useEffect(() => {
-    if (editingItemId === itemId) {
+    if (sameSuministroId(editingItemId, itemId)) {
       setTimeout(() => {
         if (rowRef.current) {
           rowRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -13856,28 +14059,6 @@ const SortableItemRow = ({
       document.removeEventListener("keydown", handleKeyDownGlobal);
     };
   }, [showDeleteConfirm]);
-
-  const updateCoords = () => {
-    if (triggerRef.current) {
-      const rect = triggerRef.current.getBoundingClientRect();
-      setCoords({
-        top: rect.top + window.scrollY,
-        left: rect.left + window.scrollX
-      });
-    }
-  };
-
-  const handleMouseEnter = () => {
-    if (hoverTimer.current) clearTimeout(hoverTimer.current);
-    updateCoords();
-    setIsHovered(true);
-  };
-
-  const handleMouseLeave = () => {
-    hoverTimer.current = setTimeout(() => {
-      setIsHovered(false);
-    }, 250);
-  };
 
   const proveedoresOptions = useMemo(() => {
     const list = (proveedores || []).map(p => ({
@@ -13934,7 +14115,7 @@ const SortableItemRow = ({
       e.preventDefault();
       e.stopPropagation();
       lastFocusedInput = e.target;
-      const detailsButton = rowRef.current?.querySelector("button[title='Detalles Adicionales']");
+      const detailsButton = rowRef.current?.querySelector("button[title='Especificaciones de Suministro']");
       if (detailsButton) {
         detailsButton.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
         detailsButton.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
@@ -14021,7 +14202,7 @@ const SortableItemRow = ({
     }));
   };
 
-  if (editingItemId === itemId) {
+  if (sameSuministroId(editingItemId, itemId)) {
     return (
       <>
         <tr ref={setMergedRef} style={style} className="bg-indigo-50/50">
@@ -14219,124 +14400,15 @@ const SortableItemRow = ({
         {/* Actions */}
         <td className="px-3 py-1">
           <div className="flex justify-center items-center gap-1">
-            <ActionMenu
-              title="Logística y Detalles del Ítem"
-              align="end"
-              closeOnSelect={false}
-              contentClassName="min-w-[300px]"
-              customTrigger={
-                <button
-                  type="button"
-                  className="p-1 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded shadow-sm transition-colors flex items-center justify-center"
-                  title="Detalles Adicionales"
-                >
-                  <Icon name="ellipsis-vertical" className="h-3.5 w-3.5" />
-                </button>
-              }
-            >
-              <div 
-                className="p-3 space-y-3 text-xs text-left"
-                onKeyDown={handleDetailsKeyDown}
-              >
-                {/* U. Medida */}
-                <div className="flex flex-col gap-1">
-                  <span className="font-bold text-gray-400 uppercase text-[9px]">U. Medida:</span>
-                  <UnidadMedidaAutocomplete
-                    idMedida={editForm.id_medida || editForm.id_unidad || unidadesMedida.find(u => u.nombre?.toUpperCase() === editForm.tipo_unidad?.toUpperCase())?.id_medida}
-                    unidadesMedida={unidadesMedida}
-                    onSelect={(unit) => {
-                      setEditForm(prev => ({
-                        ...prev,
-                        id_medida: unit.id_medida,
-                        tipo_unidad: unit.nombre
-                      }));
-                    }}
-                    onAddMedida={(newUnit) => {
-                      setUnidadesMedida(prev => [...prev, newUnit]);
-                      setEditForm(prev => ({
-                        ...prev,
-                        id_medida: newUnit.id_medida,
-                        tipo_unidad: newUnit.nombre
-                      }));
-                    }}
-                  />
-                </div>
-                {/* Tiempo Entrega */}
-                <div className="flex flex-col gap-1">
-                  <span className="font-bold text-gray-400 uppercase text-[9px]">Tiempo Entrega:</span>
-                  <div className="flex gap-2">
-                    <input
-                      type="number"
-                      className="w-2/3 border border-gray-200 rounded px-2 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold text-gray-700"
-                      value={editForm.tiempo_entrega === undefined || editForm.tiempo_entrega === null ? "" : editForm.tiempo_entrega}
-                      onChange={e => handleRowChange("tiempo_entrega", e.target.value, "edit")}
-                      onFocus={(e) => e.target.select()}
-                      placeholder="0"
-                    />
-                    <select
-                      className="w-1/3 border border-gray-200 rounded px-1 py-1 text-[10px] focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold text-gray-700 bg-white"
-                      value={editForm.id_unidad_tiempo_entrega || 1}
-                      onChange={e => handleRowChange("id_unidad_tiempo_entrega", parseInt(e.target.value, 10), "edit")}
-                    >
-                      <option value={1}>Días</option>
-                      <option value={2}>Semanas</option>
-                      <option value={3}>Meses</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* RESUMEN DE VENTA */}
-                {(() => {
-                  const editCantidad = Number(editForm.cantidad || 0);
-                  const editCostoPrecio = Number(editForm.costo_precio || 0);
-                  const editCostoEnvio = Number(editForm.costo_envio || 0);
-                  const editCostoConEnvio = Number(editForm.costo_con_envio || 0);
-                  const editPrecioVenta = Number(editForm.precio_venta || 0);
-                  const editVentaTotal = Number(editForm.venta_total || 0);
-                  const editUtilidad = Number(editForm.utilidad || 0);
-
-                  const costoTotal = editCostoPrecio * editCantidad;
-                  const costoConEnvioPorUnidad = editCostoPrecio + editCostoEnvio;
-                  const costoConEnvioTotal = editCostoConEnvio * editCantidad;
-                  const precioVentaUnit = editPrecioVenta;
-                  const ventaTotal = editVentaTotal;
-                  const utilidadTotal = editUtilidad * editCantidad;
-
-                  return (
-                    <div className="bg-teal-50/50 border border-teal-100 rounded-xl p-3 space-y-2 shadow-inner mt-2">
-                      <div className="flex items-center gap-2 text-teal-700">
-                        <Icon name="trending-up" className="h-3.5 w-3.5" />
-                        <span className="text-[10px] font-black uppercase tracking-tight">Resumen de Venta</span>
-                      </div>
-                      <div className="space-y-1 text-[11px]">
-                        <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-100/50">
-                          <span>Costo Total:</span>
-                          <span className="font-semibold text-gray-700">{formatMoneySymbol(costoTotal)}</span>
-                        </div>
-                        {isVenta && (
-                          <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-100/50">
-                            <span>Costo c/ Envío: AA</span>
-                            <span className="font-semibold text-gray-700">{formatMoneySymbol(costoConEnvioPorUnidad)}</span>
-                          </div>
-                        )}
-                        <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-100/50">
-                          <span>Precio Venta:</span>
-                          <span className="font-semibold text-gray-700">{formatMoneySymbol(precioVentaUnit)}</span>
-                        </div>
-                        <div className="flex justify-between items-center text-teal-800 py-0.5 border-b border-teal-100/50 font-black">
-                          <span>Venta Total:</span>
-                          <span className="text-teal-700 text-[12px]">{formatMoneySymbol(ventaTotal)}</span>
-                        </div>
-                        <div className="flex justify-between items-center text-emerald-800 py-0.5 font-bold">
-                          <span>Utilidad Total:</span>
-                          <span className="text-emerald-600">{formatMoneySymbol(utilidadTotal)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-            </ActionMenu>
+            <SuministroEspecificacionesPopover
+              values={editForm}
+              isReadOnly={isReadOnly}
+              isVenta={isVenta}
+              formatMoney={formatMoneySymbol}
+              unidadesMedida={unidadesMedida}
+              setUnidadesMedida={setUnidadesMedida}
+              onPatch={(patch) => setEditForm(prev => ({ ...prev, ...patch }))}
+            />
           </div>
         </td>
       </tr>
@@ -14549,116 +14621,19 @@ const SortableItemRow = ({
       )}
       {/* Acciones */}
       <td 
-        className={cn("px-3 py-1 align-middle text-center w-[60px] relative", isHovered && "z-[60]")}
+        className="px-3 py-1 align-middle text-center w-[60px] relative"
         onDoubleClick={(e) => e.stopPropagation()}
       >
         <div onClick={e => e.stopPropagation()} className="flex justify-center items-center gap-1">
-          {/* Resumen Venta popover on hover */}
-          <div 
-            className="relative"
-            onMouseEnter={handleMouseEnter}
-            onMouseLeave={handleMouseLeave}
-          >
-            <button
-              ref={triggerRef}
-              type="button"
-              className="p-1 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-all"
-              title="Resumen de Venta"
-            >
-              <Icon name="trending-up" className="h-3.5 w-3.5" />
-            </button>
-            {isHovered && coords && createPortal(
-              <div 
-                style={{
-                  position: 'absolute',
-                  left: coords.left,
-                  top: coords.top,
-                  zIndex: 9999,
-                  pointerEvents: 'auto'
-                }}
-                onMouseEnter={handleMouseEnter}
-                onMouseLeave={handleMouseLeave}
-              >
-                <div className="absolute right-0 mr-2 top-0 w-fit min-w-[320px] max-w-[450px] bg-white rounded-xl shadow-xl border border-gray-200 p-3.5 text-left text-xs space-y-3.5 animate-in fade-in zoom-in-95 duration-100 select-text">
-                  <div className="flex items-center gap-1.5 text-slate-500 font-bold text-[10px] uppercase tracking-wider border-b border-gray-100 pb-1.5">
-                    <Icon name="info" className="h-3.5 w-3.5 text-slate-400" />
-                    <span>Especificaciones de Suministro</span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 text-[11px]">
-                    <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                      <span className="block font-bold text-gray-400 text-[9px] uppercase tracking-wide mb-0.5">U. Medida</span>
-                      <span className="font-bold text-gray-700 uppercase">{item.tipo_unidad || "UNI"}</span>
-                    </div>
-                    <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                      <span className="block font-bold text-gray-400 text-[9px] uppercase tracking-wide mb-0.5">Tiempo Entrega</span>
-                      <span className="font-bold text-gray-700">
-                        {item.tiempo_entrega ?? 0} {item.id_unidad_tiempo_entrega === 3 ? 'Meses' : item.id_unidad_tiempo_entrega === 2 ? 'Semanas' : 'Días'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {item.observacion && (
-                    <div className="bg-slate-50 p-2 rounded-lg border border-slate-100 text-[11px]">
-                      <span className="block font-bold text-gray-400 text-[9px] uppercase tracking-wide mb-0.5">Observación</span>
-                      <span className="text-gray-600 italic font-medium">{item.observacion}</span>
-                    </div>
-                  )}
-
-                  {/* PANEL CÁLCULO MONETARIO */}
-                  {(() => {
-                    const itemCantidad = Number(item.cantidad || 0);
-                    const itemCostoPrecio = Number(item.costo_precio || 0);
-                    const itemCostoEnvio = Number(item.costo_envio || 0);
-                    const itemCostoConEnvio = Number(item.costo_con_envio || 0);
-                    const itemPrecioVenta = Number(item.precio_venta || 0);
-                    const itemVentaTotal = Number(item.venta_total || 0);
-                    const itemUtilidad = Number(item.utilidad || 0);
-
-                    const costoTotal = itemCostoPrecio * itemCantidad;
-                    const costoConEnvioPorUnidad = itemCostoPrecio + itemCostoEnvio;
-                    const precioVentaUnit = itemPrecioVenta;
-                    const ventaTotal = itemVentaTotal;
-                    const utilidadTotal = itemUtilidad * itemCantidad;
-
-                    return (
-                      <div className="bg-emerald-50/40 border border-emerald-100 rounded-xl p-3 space-y-2 shadow-inner">
-                        <div className="flex items-center gap-1.5 text-emerald-800 font-extrabold text-[10px] uppercase tracking-wider">
-                          <Icon name="calculator" className="h-3.5 w-3.5" />
-                          <span>Resumen de Venta</span>
-                        </div>
-                        <div className="space-y-1 text-[11px]">
-                          <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-200/30">
-                            <span>Costo Total:</span>
-                            <span className="font-semibold text-gray-700">{formatMoney(costoTotal)}</span>
-                          </div>
-                          {isVenta && (
-                            <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-200/30">
-                              <span>Costo con Envío:</span>
-                              <span className="font-semibold text-gray-700">{formatMoney(costoConEnvioPorUnidad)}</span>
-                            </div>
-                          )}
-                          <div className="flex justify-between items-center text-gray-500 py-0.5 border-b border-gray-200/30">
-                            <span>Precio Venta:</span>
-                            <span className="font-semibold text-gray-700">{formatMoney(precioVentaUnit)}</span>
-                          </div>
-                          <div className="flex justify-between items-center text-slate-800 py-0.5 border-b border-slate-200/50 font-bold">
-                            <span>Venta Total:</span>
-                            <span className="text-slate-900 font-black text-xs">{formatMoney(ventaTotal)}</span>
-                          </div>
-                          <div className="flex justify-between items-center text-emerald-900 pt-0.5 font-bold">
-                            <span>Utilidad Total:</span>
-                            <span className="text-emerald-600 font-black text-xs">{formatMoney(utilidadTotal)}</span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              </div>,
-              document.body
-            )}
-          </div>
+          <SuministroEspecificacionesPopover
+            values={item}
+            isReadOnly={isReadOnly}
+            isVenta={isVenta}
+            formatMoney={formatMoney}
+            unidadesMedida={unidadesMedida}
+            setUnidadesMedida={setUnidadesMedida}
+            onPatch={(patch) => persistSuministroPatch?.(item, patch)}
+          />
 
           {/* Eliminar Item Direct Button (Single Click) */}
           {!isReadOnly && (
@@ -14800,13 +14775,19 @@ const SortableItemServicioRow = ({
   let srvCotizadoTotal = Number(item.cotizado_total || 0);
 
   if (sg.tipoCodigo?.endsWith("04")) {
-    srvCostoTotal = rowHombres * rowDias * rowCosto;
-    srvUtilidad = srvCostoTotal * (rowPorcentaje / 100);
-    srvCotizadoHD = rowCosto * (1 + rowPorcentaje / 100);
+    srvCostoTotal = moneyTotal(rowCosto, rowHombres * rowDias);
+    const utilidadUnit = item.utilidad !== undefined && item.utilidad !== null
+      ? Number(item.utilidad)
+      : roundMoney(rowCosto * (rowPorcentaje / 100));
+    srvUtilidad = moneyTotal(utilidadUnit, rowHombres * rowDias);
+    srvCotizadoHD = roundMoney(rowCosto + utilidadUnit);
   } else if (sg.tipoCodigo?.endsWith("06")) {
-    srvCostoTotal = rowHombres * rowCosto;
-    srvUtilidad = srvCostoTotal * (rowPorcentaje / 100);
-    srvCotizadoHD = rowCosto * (1 + rowPorcentaje / 100);
+    srvCostoTotal = moneyTotal(rowCosto, rowHombres);
+    const utilidadUnit = item.utilidad !== undefined && item.utilidad !== null
+      ? Number(item.utilidad)
+      : roundMoney(rowCosto * (rowPorcentaje / 100));
+    srvUtilidad = moneyTotal(utilidadUnit, rowHombres);
+    srvCotizadoHD = roundMoney(rowCosto + utilidadUnit);
   }
 
   const setMergedRef = (el) => {
@@ -15192,7 +15173,8 @@ const SortableItemServicioRow = ({
                       setEditingServicioForm({
                         ...editingServicioForm,
                         utilidad: val,
-                        porcentaje: Number(computedPct.toFixed(2))
+                        porcentaje: Number(computedPct.toFixed(2)),
+                        utilidad_origen: "monto"
                       });
                     });
                   }}
@@ -15208,7 +15190,8 @@ const SortableItemServicioRow = ({
                       setEditingServicioForm({
                         ...editingServicioForm,
                         utilidad: Number(valNum.toFixed(2)),
-                        porcentaje: Number(computedPct.toFixed(2))
+                        porcentaje: Number(computedPct.toFixed(2)),
+                        utilidad_origen: "monto"
                       });
                     }
                   }}
@@ -15237,7 +15220,8 @@ const SortableItemServicioRow = ({
                     setEditingServicioForm({
                       ...editingServicioForm,
                       porcentaje: val,
-                      utilidad: Number(computedUtil.toFixed(2))
+                      utilidad: Number(computedUtil.toFixed(2)),
+                      utilidad_origen: "porcentaje"
                     });
                   })}
                   onBlur={(e) => {
@@ -15254,7 +15238,8 @@ const SortableItemServicioRow = ({
                       setEditingServicioForm({
                         ...editingServicioForm,
                         porcentaje: Number(valNum.toFixed(2)),
-                        utilidad: Number(computedUtil.toFixed(2))
+                        utilidad: Number(computedUtil.toFixed(2)),
+                        utilidad_origen: "porcentaje"
                       });
                     }
                   }}
@@ -15507,7 +15492,8 @@ const SortableItemServicioRow = ({
                         setEditingServicioForm({
                           ...editingServicioForm,
                           utilidad: val,
-                          porcentaje: Number(computedPct.toFixed(2))
+                          porcentaje: Number(computedPct.toFixed(2)),
+                          utilidad_origen: "monto"
                         });
                       });
                     }}
@@ -15523,7 +15509,8 @@ const SortableItemServicioRow = ({
                         setEditingServicioForm({
                           ...editingServicioForm,
                           utilidad: Number(valNum.toFixed(2)),
-                          porcentaje: Number(computedPct.toFixed(2))
+                          porcentaje: Number(computedPct.toFixed(2)),
+                          utilidad_origen: "monto"
                         });
                       }
                     }}
@@ -15552,7 +15539,8 @@ const SortableItemServicioRow = ({
                       setEditingServicioForm({
                         ...editingServicioForm,
                         porcentaje: val,
-                        utilidad: Number(computedUtil.toFixed(2))
+                        utilidad: Number(computedUtil.toFixed(2)),
+                        utilidad_origen: "porcentaje"
                       });
                     })}
                     onBlur={(e) => {
@@ -15569,7 +15557,8 @@ const SortableItemServicioRow = ({
                         setEditingServicioForm({
                           ...editingServicioForm,
                           porcentaje: Number(valNum.toFixed(2)),
-                          utilidad: Number(computedUtil.toFixed(2))
+                          utilidad: Number(computedUtil.toFixed(2)),
+                          utilidad_origen: "porcentaje"
                         });
                       }
                     }}
@@ -15652,10 +15641,12 @@ const SortableItemServicioRow = ({
         const rowDias = Number(item.cantidad_dias || 0);
         const rowCosto = Number(item.costo_hombre_dia || 0);
         const rowPorcentaje = Number(item.porcentaje || 0);
-        const rowCostoTotal = rowHombres * rowDias * rowCosto;
-        const rowUtilidad = rowCostoTotal * (rowPorcentaje / 100);
+        const rowCostoTotal = moneyTotal(rowCosto, rowHombres * rowDias);
+        const rowUtilidad = item.utilidad !== undefined && item.utilidad !== null
+          ? Number(item.utilidad)
+          : roundMoney(rowCosto * (rowPorcentaje / 100));
         const rowCotizadoTotal = Number(item.cotizado_total || 0);
-        const rowCotizadoHD = rowCosto * (1 + rowPorcentaje / 100);
+        const rowCotizadoHD = roundMoney(rowCosto + rowUtilidad);
 
         return (
           <>
@@ -15882,10 +15873,12 @@ const SortableItemServicioRow = ({
         const rowHombres = Number(item.cantidad_hombres || 0);
         const rowCosto = Number(item.costo_hombre_dia || 0);
         const rowPorcentaje = Number(item.porcentaje || 0);
-        const rowCostoTotal = rowHombres * rowCosto;
-        const rowUtilidad = rowCostoTotal * (rowPorcentaje / 100);
+        const rowCostoTotal = moneyTotal(rowCosto, rowHombres);
+        const rowUtilidad = item.utilidad !== undefined && item.utilidad !== null
+          ? Number(item.utilidad)
+          : roundMoney(rowCosto * (rowPorcentaje / 100));
         const rowCotizadoTotal = Number(item.cotizado_total || 0);
-        const rowCotizadoHD = rowCosto * (1 + rowPorcentaje / 100);
+        const rowCotizadoHD = roundMoney(rowCosto + rowUtilidad);
 
         return (
           <>

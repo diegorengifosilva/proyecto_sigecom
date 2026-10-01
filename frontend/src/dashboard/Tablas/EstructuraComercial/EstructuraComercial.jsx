@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { useOutletContext } from "react-router-dom";
 import { motion } from "framer-motion";
 import { 
   Building2, 
@@ -14,6 +15,16 @@ import TablaProductos from "./Tabla/TablaProductos";
 
 export default function EstructuraComercial() {
   const [tabActiva, setTabActiva] = useState("clientes");
+  const { setCustomBreadcrumbs } = useOutletContext() || {};
+
+  useEffect(() => {
+    if (setCustomBreadcrumbs) {
+      setCustomBreadcrumbs([
+        { label: "MAESTRO COMERCIAL", path: "/maestro/comercial" },
+        { label: tabActiva.toUpperCase() }
+      ]);
+    }
+  }, [tabActiva, setCustomBreadcrumbs]);
 
   const TABS = [
     { id: "clientes", label: "Clientes", icon: <Building2 size={16} />, desc: "Empresas clientes registradas" },

@@ -1,4 +1,7 @@
 from django.shortcuts import render
+from django.conf import settings
+from django.http import FileResponse, Http404
+import os
 import re
 
 def generar_iniciales(nombre):
@@ -71,7 +74,7 @@ def generar_iniciales(nombre):
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.db.models import Q
 from rest_framework.decorators import api_view, parser_classes, permission_classes, action, authentication_classes
 from .models import (
@@ -252,6 +255,85 @@ def buscar_clientes_inline(request):
             {"error": "Error interno al buscar clientes", "detail": str(e)}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+CLIENTE_LOGO_DIRS = [
+    r"c:\xampp\htdocs\sigecom\clientes",
+    os.path.join(settings.BASE_DIR.parent, "clientes"),
+    os.path.join(settings.BASE_DIR, "clientes"),
+]
+
+
+def resolve_cliente_logo_path(filename):
+    """Busca el PNG del logo en las carpetas legacy (sigecom 4.0) y variantes de padding."""
+    clean = os.path.basename(str(filename or "").replace("\\", "/").split("?")[0]).strip()
+    if not clean:
+        return None
+
+    names = [clean]
+    stem, ext = os.path.splitext(clean)
+    ext = ext or ".png"
+    if stem.isdigit():
+        numeric = str(int(stem))
+        padded = numeric.zfill(5)
+        for candidate in (f"{numeric}{ext}", f"{padded}{ext}", f"{numeric}.png", f"{padded}.png"):
+            if candidate not in names:
+                names.append(candidate)
+
+    for folder in CLIENTE_LOGO_DIRS:
+        for name in names:
+            file_path = os.path.join(folder, name)
+            if os.path.isfile(file_path):
+                return file_path
+    return None
+
+
+@api_view(["GET"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def ver_cliente_logo(request, filename):
+    file_path = resolve_cliente_logo_path(filename)
+    if not file_path:
+        raise Http404("Logo no encontrado")
+    return FileResponse(open(file_path, "rb"), content_type="image/png")
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def upload_cliente_logo(request):
+    try:
+        codigo = request.data.get("codigo") or request.data.get("id_cliente")
+        file_obj = request.FILES.get("file") or request.FILES.get("logo")
+        if not file_obj or not codigo:
+            return Response({"error": "Debe proporcionar el código de la empresa y la imagen"}, status=400)
+            
+        codigo_str = str(codigo).zfill(5)
+        filename = f"{codigo_str}.png"
+        
+        target_dir = r"c:\xampp\htdocs\sigecom\clientes"
+        if not os.path.exists(target_dir):
+            os.makedirs(target_dir, exist_ok=True)
+            
+        target_path = os.path.join(target_dir, filename)
+        with open(target_path, "wb+") as destination:
+            for chunk in file_obj.chunks():
+                destination.write(chunk)
+                
+        try:
+            cliente = Cliente.objects.filter(pk=codigo).first()
+            if cliente:
+                cliente.logo = filename
+                cliente.save()
+        except Exception as db_err:
+            print("Error actualizando campo logo en DB:", db_err)
+            
+        return Response({
+            "message": "Logo guardado correctamente",
+            "logo": filename,
+            "url": f"/api/core/clientes/logo/{filename}"
+        }, status=200)
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
+
 
 # PROVEEDOR
 @api_view(["GET", "POST", "PUT", "DELETE"])

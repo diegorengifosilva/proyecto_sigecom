@@ -275,7 +275,7 @@ document.getElementById("btnExcel").addEventListener("click", function(e){
     tableToExcel(
         "tabla_suministros",   // id del contenedor
         "{{ num_reg }}",       // nombre de la hoja
-        "REPORTE_SUMINISTROS.xls"  // nombre del archivo
+        "{{ nombre_excel|default:'reporte_suministros' }}.xls"
     );
 });
 
@@ -407,7 +407,7 @@ var tableToExcel = (function () {
             tableToExcel(
                 "tabla_suministros",
                 "{{ num_reg }}",
-                "{{ num_reg }}.xls"
+                "{{ nombre_excel|default:'reporte_suministros' }}.xls"
             );
 
             setTimeout(() => window.close(), 700);

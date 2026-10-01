@@ -22,6 +22,7 @@ import Comercial from "./dashboard/comercial/Comercial";
 import CotizacionDetallePage from "./dashboard/comercial/CotizacionDetallePage";
 import CotizacionNuevaModal from "./modal/CotizacionNuevaModal";
 import EstructuraComercial from "./dashboard/Tablas/EstructuraComercial/EstructuraComercial";
+import ClienteDetalle from "./dashboard/Tablas/EstructuraComercial/ClienteDetalle";
 import MaestroCompras from "./dashboard/Tablas/MaestroCompras/MaestroCompras";
 import ParametrosVentas from "./dashboard/Tablas/ParametrosVentas/ParametrosVentas";
 import CatalogoMarcas from "./dashboard/Tablas/CatalogoMarcas/CatalogoMarcas";
@@ -117,6 +118,7 @@ import IntegracionIncidencias from "./dashboard/integracion/IntegracionIncidenci
 
 
 import { KeyboardProvider } from "@/context/KeyboardContext.jsx";
+import OutlookLauncher, { isOutlookLaunchPath } from "@/utils/OutlookLauncher.jsx";
 import MockModulePage from "@/dashboard/layout/MockModulePage";
 import * as Icons from "lucide-react";
 
@@ -127,6 +129,10 @@ const RedirectToPlural = ({ type }) => {
 };
 
 export default function App() {
+  if (isOutlookLaunchPath()) {
+    return <OutlookLauncher />;
+  }
+
   return (
     <Router>
       <AuthProvider>
@@ -198,8 +204,16 @@ export default function App() {
               {/* Módulo Maestro / Tablas */}
               <Route path="maestro">
                 <Route index element={<Navigate to="comercial" replace />} />
-                <Route path="comercial" element={<EstructuraComercial />} />
-                <Route path="compras" element={<MaestroCompras />} />
+                <Route path="comercial">
+                  <Route index element={<EstructuraComercial />} />
+                  <Route path=":id" element={<ClienteDetalle />} />
+                  <Route path="cliente/:id" element={<ClienteDetalle />} />
+                </Route>
+                <Route path="compras">
+                  <Route index element={<MaestroCompras />} />
+                  <Route path=":id" element={<ClienteDetalle />} />
+                  <Route path="cliente/:id" element={<ClienteDetalle />} />
+                </Route>
                 <Route path="catalogo" element={<CatalogoMarcas />} />
                 <Route path="estructura" element={<EstructuraComercial />} />
                 <Route path="parametros" element={<ParametrosVentas />} />

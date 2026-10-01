@@ -5,6 +5,7 @@ import io
 import re
 import json
 import unicodedata
+from contextlib import contextmanager
 import pandas as pd
 import platform
 import subprocess
@@ -18,7 +19,11 @@ import tempfile
 from pathlib import Path
 import shutil
 from docxtpl import DocxTemplate, RichText
-from .report_word import apply_rich_text_line_spacing, apply_section_keep_together
+from .report_word import (
+    apply_rich_text_line_spacing,
+    apply_section_keep_together,
+    apply_total_por_grupo_merge,
+)
 import jinja2
 
 from unidecode import unidecode
@@ -35,11 +40,11 @@ from django.http import JsonResponse, HttpResponse, FileResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import ensure_csrf_cookie, csrf_exempt
 from django.utils import timezone
-from django.db.models import Sum, Count, Q, F, Max, DecimalField, ExpressionWrapper, Func, F, Value, TextField, IntegerField, Exists, OuterRef, Prefetch
-from django.db.models.functions import TruncDate, Coalesce, ExtractMonth, Lower
+from django.db.models import Sum, Count, Q, F, Max, DecimalField, ExpressionWrapper, Func, Value, TextField, IntegerField, Exists, OuterRef, Prefetch
+from django.db.models.functions import TruncDate, Coalesce, ExtractMonth, Lower, Cast, NullIf
 from django.core.exceptions import ValidationError
 from django.core.cache import cache
-from django.db import transaction, IntegrityError, connections
+from django.db import transaction, IntegrityError, connections, connection
 from django.views.decorators.http import require_GET
 from django.utils.dateparse import parse_date
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
@@ -128,15 +133,98 @@ from users.serializers import (
 PLANTILLAS_DIR = os.path.join(os.path.dirname(__file__), "plantillas")
 
 def siguiente_version(cotin):
-    import re
-    match = re.search(r'([A-Z])', cotin)
-    if not match:
-        raise ValueError("No se encontró versión en el cotin")
+    """Avanza una letra (A→B) sobre el COTIN dado, sin mirar la familia."""
+    parsed = parse_codigo_cotizacion(cotin)
+    if not parsed:
+        match = re.search(r'([A-Z])', cotin or "")
+        if not match:
+            raise ValueError("No se encontró versión en el cotin")
+        letra_actual = match.group(1)
+        nueva_letra = chr(ord(letra_actual) + 1)
+        return (cotin or "").replace(letra_actual, nueva_letra, 1)
+    nueva_letra = chr(ord(parsed["version"]) + 1)
+    if nueva_letra > "Z":
+        raise ValueError("No hay más letras de versión disponibles para este COTIN")
+    return _con_letra_version(cotin, parsed, nueva_letra)
 
-    letra_actual = match.group(1)
-    nueva_letra = chr(ord(letra_actual) + 1)
 
-    return cotin.replace(letra_actual, nueva_letra, 1)
+def _con_letra_version(cotin, parsed, nueva_letra):
+    base = f"{parsed['year']}{parsed['area']}{parsed['correlativo_str']}{parsed['version']}"
+    nueva_base = f"{parsed['year']}{parsed['area']}{parsed['correlativo_str']}{nueva_letra}"
+    if str(cotin).startswith(base):
+        return nueva_base + str(cotin)[len(base):]
+    return str(cotin).replace(parsed["version"], nueva_letra, 1)
+
+
+def _misma_familia_codigo(parsed, codigo):
+    other = parse_codigo_cotizacion(codigo)
+    return bool(
+        other
+        and other["year"] == parsed["year"]
+        and other["area"] == parsed["area"]
+        and other["correlativo"] == parsed["correlativo"]
+    )
+
+
+def _letra_maxima_versiones_activas(parsed, exclude_id=None):
+    """Última letra viva de la familia (ignora oportunidades y anulados)."""
+    prefix = f"{parsed['year']}{parsed['area']}{parsed['correlativo_str']}"
+    qs = (
+        Cotizacion.objects.filter(codigo__startswith=prefix)
+        .exclude(codigo="")
+        .exclude(id_estado=11)
+        .exclude(id_estado=ESTADO_ANULADO)
+    )
+    if exclude_id:
+        qs = qs.exclude(id_registro=exclude_id)
+    max_letra = None
+    for codigo in qs.values_list("codigo", flat=True).iterator():
+        if not _misma_familia_codigo(parsed, codigo):
+            continue
+        letra = parse_codigo_cotizacion(codigo)["version"]
+        if max_letra is None or letra > max_letra:
+            max_letra = letra
+    return max_letra
+
+
+def _liberar_codigo_inactivo(codigo):
+    """Suelta el COTIN si solo lo retienen oportunidades o anulados."""
+    if not codigo:
+        return
+    Cotizacion.objects.filter(codigo=codigo).filter(
+        Q(id_estado=11) | Q(id_estado=ESTADO_ANULADO)
+    ).update(codigo="")
+
+
+def siguiente_version_disponible(cotin, exclude_id=None):
+    """
+    Siguiente letra según la última versión activa de la familia.
+    Si solo queda A → B. Si la última viva es C → D.
+    """
+    parsed = parse_codigo_cotizacion(cotin)
+    if not parsed:
+        return siguiente_version(cotin)
+    max_letra = _letra_maxima_versiones_activas(parsed, exclude_id=exclude_id) or parsed["version"]
+    nueva_letra = chr(ord(max_letra) + 1)
+    if nueva_letra > "Z":
+        raise ValueError("No hay más letras de versión disponibles para este COTIN")
+    candidato = _con_letra_version(cotin, parsed, nueva_letra)
+    _liberar_codigo_inactivo(candidato)
+    seen = set()
+    while True:
+        ocupado = Cotizacion.objects.filter(codigo=candidato).exclude(
+            Q(id_estado=11) | Q(id_estado=ESTADO_ANULADO)
+        )
+        if exclude_id:
+            ocupado = ocupado.exclude(id_registro=exclude_id)
+        if not ocupado.exists():
+            _liberar_codigo_inactivo(candidato)
+            return candidato
+        if candidato in seen:
+            raise ValueError("No se pudo generar una letra de versión libre para este COTIN.")
+        seen.add(candidato)
+        candidato = siguiente_version(candidato)
+        _liberar_codigo_inactivo(candidato)
 
 # ===== Obtener y asegurar token CSRF =====
 @ensure_csrf_cookie
@@ -159,6 +247,76 @@ def format_datetime(value, fmt="%Y-%m-%d %H:%M:%S"):
         return value.strftime(fmt)
     except Exception:
         return str(value)
+
+ESTADO_ANULADO = 4
+
+def _codigo_moneda(valor):
+    """Normaliza tmone/tipo_moneda del 4.0: 'D' dólares, cualquier otro valor = soles."""
+    if valor is None:
+        return "S"
+    codigo = str(valor).strip().upper()[:1]
+    return "D" if codigo == "D" else "S"
+
+
+def _es_anulado(estado_id):
+    try:
+        return int(estado_id) == ESTADO_ANULADO
+    except (TypeError, ValueError):
+        return False
+
+
+def _filtro_maestro_cotizacion(qs):
+    """INNER JOIN de 4.0: empre → vc_tab_clientes y area → vc_tab_areas."""
+    return qs.filter(id_cliente__isnull=False).exclude(Q(id_area__isnull=True) | Q(id_area=0))
+
+
+def _filtro_anno_a_apertura(qs, anno, mes="%"):
+    """Replica `anno_a LIKE 'YYYY'` de sp_vc_mov_orden, con fallback a anno."""
+    if anno not in (None, "", "%"):
+        try:
+            anno_i = int(anno)
+            anno_s = str(anno_i)
+            qs = qs.filter(
+                Q(anno_a=anno_s)
+                | ((Q(anno_a__isnull=True) | Q(anno_a="")) & Q(anno=anno_i))
+            )
+        except (TypeError, ValueError):
+            qs = qs.filter(anno_a=str(anno).strip())
+    if mes not in (None, "", "%"):
+        try:
+            qs = qs.filter(mes=int(mes))
+        except (TypeError, ValueError):
+            pass
+    return qs
+
+
+def _ids_cotizacion_envio_40(anno, envio_min=2):
+    """num_reg de Aprobación 4.0: anno_a + envio >= N + INNER JOIN maestros."""
+    try:
+        anno_s = str(int(anno))
+        envio_n = int(envio_min)
+    except (TypeError, ValueError):
+        return None
+    sql = """
+        SELECT c.num_reg
+        FROM vc_mov_cotizaciones c
+        INNER JOIN vc_tab_areas a ON c.area = a.codigo
+        INNER JOIN vc_tab_clientes e ON c.empre = e.codigo
+        INNER JOIN vc_tab_estado s ON c.estad = s.codigo
+        WHERE c.anno_a LIKE %s AND c.envio >= %s
+    """
+    with connections["legacy"].cursor() as cur:
+        cur.execute(sql, [anno_s, envio_n])
+        return [int(r[0]) for r in cur.fetchall() if r[0] is not None]
+
+
+def _anno_operativo_apertura():
+    """Año operativo 4.0: anno_a si es YYYY, si no anno."""
+    return Coalesce(
+        Cast(NullIf("anno_a", Value("")), IntegerField()),
+        F("anno"),
+        output_field=IntegerField(),
+    )
 
 #==============#
 # COTIZACIONES #
@@ -217,6 +375,9 @@ def lista_cotizaciones(request):
         if not incluir_oportunidades:
             qs = qs.exclude(id_estado=11)
 
+        # 4.0 INNER JOIN clientes + áreas (sp_vc_mov_cotiza_seg)
+        qs = _filtro_maestro_cotizacion(qs)
+
         # Filtros de Segmentación Estándar
         if anno_desde and anno_hasta and mes_desde and mes_hasta:
             try:
@@ -251,7 +412,12 @@ def lista_cotizaciones(request):
                 except ValueError:
                     pass
         if envio != "%":
-            qs = qs.filter(estado_envio=envio)
+            try:
+                qs = qs.filter(estado_envio=int(envio))
+            except (TypeError, ValueError):
+                qs = qs.filter(estado_envio=envio)
+        # No cruzar con envío 4.0: las versiones nuevas viven en 5.0
+        # (PENDIENTE DE ENVÍO) y no están en vc_mov_cotizaciones.envio >= 2.
 
         # Filtro de Estado múltiple/único (respetando la exclusión implícita)
         if id_estado and id_estado != "%" and id_estado != "TODAS":
@@ -475,10 +641,12 @@ def lista_cotizaciones(request):
         from decimal import Decimal
         for c in rows:
             monto = float(c.total_cotizacion or 0)
-            if c.tipo_moneda == "D":
-                monto_dolares += monto
+            # 4.0: CASE WHEN estad = "4" THEN 0 ELSE tot_c END (no mezcla D con S)
+            monto_kpi = 0.0 if _es_anulado(c.id_estado_id) else monto
+            if _codigo_moneda(c.tipo_moneda) == "D":
+                monto_dolares += monto_kpi
             else:
-                monto_soles += monto
+                monto_soles += monto_kpi
 
             if c.fecha:
                 conteo_meses[c.fecha.month - 1] += 1
@@ -493,7 +661,7 @@ def lista_cotizaciones(request):
             if cli_id not in stats_clientes:
                 stats_clientes[cli_id] = {"nombre": cli_nom, "cantidad": 0, "total": 0}
             stats_clientes[cli_id]["cantidad"] += 1
-            stats_clientes[cli_id]["total"] += monto
+            stats_clientes[cli_id]["total"] += monto_kpi
 
             comercial_nombre = c.id_comercial.nombre_completo if c.id_comercial else "Por asignar"
             comercial_correo = c.id_comercial.correo if c.id_comercial else None
@@ -574,9 +742,11 @@ def lista_cotizaciones(request):
         dashboard_data = {
             "total": total_regs,
             "esteMes": este_mes_conteo,
+            "montoTotal": round(monto_soles + monto_dolares, 2),
             "montoTotalSoles": round(monto_soles, 2),
             "montoTotalDolares": round(monto_dolares, 2),
             "promedioSoles": round(monto_soles / total_regs, 2) if total_regs and monto_soles else 0,
+            "promedioDolares": round(monto_dolares / total_regs, 2) if total_regs and monto_dolares else 0,
             "estados": stats_estados,
             "porMes": conteo_meses,
             "clientes": clientes_lista,
@@ -1041,20 +1211,21 @@ def cotizacion_detalle(request, id_registro):
                         cot.id_cliente_id != old_cliente_id):
                         
                         cot.refresh_from_db(fields=['id_area', 'id_tipo', 'id_cliente', 'codigo'])
-                        nuevo_codigo = calcular_codigo_dinamico(cot, cot.codigo)
-                        if nuevo_codigo != cot.codigo:
-                            # Evitar guardar código vacío o nulo
-                            if nuevo_codigo and nuevo_codigo != "SIN CÓDIGO":
-                                cot.codigo = nuevo_codigo
-                                cot.save(update_fields=['codigo'])
-                                
-                                # Registrar hito en seguimiento con la categoría propia CÓDIGO
-                                CotizacionSeguimiento.objects.create(
-                                    id_registro=cot,
-                                    detalle=f"CÓDIGO: Código actualizado de '{old_codigo or 'SIN CÓDIGO'}' a '{nuevo_codigo}'",
-                                    id_usuario=request.user,
-                                    activo='1'
-                                )
+                        with _correlativo_lock(cot):
+                            nuevo_codigo = calcular_codigo_dinamico(cot, cot.codigo, reservar=True)
+                            if nuevo_codigo != cot.codigo:
+                                # Evitar guardar código vacío o nulo
+                                if nuevo_codigo and nuevo_codigo != "SIN CÓDIGO":
+                                    cot.codigo = nuevo_codigo
+                                    cot.save(update_fields=['codigo'])
+                                    
+                                    # Registrar hito en seguimiento con la categoría propia CÓDIGO
+                                    CotizacionSeguimiento.objects.create(
+                                        id_registro=cot,
+                                        detalle=f"CÓDIGO: Código actualizado de '{old_codigo or 'SIN CÓDIGO'}' a '{nuevo_codigo}'",
+                                        id_usuario=request.user,
+                                        activo='1'
+                                    )
 
                     for cambio in cambios:
                         CotizacionSeguimiento.objects.create(
@@ -2497,30 +2668,36 @@ def lista_aperturas(request):
         # Viajamos desde apertura -> cotización padre -> cliente de la cotización
         qs = CotizacionApertura.objects.select_related(
             'orden_plazo_unidad',
+            'estado_orden',
             'id_registro',
             'id_registro__id_cliente',
             'id_registro__id_estado',
             'id_registro__id_comercial'
         )
 
+        # 4.0 INNER JOIN: orden enlazada a cotización con cliente (empre)
+        qs = qs.filter(id_registro__isnull=False)
+
         # Filtros de Segmentación Estándar
         if anno_desde and anno_hasta and mes_desde and mes_hasta:
             try:
                 periodo_min = int(anno_desde) * 100 + int(mes_desde)
                 periodo_max = int(anno_hasta) * 100 + int(mes_hasta)
-                qs = qs.filter(anno__isnull=False, mes__isnull=False).annotate(
+                qs = qs.annotate(
+                    _anno_op=_anno_operativo_apertura()
+                ).filter(
+                    _anno_op__isnull=False,
+                    mes__isnull=False,
+                ).annotate(
                     periodo_operativo=ExpressionWrapper(
-                        F('anno') * 100 + F('mes'),
+                        F('_anno_op') * 100 + F('mes'),
                         output_field=IntegerField()
                     )
                 ).filter(periodo_operativo__gte=periodo_min, periodo_operativo__lte=periodo_max)
             except (ValueError, TypeError):
                 pass
         else:
-            if anno != "%":
-                qs = qs.filter(anno=int(anno))
-            if mes != "%":
-                qs = qs.filter(mes=int(mes))
+            qs = _filtro_anno_a_apertura(qs, anno, mes)
         if id_cliente != "%":
             qs = qs.filter(id_registro__id_cliente_id=id_cliente)
         if id_estado_orden and id_estado_orden != "%":
@@ -2629,14 +2806,15 @@ def lista_aperturas(request):
         conteo_meses = [0] * 12
 
         for ap in rows:
-            # Procesamos montos financieros basados en la orden (Heredando la moneda del padre)
+            # 4.0: SUM(otot) nativo por moneda; anuladas (estado 4) no suman
             monto = float(ap.total_orden or 0)
+            monto_kpi = 0.0 if _es_anulado(ap.estado_orden_id) else monto
             moneda_padre = ap.id_registro.tipo_moneda if ap.id_registro else "S"
-            
-            if moneda_padre == "D":
-                monto_dolares += monto
+
+            if _codigo_moneda(moneda_padre) == "D":
+                monto_dolares += monto_kpi
             else:
-                monto_soles += monto
+                monto_soles += monto_kpi
 
             # Registro de tiempos
             if ap.fecha_orden:
@@ -2659,7 +2837,7 @@ def lista_aperturas(request):
             if cli_id not in stats_clientes:
                 stats_clientes[cli_id] = {"nombre": cli_nom, "cantidad": 0, "total": 0}
             stats_clientes[cli_id]["cantidad"] += 1
-            stats_clientes[cli_id]["total"] += monto
+            stats_clientes[cli_id]["total"] += monto_kpi
 
         # Formatear y ordenar el Top 10 Clientes
         clientes_lista = sorted(
@@ -2678,6 +2856,7 @@ def lista_aperturas(request):
         dashboard_data = {
             "total": total_regs,
             "esteMes": este_mes_conteo,
+            "montoTotal": round(monto_soles + monto_dolares, 2),
             "montoTotalSoles": round(monto_soles, 2),
             "montoTotalDolares": round(monto_dolares, 2),
             "promedioSoles": round(monto_soles / total_regs, 2) if total_regs and monto_soles else 0,
@@ -2758,6 +2937,55 @@ def lista_aperturas(request):
         logger.error(f"Error en Dashboard Aperturas: {str(e)}", exc_info=True)
         return Response({"error": f"Error en Dashboard Aperturas: {str(e)}"}, status=500)
 
+def _eliminar_aperturas(id_registro=None, id_apertura=None):
+    """Borra aperturas y sus filas hijas. MySQL no aplica CASCADE de Django (managed=False)."""
+    qs = CotizacionApertura.objects.all()
+    if id_apertura is not None:
+        qs = qs.filter(id_apertura=id_apertura)
+    elif id_registro is not None:
+        qs = qs.filter(id_registro=id_registro)
+    else:
+        return
+    ids = list(qs.values_list("id_apertura", flat=True))
+    if not ids:
+        return
+    placeholders = ",".join(["%s"] * len(ids))
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"DELETE FROM cotizaciones_apertura_suministros WHERE id_apertura IN ({placeholders})",
+            ids,
+        )
+        cursor.execute(
+            f"DELETE FROM cotizaciones_apertura_servicios WHERE id_apertura IN ({placeholders})",
+            ids,
+        )
+        # Las solicitudes no tienen id_apertura: el vínculo real es nivel_grupo.
+        for table in ("solicitud_orden_compra", "solicitud_pasajes", "solicitud_caja_chica"):
+            cursor.execute(
+                f"UPDATE {table} SET nivel_grupo = NULL WHERE nivel_grupo IN ({placeholders})",
+                ids,
+            )
+        cursor.execute(
+            f"DELETE FROM cotizaciones_apertura WHERE id_apertura IN ({placeholders})",
+            ids,
+        )
+    try:
+        db_alias = "legacy" if "legacy" in connections else "default"
+        with connections[db_alias].cursor() as cursor:
+            for table in (
+                "db_vc.vc_mov_orden_su",
+                "db_vc.vc_mov_orden_mo",
+                "db_vc.vc_mov_orden_usu",
+                "db_vc.vc_mov_orden",
+            ):
+                cursor.execute(
+                    f"DELETE FROM {table} WHERE num_reg IN ({placeholders})",
+                    ids,
+                )
+    except Exception:
+        logger.exception("No se pudo limpiar la OC legada al eliminar aperturas %s", ids)
+
+
 def sincronizar_items_apertura(apertura):
     """
     Garantiza que todos los suministros y servicios de la cotización base
@@ -2823,7 +3051,7 @@ def apertura_detalle(request, id_apertura):
             
             coti_codigo = apertura.id_registro.codigo if (apertura.id_registro and hasattr(apertura.id_registro, 'codigo')) else None
             
-            base_q = Q(id_apertura=id_apertura) | Q(nivel_grupo=id_apertura) | Q(nivel_grupo=str(id_apertura))
+            base_q = Q(nivel_grupo=id_apertura) | Q(nivel_grupo=str(id_apertura))
             query_filter = (base_q | Q(codigo=coti_codigo)) if coti_codigo else base_q
             
             solicitudes_qs = SolicitudOrdenCompra.objects.filter(query_filter).distinct()
@@ -2832,16 +3060,6 @@ def apertura_detalle(request, id_apertura):
             
             rel_solicitudes = []
             for s in solicitudes_qs:
-                rubro_soc = s.tipo_gasto_id
-                if not rubro_soc:
-                    cog_s = str(s.cog or s.codigo or "").strip()[:2]
-                    if cog_s == "04": rubro_soc = 3
-                    elif cog_s == "05": rubro_soc = 4
-                    elif cog_s == "06": rubro_soc = 5
-                    elif cog_s == "01": rubro_soc = 1
-                    elif cog_s == "02": rubro_soc = 2
-                    else: rubro_soc = 2
-
                 rel_solicitudes.append({
                     "id_registro": s.id_solicitud,
                     "id_solicitud": s.id_solicitud,
@@ -2850,8 +3068,8 @@ def apertura_detalle(request, id_apertura):
                     "concepto": s.concepto or s.referencia or "Solicitud de Compra",
                     "num": s.num or 1,
                     "nivel_grupo": s.nivel_grupo,
-                    "tipo_gasto": rubro_soc,
-                    "id_tipo_gasto": rubro_soc,
+                    "tipo_gasto": s.tipo_gasto_id or 2,
+                    "id_tipo_gasto": s.tipo_gasto_id or 2,
                     "tipo_movimiento": "03",
                     "monto_soles": float(s.monto_soles or 0.00),
                     "monto_dolares": float(s.monto_dolares or 0.00),
@@ -2882,18 +3100,6 @@ def apertura_detalle(request, id_apertura):
                 elif obs_p and obs_p not in concepto_p and concepto_p in (prefix_p, "Pasaje Aéreo", "Pasaje Terrestre"):
                     concepto_p = f"{prefix_p} - {obs_p}"
 
-                rubro_pas = p.tipo_gasto_id or 4
-                cog_prefix = str(p.cog or p.codigo or "").strip()[:2]
-                mov_p = str(p.tipo_movimiento or "").strip()
-                if rubro_pas in (1, 2) and (cog_prefix == "05" or mov_p == "4"):
-                    rubro_pas = 4
-                elif rubro_pas in (1, 2) and (cog_prefix == "04" or mov_p == "3"):
-                    rubro_pas = 3
-                elif rubro_pas in (1, 2) and (cog_prefix == "06" or mov_p == "5"):
-                    rubro_pas = 5
-                elif not rubro_pas or rubro_pas in (1, 2):
-                    rubro_pas = 4
-
                 rel_solicitudes.append({
                     "id_registro": p.id_pasaje,
                     "id_solicitud": p.id_pasaje,
@@ -2905,8 +3111,8 @@ def apertura_detalle(request, id_apertura):
                     "referencia": obs_p,
                     "num": 5, # Map to Otros
                     "nivel_grupo": p.nivel_grupo or 5,
-                    "tipo_gasto": rubro_pas,
-                    "id_tipo_gasto": rubro_pas,
+                    "tipo_gasto": p.tipo_gasto_id or 4,
+                    "id_tipo_gasto": p.tipo_gasto_id or 4,
                     "tipo_movimiento": "02",
                     "monto_soles": float(p.monto_soles or 0.00),
                     "monto_dolares": float(p.monto_dolares or 0.00),
@@ -2931,16 +3137,6 @@ def apertura_detalle(request, id_apertura):
                 if c.id_destinatario:
                     destinatario_nombre = getattr(c.id_destinatario, 'nombre_completo', None) or getattr(c.id_destinatario, 'usuario', '')
 
-                rubro_cch = c.tipo_gasto_id
-                if not rubro_cch:
-                    cog_c = str(c.cog or c.codigo or "").strip()[:2]
-                    if cog_c == "04": rubro_cch = 3
-                    elif cog_c == "05": rubro_cch = 4
-                    elif cog_c == "06": rubro_cch = 5
-                    elif cog_c == "01": rubro_cch = 1
-                    elif cog_c == "02": rubro_cch = 2
-                    else: rubro_cch = 4
-
                 rel_solicitudes.append({
                     "id_registro": c.id_registro,
                     "id_solicitud": c.id_registro,
@@ -2952,8 +3148,8 @@ def apertura_detalle(request, id_apertura):
                     "id_destinatario": c.id_destinatario_id,
                     "num": c.num or 1,
                     "nivel_grupo": c.nivel_grupo,
-                    "tipo_gasto": rubro_cch,
-                    "id_tipo_gasto": rubro_cch,
+                    "tipo_gasto": c.tipo_gasto_id or 1,
+                    "id_tipo_gasto": c.tipo_gasto_id or 1,
                     "tipo_movimiento": "01",
                     "monto_soles": float(c.monto_soles or 0.00),
                     "monto_dolares": float(c.monto_dolares or 0.00),
@@ -3049,8 +3245,11 @@ def apertura_detalle(request, id_apertura):
         elif request.method == 'DELETE':
             from .oc_files import delete_oc_files
             id_reg_descuento = apertura.id_registro_id
-            delete_oc_files(id_apertura)
-            apertura.delete()
+            try:
+                delete_oc_files(id_apertura)
+            except Exception:
+                logger.exception("No se pudo borrar el archivo físico de la OC %s", id_apertura)
+            _eliminar_aperturas(id_apertura=id_apertura)
             try:
                 repartir_descuento_aperturas(id_reg_descuento)
             except Exception:
@@ -3063,7 +3262,8 @@ def apertura_detalle(request, id_apertura):
             if 'numero_orden' in data:
                 apertura.numero_orden = data['numero_orden']
             if 'fecha_orden' in data:
-                apertura.fecha_orden = data['fecha_orden']
+                fo = data['fecha_orden']
+                apertura.fecha_orden = None if fo in ('', None) else fo
             
             if 'fecha_entrega' in data:
                 apertura.fecha_entrega = data['fecha_entrega']
@@ -3145,21 +3345,15 @@ def apertura_detalle(request, id_apertura):
 
             if 'total_orden' in data:
                 apertura.total_orden = data['total_orden']
-            if 'presupuesto' in data:
-                apertura.presupuesto = data['presupuesto']
-                
-            if 'orden_compra_equipos' in data:
-                apertura.orden_compra_equipos = data['orden_compra_equipos']
-            if 'orden_compra_materiales' in data:
-                apertura.orden_compra_materiales = data['orden_compra_materiales']
-            if 'orden_compra_hh' in data:
-                apertura.orden_compra_hh = data['orden_compra_hh']
-            if 'orden_compra_entrega' in data:
-                apertura.orden_compra_entrega = data['orden_compra_entrega']
-            if 'orden_compra_costo_servicios' in data:
-                apertura.orden_compra_costo_servicios = data['orden_compra_costo_servicios']
-            if 'orden_compra_otros' in data:
-                apertura.orden_compra_otros = data['orden_compra_otros']
+                costos_guardados = (
+                    _dec_money(apertura.orden_compra_equipos)
+                    + _dec_money(apertura.orden_compra_materiales)
+                    + _dec_money(apertura.orden_compra_hh)
+                    + _dec_money(apertura.orden_compra_entrega)
+                    + _dec_money(apertura.orden_compra_costo_servicios)
+                    + _dec_money(apertura.orden_compra_otros)
+                )
+                apertura.uti_des = (_dec_money(apertura.total_orden) - costos_guardados).quantize(Decimal("0.01"))
 
             if 'poceq' in data:
                 apertura.poceq = data['poceq']
@@ -3182,8 +3376,6 @@ def apertura_detalle(request, id_apertura):
                 apertura.totfa = data['totfa']
             if 'salfa' in data:
                 apertura.salfa = data['salfa']
-            if 'uti_des' in data:
-                apertura.uti_des = data['uti_des']
                 
             # Recalcular Fecha de Entrega en base a la Fecha de Emisión y el Plazo de Entrega
             if apertura.fecha_orden and apertura.orden_plazo_valor is not None:
@@ -3204,6 +3396,8 @@ def apertura_detalle(request, id_apertura):
                         logger.error(f"Error calculating fecha_entrega: {dt_err}")
 
             apertura.save()
+            from .services.legacy_sync import _ejecutar_sincronizacion_apertura_legada
+            _ejecutar_sincronizacion_apertura_legada(apertura.id_apertura, close_connections=False)
             
             serializer = CotizacionAperturaSerializer(apertura)
             return Response(serializer.data)
@@ -3224,7 +3418,6 @@ def sync_apertura_oc_file(apertura):
         if not sug.get("aplicadas"):
             return False
 
-        recalculate_apertura_costs(apertura, preserve_total=True)
         apertura.save()
         return True
 
@@ -3261,6 +3454,21 @@ def cleanup_duplicate_aperturas(id_registro):
                         dupe.delete()
     except Exception as e:
         logger.error(f"Error cleaning up duplicate aperturas for {id_registro}: {e}", exc_info=True)
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def outlook_activar_vbs(request):
+    """Descarga el activador COM de Outlook de escritorio (una sola vez por PC)."""
+    vbs_path = Path(__file__).resolve().parent.parent / "scripts" / "outlook" / "activar-outlook.vbs"
+    if not vbs_path.exists():
+        vbs_path = Path(__file__).resolve().parent.parent / "frontend" / "public" / "activar-outlook.vbs"
+    data = vbs_path.read_bytes() if vbs_path.exists() else b"MsgBox \"No se encontro el activador de Outlook.\", 16, \"SIGECOM\""
+    response = HttpResponse(data, content_type="application/octet-stream")
+    response["Content-Disposition"] = 'attachment; filename="SIGECOM-Abrir-Outlook.vbs"'
+    response["Cache-Control"] = "no-store"
+    return response
+
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -3348,40 +3556,34 @@ def aperturas_por_registro(request, id_registro):
 def crear_nueva_oc(request, id_registro):
     try:
         try:
-            cotizacion = Cotizacion.objects.get(id_registro=id_registro)
+            cotizacion = Cotizacion.objects.select_related("id_creador", "id_comercial").get(id_registro=id_registro)
         except Cotizacion.DoesNotExist:
             return Response({"error": "Cotización no encontrada"}, status=404)
             
-        empty_ap = CotizacionApertura.objects.filter(
-            id_registro=id_registro,
-            orden_adjunta="",
-            numero_orden="",
-            total_orden=0
-        ).first()
-
-        if empty_ap:
-            nueva_apertura = empty_ap
-            nueva_apertura.estado_orden = 1
-            nueva_apertura.doc = None
-            nueva_apertura.ti1 = None
-            nueva_apertura.save()
-        else:
-            aperturas_existentes = CotizacionApertura.objects.filter(id_registro=id_registro)
-            responsables = aperturas_existentes.first().responsables if aperturas_existentes.exists() else ""
-            from django.utils import timezone
-            nueva_apertura = CotizacionApertura.objects.create(
-                id_registro=cotizacion,
-                anno=timezone.now().year,
-                mes=timezone.now().month,
-                envio=1,
-                prio='0',
-                estado_orden=1,
-                total_orden=0,
-                presupuesto=0,
-                doc=None,
-                ti1=None,
-                responsables=responsables or ""
-            )
+        aperturas_existentes = list(CotizacionApertura.objects.filter(id_registro=id_registro))
+        responsables = _merge_responsables(
+            request.data.get("responsables")
+            or next((a.responsables for a in aperturas_existentes if a.responsables), "")
+            or "",
+            _defaults_responsables_cotizacion(cotizacion),
+        )
+        from django.utils import timezone
+        ahora = timezone.now()
+        nueva_apertura = CotizacionApertura(
+            id_registro=cotizacion,
+            anno=ahora.year,
+            mes=ahora.month,
+            envio=1,
+            prio='0',
+            total_orden=0,
+            presupuesto=0,
+            doc="",
+            ti1="",
+            responsables=responsables,
+            fecha_orden=ahora,
+        )
+        nueva_apertura.estado_orden_id = 1
+        nueva_apertura.save()
         
         archivo = request.FILES.get("archivo")
         if archivo:
@@ -3403,19 +3605,22 @@ def crear_nueva_oc(request, id_registro):
 
             url_descarga = f"/api/cotizaciones/ocfiles/ver/{nueva_apertura.id_apertura}/"
             nueva_apertura.orden_adjunta = url_descarga
-            sugerencias = apply_oc_pdf_suggestions(nueva_apertura, path_destino, ext)
-            recalculate_apertura_costs(nueva_apertura, preserve_total=True)
-            nueva_apertura.save()
+            sugerencias = apply_oc_pdf_suggestions(
+                nueva_apertura, path_destino, ext, original_filename=archivo.name
+            )
+            fields = ["orden_adjunta"] + list(sugerencias.get("update_fields") or [])
+            nueva_apertura.save(update_fields=list(dict.fromkeys(fields)))
         else:
             sugerencias = {"sugeridas": {}, "aplicadas": [], "pendientes": []}
-            recalculate_apertura_costs(nueva_apertura, preserve_total=True)
-            nueva_apertura.save()
 
         cleanup_duplicate_aperturas(id_registro)
         try:
             repartir_descuento_aperturas(id_registro)
         except Exception:
             pass
+
+        from .services.legacy_sync import _ejecutar_sincronizacion_apertura_legada
+        _ejecutar_sincronizacion_apertura_legada(nueva_apertura.id_apertura, close_connections=False)
 
         aperturas_all = CotizacionApertura.objects.select_related(
             'orden_plazo_unidad',
@@ -3433,13 +3638,226 @@ def crear_nueva_oc(request, id_registro):
         import traceback
         return Response({"error": str(e), "traceback": traceback.format_exc()}, status=500)
 
-def recalcular_totales_apertura(apertura):
+
+def _email_usuario(user):
+    if not user:
+        return ""
+    mail = (getattr(user, "correo", None) or "").strip()
+    if mail and "@" in mail:
+        return mail
+    usuario = (getattr(user, "usuario", None) or "").strip()
+    return f"{usuario}@vc-corporation.com" if usuario else ""
+
+
+def _emails_responsables(raw):
+    return [x.strip() for x in re.split(r'[;,]', raw or '') if x.strip() and '@' in x]
+
+
+# Encargados comerciales (pueden crear o ser comercial) + equipo fijo de aperturas.
+APERTURA_ASIGNADOS_FIJOS = (
+    (1, "eduardo.bonilla"),
+    (124, "luisa.oncebay"),
+    (177, "ruth.guadalupe"),
+    (44, "marcia.delgado"),
+    (163, "cristina.martinez"),
+)
+
+
+def _email_usuario_id_login(id_usuario, login):
+    from users.models import Usuario
+    u = None
+    if id_usuario:
+        u = Usuario.objects.filter(id_usuario=id_usuario).first()
+    if not u and login:
+        u = Usuario.objects.filter(usuario__iexact=login).first()
+    mail = _email_usuario(u)
+    if mail:
+        return mail
+    return f"{login}@vc-corporation.com" if login else ""
+
+
+def _emails_asignados_fijos_apertura():
+    emails = []
+    seen = set()
+    for id_usuario, login in APERTURA_ASIGNADOS_FIJOS:
+        mail = _email_usuario_id_login(id_usuario, login)
+        key = mail.lower()
+        if mail and key not in seen:
+            seen.add(key)
+            emails.append(mail)
+    return emails
+
+
+def _email_eduardo_bonilla():
+    return _email_usuario_id_login(1, "eduardo.bonilla")
+
+
+def _defaults_responsables_cotizacion(cotizacion):
+    emails = []
+    seen = set()
+
+    def _add(mail):
+        key = (mail or "").lower()
+        if mail and "@" in mail and key not in seen:
+            seen.add(key)
+            emails.append(mail)
+
+    _add(_email_usuario(getattr(cotizacion, "id_creador", None)))
+    _add(_email_usuario(getattr(cotizacion, "id_comercial", None)))
+    for mail in _emails_asignados_fijos_apertura():
+        _add(mail)
+    return emails
+
+
+def _merge_responsables(existing, extra_emails):
+    items = _emails_responsables(existing)
+    seen = {e.lower() for e in items}
+    for mail in extra_emails or []:
+        key = mail.lower()
+        if mail and key not in seen:
+            items.append(mail)
+            seen.add(key)
+    return ",".join(items) + ("," if items else "")
+
+
+def _guardar_responsables_cotizacion(cotizacion, normalized, old_resp=""):
+    quote_codigo = (cotizacion.codigo or "").strip() if cotizacion else ""
+    CotizacionApertura.objects.filter(id_registro=cotizacion.id_registro).update(responsables=normalized)
+    if not quote_codigo:
+        return
+    from .services.legacy_sync import (
+        disparar_quitar_orden_usu_por_diff,
+        _sincronizar_orden_usu_legado,
+    )
+    disparar_quitar_orden_usu_por_diff(quote_codigo, old_resp, normalized)
+    try:
+        db_alias = "legacy" if "legacy" in connections else "default"
+        with connections[db_alias].cursor() as cursor:
+            _sincronizar_orden_usu_legado(cursor, quote_codigo, normalized)
+    except Exception:
+        logger.exception("No se pudo sincronizar asignados 4.0 de %s", quote_codigo)
+
+
+@api_view(['GET', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def asignar_personal_apertura(request, id_registro):
+    """Asignación de personal a nivel cotización (funciona aunque no haya OCs)."""
+    cotizacion = Cotizacion.objects.select_related("id_creador", "id_comercial").filter(id_registro=id_registro).first()
+    if not cotizacion:
+        return Response({"error": "Cotización no encontrada"}, status=404)
+
+    aperturas = list(CotizacionApertura.objects.filter(id_registro=id_registro))
+    quote_codigo = (cotizacion.codigo or "").strip()
+    defaults = _defaults_responsables_cotizacion(cotizacion)
+
+    if request.method == 'GET':
+        responsables = next((a.responsables for a in aperturas if a.responsables), "") or ""
+        if not responsables and quote_codigo:
+            try:
+                from users.models import Usuario
+                db_alias = "legacy" if "legacy" in connections else "default"
+                with connections[db_alias].cursor() as cursor:
+                    cursor.execute(
+                        "SELECT cod FROM db_vc.vc_mov_orden_usu WHERE num_reg = %s",
+                        [quote_codigo[:70]],
+                    )
+                    codes = [str(r[0]).strip() for r in cursor.fetchall() if r and r[0]]
+                if codes:
+                    users = list(Usuario.objects.filter(usuario__in=codes))
+                    emails = []
+                    for u in users:
+                        mail = _email_usuario(u)
+                        if mail:
+                            emails.append(mail)
+                    responsables = ",".join(emails) + ("," if emails else "")
+            except Exception:
+                logger.exception("No se pudo leer asignados 4.0 de %s", quote_codigo)
+        if not _emails_responsables(responsables) and defaults:
+            responsables = _merge_responsables("", defaults)
+            _guardar_responsables_cotizacion(cotizacion, responsables, "")
+        else:
+            merged = _merge_responsables(responsables, defaults)
+            if _emails_responsables(merged) != _emails_responsables(responsables):
+                old_resp = responsables
+                responsables = merged
+                _guardar_responsables_cotizacion(cotizacion, responsables, old_resp)
+        return Response({"responsables": responsables})
+
+    responsables_val = request.data.get('responsables', '')
+    items = _emails_responsables(responsables_val)
+    normalized = ",".join(items) + ("," if items else "")
+    old_resp = next((a.responsables for a in aperturas if a.responsables), "") or ""
+    _guardar_responsables_cotizacion(cotizacion, normalized, old_resp)
+    return Response({"responsables": normalized})
+
+
+def _dec_money(val):
+    try:
+        return Decimal(str(val if val is not None else "0"))
+    except (InvalidOperation, TypeError, ValueError):
+        return Decimal("0.00")
+
+
+def _costo_linea_suministro(sum_obj):
+    """4.0: costo directo = cantidad × costo unitario (can × toc)."""
+    c_tot = _dec_money(getattr(sum_obj, "costo_total", 0))
+    if c_tot:
+        return c_tot
+    return _dec_money(getattr(sum_obj, "cantidad", 0)) * _dec_money(getattr(sum_obj, "costo_precio", 0))
+
+
+def _venta_linea_suministro(sum_obj):
+    v_tot = _dec_money(getattr(sum_obj, "venta_total", 0))
+    if v_tot:
+        return v_tot
+    return _dec_money(getattr(sum_obj, "cantidad", 0)) * _dec_money(getattr(sum_obj, "precio_venta", 0))
+
+
+def _costo_linea_servicio(ser_obj):
+    c_tot = _dec_money(getattr(ser_obj, "costo_total", 0))
+    if c_tot:
+        return c_tot
+    hombres = _dec_money(getattr(ser_obj, "cantidad_hombres", 0) or 1)
+    return hombres * _dec_money(getattr(ser_obj, "costo_hombre_dia", 0))
+
+
+def _venta_linea_servicio(ser_obj):
+    v_tot = _dec_money(getattr(ser_obj, "cotizado_total", 0))
+    if v_tot:
+        return v_tot
+    hombres = _dec_money(getattr(ser_obj, "cantidad_hombres", 0) or 1)
+    return hombres * _dec_money(getattr(ser_obj, "cotizado_hombre_dia", 0))
+
+
+def _bucket_servicio(ser_obj):
+    """Mapeo 4.0: mov 04 → HH, mov 05 → costo serv., mov 06 → otros."""
+    tg_id = getattr(ser_obj, "id_tipo_gasto_id", None)
+    tg_code = ""
+    tipo = getattr(ser_obj, "id_tipo_gasto", None)
+    if tipo is not None:
+        tg_code = str(getattr(tipo, "codigo", "") or "")
+    cog = str(getattr(ser_obj, "codigo_servicio", "") or "")
+    mov = ""
+    if len(cog) >= 4:
+        mov = cog[2:4]
+    if tg_id == 3 or mov == "04" or "04" in tg_code:
+        return "hh"
+    if tg_id == 4 or mov == "05" or "05" in tg_code:
+        return "servicios"
+    return "otros"
+
+
+def recalcular_totales_apertura(apertura, preserve_total=False):
     """
-    Recalcula los montos desglosados (equipos, materiales, hh, costo_servicios, otros),
-    presupuesto y utilidad desglosada para una CotizacionApertura basándose únicamente en sus
-    CotizacionAperturaSuministro y CotizacionAperturaServicio vinculados.
+    Presupuesto 4.0 (vc_mov_orden_reg_saldo.php):
+      Suministros = equipos (mov 01) + materiales (mov 02)
+      H.H. propios = mov 04
+      Costo serv. = mov 05
+      Otros = mov 06
+      Utilidad = Σ(venta − costo) de partidas vinculadas
+      Importe = costo directo + utilidad
     """
-    from decimal import Decimal
+    q2 = Decimal("0.01")
     equipos = Decimal("0.00")
     materiales = Decimal("0.00")
     hh = Decimal("0.00")
@@ -3448,10 +3866,28 @@ def recalcular_totales_apertura(apertura):
     total_venta = Decimal("0.00")
 
     qid = apertura.id_registro_id
-    suministros_links = CotizacionAperturaSuministro.objects.filter(id_apertura=apertura).select_related('id_suministro', 'id_suministro__id_tipo_gasto')
+    header_qty = {}
+    if qid:
+        for hdr in CotizacionSuministro.objects.filter(id_registro_id=qid, nivel=0):
+            qty = _dec_money(hdr.cantidad)
+            header_qty[hdr.codigo_grupo] = qty if qty else Decimal("1")
+
+        srv_header_qty = {}
+        for hdr in CotizacionServicio.objects.filter(id_registro_id=qid, nivel=0):
+            prefix = str(hdr.codigo_servicio or "")[:2]
+            if not prefix:
+                continue
+            qty = _dec_money(hdr.cantidad_hombres)
+            srv_header_qty[prefix] = qty if qty else Decimal("1")
+    else:
+        srv_header_qty = {}
+
+    suministros_links = CotizacionAperturaSuministro.objects.filter(id_apertura=apertura).select_related(
+        "id_suministro", "id_suministro__id_tipo_gasto"
+    )
     has_item_rows = any(
         link.id_suministro
-        and getattr(link.id_suministro, 'nivel', 0) > 0
+        and getattr(link.id_suministro, "nivel", 0) > 0
         and link.id_suministro.id_registro_id == qid
         for link in suministros_links
     )
@@ -3462,23 +3898,29 @@ def recalcular_totales_apertura(apertura):
             continue
         if qid and sum_obj.id_registro_id != qid:
             continue
-        if has_item_rows and getattr(sum_obj, 'nivel', 0) == 0:
+        if has_item_rows and getattr(sum_obj, "nivel", 0) == 0:
             continue
 
-        c_tot = Decimal(str(sum_obj.costo_total or "0.00"))
-        v_tot = Decimal(str(sum_obj.venta_total or "0.00"))
+        qty_grupo = header_qty.get(sum_obj.codigo_grupo, Decimal("1"))
+        c_tot = _costo_linea_suministro(sum_obj) * qty_grupo
+        v_tot = _venta_linea_suministro(sum_obj) * qty_grupo
         total_venta += v_tot
 
-        is_material = bool((sum_obj.codigo_grupo and "MT" in str(sum_obj.codigo_grupo)) or (sum_obj.id_tipo_gasto_id == 2))
+        is_material = bool(
+            (sum_obj.codigo_grupo and "MT" in str(sum_obj.codigo_grupo))
+            or sum_obj.id_tipo_gasto_id == 2
+        )
         if is_material:
             materiales += c_tot
         else:
             equipos += c_tot
 
-    servicios_links = CotizacionAperturaServicio.objects.filter(id_apertura=apertura).select_related('id_servicio', 'id_servicio__id_tipo_gasto')
+    servicios_links = CotizacionAperturaServicio.objects.filter(id_apertura=apertura).select_related(
+        "id_servicio", "id_servicio__id_tipo_gasto"
+    )
     has_srv_items = any(
         link.id_servicio
-        and getattr(link.id_servicio, 'nivel', 0) == 2
+        and getattr(link.id_servicio, "nivel", 0) == 2
         and link.id_servicio.id_registro_id == qid
         for link in servicios_links
     )
@@ -3488,22 +3930,29 @@ def recalcular_totales_apertura(apertura):
             continue
         if qid and ser_obj.id_registro_id != qid:
             continue
-        if has_srv_items and getattr(ser_obj, 'nivel', 0) != 2:
+        if has_srv_items and getattr(ser_obj, "nivel", 0) != 2:
             continue
-        c_tot = Decimal(str(ser_obj.costo_total or "0.00"))
-        v_tot = Decimal(str(ser_obj.cotizado_total or "0.00"))
+
+        prefix = str(ser_obj.codigo_servicio or "")[:2]
+        qty_grupo = srv_header_qty.get(prefix, Decimal("1"))
+        c_tot = _costo_linea_servicio(ser_obj) * qty_grupo
+        v_tot = _venta_linea_servicio(ser_obj) * qty_grupo
         total_venta += v_tot
 
-        tg_code = ""
-        if ser_obj.id_tipo_gasto:
-            tg_code = str(getattr(ser_obj.id_tipo_gasto, 'codigo', '') or '')
-        
-        if '04' in tg_code or ser_obj.id_tipo_gasto_id in [3, 4]:
+        bucket = _bucket_servicio(ser_obj)
+        if bucket == "hh":
             hh += c_tot
-        elif '05' in tg_code or ser_obj.id_tipo_gasto_id in [4, 5]:
+        elif bucket == "servicios":
             costo_servicios += c_tot
         else:
             otros += c_tot
+
+    equipos = equipos.quantize(q2)
+    materiales = materiales.quantize(q2)
+    hh = hh.quantize(q2)
+    costo_servicios = costo_servicios.quantize(q2)
+    otros = otros.quantize(q2)
+    total_venta = total_venta.quantize(q2)
 
     apertura.orden_compra_equipos = equipos
     apertura.orden_compra_materiales = materiales
@@ -3511,18 +3960,24 @@ def recalcular_totales_apertura(apertura):
     apertura.orden_compra_costo_servicios = costo_servicios
     apertura.orden_compra_otros = otros
 
-    apertura.total_orden = total_venta
+    if not preserve_total:
+        apertura.total_orden = total_venta
 
-    costos_sum = equipos + materiales + hh + costo_servicios + otros + Decimal(str(apertura.orden_compra_entrega or "0.00"))
+    entrega = _dec_money(apertura.orden_compra_entrega)
+    costos_sum = equipos + materiales + hh + costo_servicios + otros + entrega
     apertura.presupuesto = costos_sum
-    apertura.uti_des = apertura.total_orden - costos_sum
-    
-    update_fields = [
-        'orden_compra_equipos', 'orden_compra_materiales', 'orden_compra_hh',
-        'orden_compra_costo_servicios', 'orden_compra_otros', 'presupuesto', 'uti_des',
-        'total_orden'
-    ]
+    apertura.uti_des = (_dec_money(apertura.total_orden) - costos_sum).quantize(q2)
 
+    update_fields = [
+        "orden_compra_equipos",
+        "orden_compra_materiales",
+        "orden_compra_hh",
+        "orden_compra_costo_servicios",
+        "orden_compra_otros",
+        "presupuesto",
+        "uti_des",
+        "total_orden",
+    ]
     apertura.save(update_fields=update_fields)
     return apertura
 
@@ -3563,8 +4018,39 @@ def _legacy_db_alias():
     return "legacy" if "legacy" in connections else "default"
 
 
+def _legacy_writes_enabled():
+    try:
+        from cotizaciones_api.services.legacy_sync import is_legacy_sync_enabled
+        return is_legacy_sync_enabled()
+    except Exception:
+        return True
+
+
+def _refresh_orden_su_header(cur, num_reg, cog):
+    """Cabecera 4.0 (nig=0) debe llevar el costo/venta de las partidas vinculadas, no el total del grupo."""
+    cur.execute(
+        """
+        SELECT COALESCE(SUM(toc), 0), COALESCE(SUM(tot), 0)
+        FROM db_vc.vc_mov_orden_su
+        WHERE num_reg = %s AND cog = %s AND nig > 0
+        """,
+        [num_reg, cog],
+    )
+    sc, sv = cur.fetchone()
+    cur.execute(
+        """
+        UPDATE db_vc.vc_mov_orden_su
+        SET toc = %s, tot = %s, puc = 0, can = 1
+        WHERE num_reg = %s AND cog = %s AND nig = 0
+        """,
+        [sc, sv, num_reg, cog],
+    )
+
+
 def _sync_orden_su_grupo(apertura, codigo_grupo, unlink=False):
     """Mantiene db_vc.vc_mov_orden_su alineado al vincular/desvincular en 5.0."""
+    if not _legacy_writes_enabled():
+        return
     if not apertura or not apertura.id_apertura or codigo_grupo in (None, ""):
         return
     cog = str(codigo_grupo).strip()
@@ -3619,12 +4105,105 @@ def _sync_orden_su_grupo(apertura, codigo_grupo, unlink=False):
                     mov, "0", s.tiempo_entrega,
                     "1" if s.nivel == 0 else "",
                 ])
+            _refresh_orden_su_header(cur, num_reg, cog[:5])
     except Exception as e:
         logger.error("[SyncLegado] orden_su grupo %s OC %s: %s", cog, num_reg, e, exc_info=True)
 
 
+def _sync_orden_su_item(apertura, suministro, unlink=False):
+    """Vincula o quita un ítem de suministro en db_vc.vc_mov_orden_su sin tocar el resto del grupo."""
+    if not _legacy_writes_enabled():
+        return
+    if not apertura or not apertura.id_apertura or not suministro:
+        return
+    num_reg = apertura.id_apertura
+    cog = str(suministro.codigo_grupo or "").strip()
+    cod = str(suministro.codigo_item or "").strip()
+    if not cog or not cod:
+        return
+    try:
+        with connections[_legacy_db_alias()].cursor() as cur:
+            if unlink:
+                cur.execute(
+                    """
+                    DELETE FROM db_vc.vc_mov_orden_su
+                    WHERE num_reg = %s AND nig > 0 AND TRIM(cod) = %s
+                      AND (cog = %s OR cog = %s)
+                    """,
+                    [num_reg, cod[:60], cog, cog[:5]],
+                )
+                _refresh_orden_su_header(cur, num_reg, cog[:5])
+                return
+            cur.execute(
+                """
+                SELECT 1 FROM db_vc.vc_mov_orden_su
+                WHERE num_reg = %s AND nig > 0 AND TRIM(cod) = %s
+                  AND (cog = %s OR cog = %s)
+                LIMIT 1
+                """,
+                [num_reg, cod[:60], cog, cog[:5]],
+            )
+            if cur.fetchone():
+                _refresh_orden_su_header(cur, num_reg, cog[:5])
+                return
+            cur.execute(
+                """
+                SELECT 1 FROM db_vc.vc_mov_orden_su
+                WHERE num_reg = %s AND nig = 0 AND (cog = %s OR cog = %s)
+                LIMIT 1
+                """,
+                [num_reg, cog, cog[:5]],
+            )
+            if not cur.fetchone():
+                header = CotizacionSuministro.objects.filter(
+                    id_registro=apertura.id_registro_id,
+                    codigo_grupo=suministro.codigo_grupo,
+                    nivel=0,
+                ).first()
+                if header:
+                    _insert_orden_su_row(cur, num_reg, cog, header)
+            _insert_orden_su_row(cur, num_reg, cog, suministro)
+            _refresh_orden_su_header(cur, num_reg, cog[:5])
+    except Exception as e:
+        logger.error("[SyncLegado] orden_su ítem %s OC %s: %s", cod, num_reg, e, exc_info=True)
+
+
+def _insert_orden_su_row(cur, num_reg, cog, s):
+    cur.execute(
+        "SELECT COALESCE(MAX(num), 0) FROM db_vc.vc_mov_orden_su WHERE num_reg = %s",
+        [num_reg],
+    )
+    n = (cur.fetchone()[0] or 0) + 1
+    id_gasto = s.id_tipo_gasto_id
+    mov = "01" if id_gasto == 1 else "02" if id_gasto == 2 else "01"
+    nog = (s.nombre_grupo or "")[:200] if s.nivel == 0 else ""
+    cur.execute(
+        """
+        INSERT INTO db_vc.vc_mov_orden_su (
+            num_reg, cog, nog, nig, num, cod, des, pro, can, puc, toc,
+            cau, tou, val, tot, mov, tpr, tde, tog
+        ) VALUES (
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+            %s, %s, %s, %s, %s, %s, %s, %s
+        )
+        """,
+        [
+            num_reg, cog[:5], nog, s.nivel, n,
+            (s.codigo_item or "")[:60],
+            (s.descripcion or "")[:5000],
+            (s.proveedor or "")[:50],
+            s.cantidad, s.costo_precio, s.costo_total,
+            None, None, getattr(s, "precio_venta", None), s.venta_total,
+            mov, "0", s.tiempo_entrega,
+            "1" if s.nivel == 0 else "",
+        ],
+    )
+
+
 def _sync_orden_mo_grupo(apertura, id_servicio, unlink=False):
     """Mantiene db_vc.vc_mov_orden_mo alineado al vincular/desvincular servicios en 5.0."""
+    if not _legacy_writes_enabled():
+        return
     if not apertura or not apertura.id_apertura or not id_servicio:
         return
     num_reg = apertura.id_apertura
@@ -3692,6 +4271,83 @@ def _sync_orden_mo_grupo(apertura, id_servicio, unlink=False):
         logger.error("[SyncLegado] orden_mo servicio %s OC %s: %s", id_servicio, num_reg, e, exc_info=True)
 
 
+def _sync_orden_mo_item(apertura, servicio, unlink=False):
+    """Vincula o quita un ítem de servicio en db_vc.vc_mov_orden_mo sin tocar el resto del grupo."""
+    if not _legacy_writes_enabled():
+        return
+    if not apertura or not apertura.id_apertura or not servicio:
+        return
+    num_reg = apertura.id_apertura
+    cog = str(servicio.codigo_servicio or "").strip()
+    cod = str(servicio.codigo_item or "").strip()
+    prefix = cog[:2]
+    if not prefix:
+        return
+    mov_map = {1: "01", 2: "02", 3: "04", 4: "05", 5: "06"}
+    try:
+        with connections[_legacy_db_alias()].cursor() as cur:
+            if unlink:
+                cur.execute(
+                    """
+                    DELETE FROM db_vc.vc_mov_orden_mo
+                    WHERE num_reg = %s AND nig > 0 AND LEFT(cog, 2) = %s
+                      AND (TRIM(cod) = %s OR cog = %s)
+                    """,
+                    [num_reg, prefix, (cod or "")[:60], cog[:5]],
+                )
+                return
+            cur.execute(
+                """
+                SELECT 1 FROM db_vc.vc_mov_orden_mo
+                WHERE num_reg = %s AND nig > 0 AND LEFT(cog, 2) = %s
+                  AND (TRIM(cod) = %s OR cog = %s)
+                LIMIT 1
+                """,
+                [num_reg, prefix, (cod or "")[:60], cog[:5]],
+            )
+            if cur.fetchone():
+                return
+            cur.execute(
+                "SELECT COALESCE(MAX(num), 0) FROM db_vc.vc_mov_orden_mo WHERE num_reg = %s",
+                [num_reg],
+            )
+            n = (cur.fetchone()[0] or 0) + 1
+            cur.execute(
+                """
+                INSERT INTO db_vc.vc_mov_orden_mo (
+                    num_reg, cog, nog, nig, num, cod, des, pro, can, puc, toc,
+                    cau, tou, val, tot, mov, tpr, tde, tog
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s
+                )
+                """,
+                [
+                    num_reg,
+                    cog[:5],
+                    "",
+                    servicio.nivel,
+                    n,
+                    (servicio.codigo_item or "")[:60],
+                    (servicio.descripcion_item or "")[:100],
+                    str(servicio.horas or "")[:50],
+                    servicio.cantidad_hombres,
+                    servicio.costo_hombre_dia,
+                    servicio.costo_total,
+                    servicio.porcentaje,
+                    servicio.utilidad,
+                    servicio.cotizado_hombre_dia,
+                    servicio.cotizado_total,
+                    mov_map.get(servicio.id_tipo_gasto_id),
+                    str(servicio.id_area_id or "")[:1],
+                    servicio.cantidad_dias,
+                    servicio.descripcion_servicio,
+                ],
+            )
+    except Exception as e:
+        logger.error("[SyncLegado] orden_mo ítem %s OC %s: %s", cog, num_reg, e, exc_info=True)
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def vincular_suministro_apertura(request, id_apertura):
@@ -3715,7 +4371,7 @@ def vincular_suministro_apertura(request, id_apertura):
                 id_apertura=apertura,
                 id_suministro=suministro
             )
-            _sync_orden_su_grupo(apertura, suministro.codigo_grupo, unlink=False)
+            _sync_orden_su_item(apertura, suministro, unlink=False)
         else:
             return Response({"error": "codigo_grupo o id_suministro es requerido"}, status=400)
 
@@ -3746,10 +4402,13 @@ def desvincular_suministro_apertura(request, id_apertura):
             ).delete()
             _sync_orden_su_grupo(apertura, codigo_grupo, unlink=True)
         elif id_suministro:
+            suministro = CotizacionSuministro.objects.filter(id_suministro=id_suministro).first()
             CotizacionAperturaSuministro.objects.filter(
                 id_apertura=apertura,
                 id_suministro_id=id_suministro
             ).delete()
+            if suministro:
+                _sync_orden_su_item(apertura, suministro, unlink=True)
         else:
             return Response({"error": "codigo_grupo o id_suministro es requerido"}, status=400)
 
@@ -3773,14 +4432,18 @@ def vincular_servicio_apertura(request, id_apertura):
         servicio = CotizacionServicio.objects.get(id_servicio=id_servicio)
         if servicio.nivel == 0:
             miembros = _servicios_del_mismo_grupo(apertura.id_registro_id, id_servicio)
+            for s in miembros:
+                CotizacionAperturaServicio.objects.get_or_create(
+                    id_apertura=apertura,
+                    id_servicio=s
+                )
+            _sync_orden_mo_grupo(apertura, id_servicio, unlink=False)
         else:
-            miembros = [servicio]
-        for s in miembros:
             CotizacionAperturaServicio.objects.get_or_create(
                 id_apertura=apertura,
-                id_servicio=s
+                id_servicio=servicio
             )
-        _sync_orden_mo_grupo(apertura, id_servicio, unlink=False)
+            _sync_orden_mo_item(apertura, servicio, unlink=False)
         recalcular_totales_apertura(apertura)
         serializer = CotizacionAperturaSerializer(apertura)
         return Response({"mensaje": "Servicio vinculado exitosamente", "apertura": serializer.data}, status=200)
@@ -3813,6 +4476,8 @@ def desvincular_servicio_apertura(request, id_apertura):
                 id_apertura=apertura,
                 id_servicio_id=id_servicio
             ).delete()
+            if servicio:
+                _sync_orden_mo_item(apertura, servicio, unlink=True)
         recalcular_totales_apertura(apertura)
         serializer = CotizacionAperturaSerializer(apertura)
         return Response({"mensaje": "Servicio desvinculado exitosamente", "apertura": serializer.data}, status=200)
@@ -3890,6 +4555,17 @@ def clean_numeric_value(val_str):
         return float(val_str)
     except ValueError:
         return 0.0
+
+def extract_order_number_from_filename(filename, id_apertura=None):
+    """Solo si el nombre trae el patrón '... OC 12345678'. Si no, no inventa número."""
+    if not filename:
+        return None
+    base = os.path.splitext(os.path.basename(str(filename).strip()))[0]
+    if not base:
+        return None
+    match = re.search(r'\bOC\b[\s_\-N°º#:]*([0-9]{6,12})', base, re.IGNORECASE)
+    return match.group(1) if match else None
+
 
 def extract_order_number(text):
     if not text:
@@ -4052,61 +4728,51 @@ def extract_order_date(text):
                 continue
     return None
 
-def apply_oc_pdf_suggestions(apertura, file_path, ext):
-    """
-    Extrae número, total y fecha del PDF.
-    Completa solo campos vacíos. Nunca cambia doc/ti1 (partidas).
-    """
+def apply_oc_pdf_suggestions(apertura, file_path, ext, original_filename=None):
+    """N° de orden desde el nombre del archivo; fecha de emisión desde el texto del PDF."""
     sugeridas = {}
     aplicadas = []
     pendientes = []
-    try:
-        texto = extract_text_from_file(file_path, ext, max_pages=2)
-    except Exception as exc:
-        logger.error(f"Error leyendo PDF de OC {apertura.id_apertura}: {exc}", exc_info=True)
-        return {"sugeridas": sugeridas, "aplicadas": aplicadas, "pendientes": pendientes}
+    update_fields = []
 
-    nro = extract_order_number(texto) if texto else None
-    total_ext = extract_total_amount(texto) if texto else None
-    fecha_ext = extract_order_date(texto) if texto else None
-
+    nro = extract_order_number_from_filename(original_filename, getattr(apertura, "id_apertura", None))
     if nro:
         sugeridas["numero_orden"] = nro
-        actual = (apertura.numero_orden or "").strip()
-        if not actual:
+        if original_filename:
             apertura.numero_orden = nro
             aplicadas.append("numero_orden")
-        elif actual != str(nro).strip():
+            update_fields.append("numero_orden")
+        elif not (apertura.numero_orden or "").strip():
+            apertura.numero_orden = nro
+            aplicadas.append("numero_orden")
+            update_fields.append("numero_orden")
+        else:
             pendientes.append("numero_orden")
 
-    if total_ext:
-        sugeridas["total_orden"] = float(total_ext)
-        try:
-            actual_total = Decimal(str(apertura.total_orden or 0))
-        except Exception:
-            actual_total = Decimal("0")
-        if actual_total == 0:
-            apertura.total_orden = Decimal(str(total_ext))
-            aplicadas.append("total_orden")
-        elif abs(actual_total - Decimal(str(total_ext))) > Decimal("0.01"):
-            pendientes.append("total_orden")
-
-    if fecha_ext:
-        sugeridas["fecha_orden"] = fecha_ext.strftime("%Y-%m-%d")
-        if not apertura.fecha_orden:
-            apertura.fecha_orden = fecha_ext
+    ext_norm = (ext or "").lower()
+    if file_path and ext_norm in (".pdf", ".xlsx", ".xls", ".docx", ".doc"):
+        text = extract_text_from_file(file_path, ext_norm, max_pages=2)
+        fecha = extract_order_date(text)
+        if fecha:
+            sugeridas["fecha_orden"] = fecha.strftime("%Y-%m-%d")
+            apertura.fecha_orden = fecha
             aplicadas.append("fecha_orden")
-        else:
-            try:
-                actual_d = apertura.fecha_orden.date() if hasattr(apertura.fecha_orden, "date") else apertura.fecha_orden
-                if str(actual_d) != fecha_ext.strftime("%Y-%m-%d"):
-                    pendientes.append("fecha_orden")
-            except Exception:
-                pendientes.append("fecha_orden")
-    elif not apertura.fecha_orden:
-        apertura.fecha_orden = timezone.now()
+            update_fields.append("fecha_orden")
+            if apertura.orden_plazo_valor is not None:
+                try:
+                    from datetime import timedelta
+                    apertura.fecha_entrega = fecha + timedelta(days=int(apertura.orden_plazo_valor))
+                    update_fields.append("fecha_entrega")
+                    aplicadas.append("fecha_entrega")
+                except Exception:
+                    pass
 
-    return {"sugeridas": sugeridas, "aplicadas": aplicadas, "pendientes": pendientes}
+    return {
+        "sugeridas": sugeridas,
+        "aplicadas": aplicadas,
+        "pendientes": pendientes,
+        "update_fields": update_fields,
+    }
 
 def remove_accents(input_str):
     import unicodedata
@@ -4293,187 +4959,51 @@ def match_apertura_items(text, id_registro):
 
 
 def recalculate_apertura_costs(apertura, preserve_total=True):
-    supplies = CotizacionSuministro.objects.filter(id_registro=apertura.id_registro)
-    services = CotizacionServicio.objects.filter(id_registro=apertura.id_registro)
+    """Desglose de presupuesto 4.0 a partir de partidas vinculadas, no de doc/ti1."""
+    recalcular_totales_apertura(apertura, preserve_total=preserve_total)
 
-    def is_suministro_checked(doc_val, group_code):
-        if doc_val is None:
-            return True
-        codes = [s.strip() for s in str(doc_val).split(',') if s.strip()]
-        return str(group_code) in codes
-
-    def is_servicio_checked(ti1_val, service_id):
-        if ti1_val is None:
-            return True
-        ids = [s.strip() for s in str(ti1_val).split(',') if s.strip()]
-        return str(service_id) in ids
-
-    # Recalculate supplies costs
-    equipos_cost = Decimal('0.00')
-    equipos_sale = Decimal('0.00')
-    materiales_cost = Decimal('0.00')
-    materiales_sale = Decimal('0.00')
-
-    suministros_por_grupo = {}
-    for item in supplies:
-        if item.nivel == 0:
-            if item.codigo_grupo not in suministros_por_grupo:
-                suministros_por_grupo[item.codigo_grupo] = {'header': item, 'items': []}
-            else:
-                suministros_por_grupo[item.codigo_grupo]['header'] = item
-        elif item.nivel == 1:
-            if item.codigo_grupo not in suministros_por_grupo:
-                suministros_por_grupo[item.codigo_grupo] = {'header': None, 'items': [item]}
-            else:
-                suministros_por_grupo[item.codigo_grupo]['items'].append(item)
-
-    for g_code, g_data in suministros_por_grupo.items():
-        if is_suministro_checked(apertura.doc, g_code):
-            header = g_data['header']
-            qty = Decimal(str(header.cantidad)) if (header and header.cantidad is not None) else Decimal('1')
-            is_materiales = 'MT' in str(g_code) or (header and header.id_tipo_gasto_id == 2)
-            if not is_materiales and g_data['items']:
-                is_materiales = any(it.id_tipo_gasto_id == 2 for it in g_data['items'])
-            
-            for item in g_data['items']:
-                cost = Decimal(str(item.costo_total or 0)) * qty
-                sale = Decimal(str(item.venta_total or 0)) * qty
-                if is_materiales:
-                    materiales_cost += cost
-                    materiales_sale += sale
-                else:
-                    equipos_cost += cost
-                    equipos_sale += sale
-
-    # Recalculate services costs
-    hh_cost = Decimal('0.00')
-    hh_sale = Decimal('0.00')
-    servicios_cost = Decimal('0.00')
-    servicios_sale = Decimal('0.00')
-    otros_cost = Decimal('0.00')
-    otros_sale = Decimal('0.00')
-
-    servicios_por_grupo = {}
-    for item in services:
-        prefix = item.codigo_servicio[:2] if item.codigo_servicio else ''
-        if not prefix:
-            continue
-        if prefix not in servicios_por_grupo:
-            servicios_por_grupo[prefix] = {'header': None, 'subgrupos': {}}
-        
-        if item.nivel == 0:
-            servicios_por_grupo[prefix]['header'] = item
-        elif item.nivel == 1:
-            if item.codigo_servicio not in servicios_por_grupo[prefix]['subgrupos']:
-                servicios_por_grupo[prefix]['subgrupos'][item.codigo_servicio] = {'sub_header': item, 'items': []}
-            else:
-                servicios_por_grupo[prefix]['subgrupos'][item.codigo_servicio]['sub_header'] = item
-        elif item.nivel == 2:
-            sub_code = item.codigo_servicio[:-1] + '1' if item.codigo_servicio else ''
-            if sub_code:
-                if sub_code not in servicios_por_grupo[prefix]['subgrupos']:
-                    servicios_por_grupo[prefix]['subgrupos'][sub_code] = {'sub_header': None, 'items': [item]}
-                else:
-                    servicios_por_grupo[prefix]['subgrupos'][sub_code]['items'].append(item)
-
-    for prefix, g_data in servicios_por_grupo.items():
-        header = g_data['header']
-        if not header:
-            continue
-        if is_servicio_checked(apertura.ti1, header.id_servicio):
-            qty = Decimal(str(header.cantidad_hombres or 1))
-            for sub_code, sub_data in g_data['subgrupos'].items():
-                sub_header = sub_data['sub_header']
-                id_gasto = sub_header.id_tipo_gasto_id if sub_header else None
-                tipo_code = sub_code[2:4] if len(sub_code) >= 4 else ''
-                
-                is_mo = tipo_code == '04' or id_gasto in (3, 4)
-                is_gastos = tipo_code == '05' or id_gasto in (4, 5)
-                is_otros = tipo_code == '06' or id_gasto in (5, 6)
-                if not (is_mo or is_gastos or is_otros) and sub_data['items']:
-                    is_mo = any(it.id_tipo_gasto_id in (3, 4) for it in sub_data['items'])
-                    is_gastos = any(it.id_tipo_gasto_id in (4, 5) for it in sub_data['items'])
-                    is_otros = any(it.id_tipo_gasto_id in (5, 6) for it in sub_data['items'])
-
-                for item in sub_data['items']:
-                    item_cost = Decimal(str(item.costo_total or 0)) * qty
-                    item_sale = Decimal(str(item.cotizado_total or 0)) * qty
-
-                    if is_mo:
-                        hh_cost += item_cost
-                        hh_sale += item_sale
-                    elif is_gastos:
-                        servicios_cost += item_cost
-                        servicios_sale += item_sale
-                    elif is_otros:
-                        otros_cost += item_cost
-                        otros_sale += item_sale
-
-    venta_items = equipos_sale + materiales_sale + hh_sale + servicios_sale + otros_sale
-    costs_sum = equipos_cost + materiales_cost + hh_cost + Decimal(str(apertura.orden_compra_entrega or 0)) + servicios_cost + otros_cost
-
-    apertura.orden_compra_equipos = equipos_cost.quantize(Decimal('0.01'))
-    apertura.orden_compra_materiales = materiales_cost.quantize(Decimal('0.01'))
-    apertura.orden_compra_hh = hh_cost.quantize(Decimal('0.01'))
-    apertura.orden_compra_costo_servicios = servicios_cost.quantize(Decimal('0.01'))
-    apertura.orden_compra_otros = otros_cost.quantize(Decimal('0.01'))
-    if not preserve_total:
-        apertura.total_orden = venta_items.quantize(Decimal('0.01'))
-    base_total = Decimal(str(apertura.total_orden or 0)) if preserve_total else venta_items
-    apertura.uti_des = (base_total - costs_sum).quantize(Decimal('0.01'))
-
-    # ── Recalcular Plazo de Entrega (Tiempo de Entrega) en base a los ítems activos ──
     cotizacion = apertura.id_registro
-    if cotizacion:
-        # Check if there are checked supplies
-        has_checked_supplies = False
-        for g_code in suministros_por_grupo.keys():
-            if is_suministro_checked(apertura.doc, g_code):
-                has_checked_supplies = True
-                break
-                
-        # Check if there are checked services
-        has_checked_services = False
-        for prefix, g_data in servicios_por_grupo.items():
-            header = g_data['header']
-            if header and is_servicio_checked(apertura.ti1, header.id_servicio):
-                has_checked_services = True
-                break
-                
-        def convert_to_days(val, unidad_obj):
-            if not val or not unidad_obj:
-                return 0
-            nombre = (unidad_obj.nombre or "").upper()
-            try:
-                val_float = float(val)
-            except (ValueError, TypeError):
-                return 0
-            if "DÍA" in nombre or "DIA" in nombre:
-                return val_float
-            elif "SEMANA" in nombre:
-                return val_float * 7
-            elif "MES" in nombre:
-                return val_float * 30
-            elif "AÑO" in nombre or "ANO" in nombre:
-                return val_float * 365
-            return val_float
+    if not cotizacion:
+        return apertura
 
-        plazo_dias = 0
-        if has_checked_supplies and cotizacion.entrega_suministros:
-            plazo_dias += convert_to_days(cotizacion.entrega_suministros, cotizacion.id_unidad_tiempo_entrega_suministros)
-        if has_checked_services and cotizacion.entrega_servicios:
-            plazo_dias += convert_to_days(cotizacion.entrega_servicios, cotizacion.id_unidad_tiempo_entrega_servicios)
-            
-        if plazo_dias > 0:
-            apertura.orden_plazo_valor = int(plazo_dias)
-            ut_dias = UnidadTiempo.objects.filter(id_tiempo=1).first() or UnidadTiempo.objects.filter(nombre__icontains="DIA").first() or UnidadTiempo.objects.filter(nombre__icontains="DÍA").first()
-            if ut_dias:
-                apertura.orden_plazo_unidad = ut_dias
-                
-            # Recalcular Fecha de Entrega en base a la Fecha de Emisión y el Plazo de Entrega
-            if apertura.fecha_orden:
-                from datetime import timedelta
-                apertura.fecha_entrega = apertura.fecha_orden + timedelta(days=int(plazo_dias))
+    has_checked_supplies = CotizacionAperturaSuministro.objects.filter(id_apertura=apertura).exists()
+    has_checked_services = CotizacionAperturaServicio.objects.filter(id_apertura=apertura).exists()
+
+    def convert_to_days(val, unidad_obj):
+        if not val or not unidad_obj:
+            return 0
+        nombre = (unidad_obj.nombre or "").upper()
+        try:
+            val_float = float(val)
+        except (ValueError, TypeError):
+            return 0
+        if "DÍA" in nombre or "DIA" in nombre:
+            return val_float
+        if "SEMANA" in nombre:
+            return val_float * 7
+        if "MES" in nombre:
+            return val_float * 30
+        if "AÑO" in nombre or "ANO" in nombre:
+            return val_float * 365
+        return val_float
+
+    plazo_dias = 0
+    if has_checked_supplies and cotizacion.entrega_suministros:
+        plazo_dias += convert_to_days(cotizacion.entrega_suministros, cotizacion.id_unidad_tiempo_entrega_suministros)
+    if has_checked_services and cotizacion.entrega_servicios:
+        plazo_dias += convert_to_days(cotizacion.entrega_servicios, cotizacion.id_unidad_tiempo_entrega_servicios)
+
+    if plazo_dias > 0:
+        apertura.orden_plazo_valor = int(plazo_dias)
+        ut_dias = UnidadTiempo.objects.filter(id_tiempo=1).first() or UnidadTiempo.objects.filter(nombre__icontains="DIA").first() or UnidadTiempo.objects.filter(nombre__icontains="DÍA").first()
+        if ut_dias:
+            apertura.orden_plazo_unidad = ut_dias
+        if apertura.fecha_orden:
+            from datetime import timedelta
+            apertura.fecha_entrega = apertura.fecha_orden + timedelta(days=int(plazo_dias))
+        apertura.save(update_fields=["orden_plazo_valor", "orden_plazo_unidad", "fecha_entrega"])
+    return apertura
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -4510,25 +5040,24 @@ def subir_oc_apertura(request, id_apertura):
         url_descarga = f"/api/cotizaciones/ocfiles/ver/{id_apertura}/"
         
         apertura.orden_adjunta = url_descarga
-        sugerencias = apply_oc_pdf_suggestions(apertura, path_destino, ext)
-        recalculate_apertura_costs(apertura, preserve_total=True)
-        apertura.save()
+        sugerencias = apply_oc_pdf_suggestions(
+            apertura, path_destino, ext, original_filename=archivo.name
+        )
+        fields = ["orden_adjunta"] + list(sugerencias.get("update_fields") or [])
+        apertura.save(update_fields=list(dict.fromkeys(fields)))
+        from .services.legacy_sync import _ejecutar_sincronizacion_apertura_legada
+        _ejecutar_sincronizacion_apertura_legada(apertura.id_apertura, close_connections=False)
 
         # Serializamos y devolvemos la apertura actualizada
         serializer = CotizacionAperturaSerializer(apertura)
-
-        aplicadas = sugerencias.get("aplicadas") or []
-        if aplicadas:
-            msg = "PDF adjuntado. Se completaron campos vacíos desde el documento."
-        else:
-            msg = "PDF de la Orden de Compra adjuntado correctamente."
 
         return Response({
             "ok": True,
             "orden_adjunta": url_descarga,
             "tiene_archivo_fisico": True,
             "extension_archivo_fisico": ext,
-            "message": msg,
+            "nombre_archivo": f"{id_apertura}{ext}",
+            "message": "PDF de la Orden de Compra adjuntado correctamente.",
             "sugerencias": sugerencias,
             "apertura": serializer.data
         })
@@ -4551,7 +5080,6 @@ def reprocesar_oc_apertura(request, id_apertura):
             return Response({"error": "No se encontró ningún archivo físico de Orden de Compra guardado para este registro."}, status=404)
 
         sugerencias = apply_oc_pdf_suggestions(apertura, path_completo, ext_encontrada)
-        recalculate_apertura_costs(apertura, preserve_total=True)
         apertura.save()
         serializer = CotizacionAperturaSerializer(apertura)
 
@@ -4568,8 +5096,9 @@ def reprocesar_oc_apertura(request, id_apertura):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 @xframe_options_exempt
-def ver_oc_pdf(request, id_apertura):
+def ver_oc_pdf(request, id_apertura, filename=None):
     from django.http import FileResponse
+    from urllib.parse import quote
     from .oc_files import resolve_oc_file
     
     path_completo, ext_encontrada = resolve_oc_file(id_apertura)
@@ -4587,9 +5116,16 @@ def ver_oc_pdf(request, id_apertura):
             '.xls': 'application/vnd.ms-excel',
         }
         content_type = content_types.get(ext_encontrada, 'application/octet-stream')
+        nombre_descarga = os.path.basename(filename) if filename else f"{id_apertura_str}{ext_encontrada}"
+        if not os.path.splitext(nombre_descarga)[1]:
+            nombre_descarga = f"{nombre_descarga}{ext_encontrada}"
         
         response = FileResponse(open(path_completo, 'rb'), content_type=content_type)
-        response['Content-Disposition'] = f'inline; filename="{id_apertura_str}{ext_encontrada}"'
+        quoted = quote(nombre_descarga)
+        response['Content-Disposition'] = (
+            f'inline; filename="{nombre_descarga}"; filename*=UTF-8\'\'{quoted}'
+        )
+        response['X-Content-Type-Options'] = 'nosniff'
         return response
     except Exception as e:
         return Response({"error": str(e)}, status=500)
@@ -4883,9 +5419,11 @@ def guardar_cotizacion(request):
             cotizacion.estado_oportunidad = 1
 
         if not cotizacion.codigo:
-            cotizacion.codigo = calcular_codigo_dinamico(cotizacion)
-
-        cotizacion.save()
+            with _correlativo_lock(cotizacion):
+                cotizacion.codigo = _calcular_nuevo_codigo(cotizacion, reservar=True)
+                cotizacion.save()
+        else:
+            cotizacion.save()
 
         # =========================
         # 4️⃣ SUMINISTROS
@@ -5317,11 +5855,287 @@ def condiciones_generales(request, id_registro):
         print(f"Error en condiciones_generales (ID: {id_registro}):", traceback.format_exc())
         return Response({"error": str(e)}, status=500)
 
-def calcular_codigo_dinamico(cot, codigo_actual=None):
+_CODIGO_COTIN_RE = re.compile(r"^(\d{2})(\d)(\d+)([A-Z])(?:-|$)")
+
+
+def parse_codigo_cotizacion(codigo):
+    """
+    Parsea YY + área (1 dígito) + correlativo + versión.
+    Ej: 262146A-ANGQ-V -> year=26, area=2, correlativo=146, version=A
+    """
+    if not codigo:
+        return None
+    match = _CODIGO_COTIN_RE.match(str(codigo).strip())
+    if not match:
+        return None
+    try:
+        return {
+            "year": match.group(1),
+            "area": match.group(2),
+            "correlativo": int(match.group(3)),
+            "correlativo_str": match.group(3),
+            "version": match.group(4),
+        }
+    except (TypeError, ValueError):
+        return None
+
+
+def _iter_cotin_legacy(like_prefix, exclude_num_reg=None):
+    """Lee cotin de SIGECOM 4.0 (db_vc) para no reutilizar correlativos ya migrados."""
+    extra_sql = ""
+    params = [f"{like_prefix}%"]
+    if exclude_num_reg is not None:
+        extra_sql = " AND num_reg <> %s"
+        params.append(exclude_num_reg)
+    attempts = (
+        ("legacy", "SELECT cotin FROM vc_mov_cotizaciones WHERE cotin LIKE %s AND cotin IS NOT NULL AND TRIM(cotin) <> ''" + extra_sql),
+        ("default", "SELECT cotin FROM db_vc.vc_mov_cotizaciones WHERE cotin LIKE %s AND cotin IS NOT NULL AND TRIM(cotin) <> ''" + extra_sql),
+    )
+    for alias, sql in attempts:
+        try:
+            with connections[alias].cursor() as cursor:
+                cursor.execute(sql, params)
+                rows = cursor.fetchall()
+            for (cotin,) in rows:
+                if cotin:
+                    yield str(cotin).strip()
+            return
+        except Exception as exc:
+            logger.debug("No se pudo leer cotin legado (%s): %s", alias, exc)
+
+
+def _codigo_en_uso(codigo, exclude_id=None):
+    """True si el COTIN completo ya existe en 5.0 o 4.0 (otro registro)."""
+    if not codigo:
+        return False
+    qs = Cotizacion.objects.filter(codigo=codigo)
+    if exclude_id:
+        qs = qs.exclude(id_registro=exclude_id)
+    if qs.exists():
+        return True
+
+    attempts = (
+        ("legacy", "SELECT 1 FROM vc_mov_cotizaciones WHERE cotin = %s"),
+        ("default", "SELECT 1 FROM db_vc.vc_mov_cotizaciones WHERE cotin = %s"),
+    )
+    for alias, sql in attempts:
+        try:
+            params = [codigo]
+            query = sql
+            if exclude_id is not None:
+                query += " AND num_reg <> %s"
+                params.append(exclude_id)
+            query += " LIMIT 1"
+            with connections[alias].cursor() as cursor:
+                cursor.execute(query, params)
+                if cursor.fetchone():
+                    return True
+            return False
+        except Exception as exc:
+            logger.debug("No se pudo verificar cotin legado (%s): %s", alias, exc)
+    return False
+
+
+def _correlativo_en_uso(year_str, area_str, correlativo, exclude_id=None):
+    """
+    True si el contador YY+área+número ya está ocupado, sin importar
+    letra de versión, iniciales o tipo. 262146A-ANGQ-V y 262146B-YURA-S
+    comparten el mismo correlativo 146.
+    """
+    if not area_str:
+        return False
+    correlativo = int(correlativo)
+    prefix = f"{year_str}{area_str}{correlativo}"
+
+    qs = Cotizacion.objects.filter(codigo__startswith=prefix).exclude(codigo="")
+    if exclude_id:
+        qs = qs.exclude(id_registro=exclude_id)
+    for cod in qs.values_list("codigo", flat=True).iterator():
+        parsed = parse_codigo_cotizacion(cod)
+        if (
+            parsed
+            and parsed["year"] == year_str
+            and parsed["area"] == area_str
+            and parsed["correlativo"] == correlativo
+        ):
+            return True
+
+    for cotin in _iter_cotin_legacy(prefix, exclude_num_reg=exclude_id):
+        parsed = parse_codigo_cotizacion(cotin)
+        if (
+            parsed
+            and parsed["year"] == year_str
+            and parsed["area"] == area_str
+            and parsed["correlativo"] == correlativo
+        ):
+            return True
+    return False
+
+
+_CORRELATIVO_TABLE_READY = False
+
+
+def _ensure_correlativo_table():
+    """Tope persistente por año+área: el correlativo nunca baja aunque se borre la última cotización."""
+    global _CORRELATIVO_TABLE_READY
+    if _CORRELATIVO_TABLE_READY:
+        return
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS cotizaciones_correlativo (
+                anno INT NOT NULL,
+                id_area INT NOT NULL,
+                ultimo INT NOT NULL DEFAULT 0,
+                PRIMARY KEY (anno, id_area)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8
+            """
+        )
+        cursor.execute("SELECT COUNT(*) FROM cotizaciones_correlativo")
+        vacia = (cursor.fetchone() or [0])[0] == 0
+    if vacia:
+        _backfill_correlativo_table()
+    _CORRELATIVO_TABLE_READY = True
+
+
+def _backfill_correlativo_table():
+    from collections import defaultdict
+
+    highs = defaultdict(int)
+    qs = Cotizacion.objects.exclude(codigo__isnull=True).exclude(codigo="").values_list(
+        "codigo", "anno", "id_area"
+    )
+    for codigo, anno, area in qs.iterator():
+        parsed = parse_codigo_cotizacion(codigo)
+        if not parsed:
+            continue
+        year_full = anno or (2000 + int(parsed["year"]))
+        area_id = area if area is not None else int(parsed["area"])
+        highs[(int(year_full), int(area_id))] = max(
+            highs[(int(year_full), int(area_id))], parsed["correlativo"]
+        )
+
+    year_prefixes = {str(year)[-2:] for year, _area in highs}
+    year_prefixes.add(str(timezone.now().year)[-2:])
+    for year_str in year_prefixes:
+        for cotin in _iter_cotin_legacy(year_str):
+            parsed = parse_codigo_cotizacion(cotin)
+            if not parsed:
+                continue
+            year_full = 2000 + int(parsed["year"])
+            area_id = int(parsed["area"])
+            highs[(year_full, area_id)] = max(highs[(year_full, area_id)], parsed["correlativo"])
+
+    if not highs:
+        return
+    with connection.cursor() as cursor:
+        cursor.executemany(
+            """
+            INSERT INTO cotizaciones_correlativo (anno, id_area, ultimo)
+            VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE ultimo = GREATEST(ultimo, VALUES(ultimo))
+            """,
+            [(year_full, area_id, ultimo) for (year_full, area_id), ultimo in highs.items()],
+        )
+
+
+def _high_water_correlativo(year_full, area_id):
+    _ensure_correlativo_table()
+    if not year_full or area_id is None:
+        return 0
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT ultimo FROM cotizaciones_correlativo WHERE anno=%s AND id_area=%s",
+            [int(year_full), int(area_id)],
+        )
+        row = cursor.fetchone()
+    return int(row[0] or 0) if row else 0
+
+
+def _reservar_correlativo(year_full, area_id, correlativo):
+    """Marca un correlativo como usado. Nunca decrementa el tope."""
+    _ensure_correlativo_table()
+    if not year_full or area_id is None or not correlativo:
+        return
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            INSERT INTO cotizaciones_correlativo (anno, id_area, ultimo)
+            VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE ultimo = GREATEST(ultimo, VALUES(ultimo))
+            """,
+            [int(year_full), int(area_id), int(correlativo)],
+        )
+
+
+def _reservar_codigo_usado(codigo, anno=None, area_id=None):
+    parsed = parse_codigo_cotizacion(codigo)
+    if not parsed:
+        return
+    year_full = anno or (2000 + int(parsed["year"]))
+    area = area_id if area_id is not None else int(parsed["area"])
+    _reservar_correlativo(year_full, area, parsed["correlativo"])
+
+
+def _max_correlativo_year_area(year_full, area_id, exclude_id=None):
+    """Último contador vivo en 5.0 para YY+área. Si se borra el 204 y queda el 196, retorna 196."""
+    year_str = str(year_full)[-2:]
+    area_str = str(area_id or "")
+    if not area_str:
+        return 0
+    prefix = f"{year_str}{area_str}"
+    max_corr = 0
+
+    qs = Cotizacion.objects.filter(codigo__startswith=prefix).exclude(codigo="")
+    if exclude_id:
+        qs = qs.exclude(id_registro=exclude_id)
+    for cod in qs.values_list("codigo", flat=True).iterator():
+        parsed = parse_codigo_cotizacion(cod)
+        if parsed and parsed["year"] == year_str and parsed["area"] == area_str:
+            max_corr = max(max_corr, parsed["correlativo"])
+    return max_corr
+
+
+def _lock_correlativo_area(year_full, area_id):
+    """Bloqueo MySQL por año+área para no asignar el mismo correlativo en paralelo."""
+    lock_name = f"sigecom_cotin_{year_full}_{area_id or 0}"
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT GET_LOCK(%s, 15)", [lock_name[:64]])
+        row = cursor.fetchone()
+        if not row or int(row[0] or 0) != 1:
+            raise RuntimeError("No se pudo reservar el correlativo de cotización. Intente de nuevo.")
+    return lock_name
+
+
+def _unlock_correlativo_area(lock_name):
+    if not lock_name:
+        return
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT RELEASE_LOCK(%s)", [lock_name])
+    except Exception:
+        pass
+
+
+@contextmanager
+def _correlativo_lock(cot):
+    """Mantiene GET_LOCK hasta que el caller persista el código (evita el hueco compute→save)."""
+    year_full = getattr(cot, "anno", None) or timezone.now().year
+    lock_name = _lock_correlativo_area(year_full, getattr(cot, "id_area", None))
+    try:
+        yield
+    finally:
+        _unlock_correlativo_area(lock_name)
+
+
+def calcular_codigo_dinamico(cot, codigo_actual=None, reservar=False):
     """
     Calcula el código dinámico de la cotización. Si ya existe un código previo
     y el área no ha cambiado, conserva la base y actualiza iniciales y tipo.
-    Si no, genera uno totalmente nuevo.
+    Si no, genera uno totalmente nuevo y único (5.0 + 4.0).
+
+    En rutas que persisten el código, el caller debe envolver con _correlativo_lock.
+    El correlativo es siempre el último contador existente + 1 (si se borra el 189 y queda el 188, el siguiente es 189).
     """
     if not cot.id_cliente:
         return ""
@@ -5329,100 +6143,76 @@ def calcular_codigo_dinamico(cot, codigo_actual=None):
         parts = codigo_actual.split('-')
         if len(parts) == 3:
             base_version, iniciales, tipo_char = parts
-            
-            # El año es de 2 dígitos (pos 0, 1). El área es el carácter pos 2.
+
             area_str = str(cot.id_area) if cot.id_area else ""
             if len(base_version) >= 3 and base_version[2] == area_str:
-                # Cliente iniciales
                 nueva_iniciales = "SINC"
                 if cot.id_cliente:
                     nueva_iniciales = cot.id_cliente.iniciales or "SINC"
-                
-                # Tipo char
+
                 nuevo_tipo = "S"
                 if cot.id_tipo:
                     nuevo_tipo = cot.id_tipo_id
-                
-                return f"{base_version}-{nueva_iniciales}-{nuevo_tipo}"
-                
-    return _calcular_nuevo_codigo(cot)
 
-# FALTA
-def _calcular_nuevo_codigo(cot):
+                propuesto = f"{base_version}-{nueva_iniciales}-{nuevo_tipo}"
+                exclude_id = getattr(cot, "id_registro", None)
+                if not _codigo_en_uso(propuesto, exclude_id=exclude_id):
+                    return propuesto
+
+    return _calcular_nuevo_codigo(cot, reservar=reservar)
+
+
+def _calcular_nuevo_codigo(cot, reservar=False):
     """
-    Calcula el código único (COTIN) para una cotización sin guardarlo.
-    Formato: YYAreaCorrVersion-INICIALES-TIPO (ej: 252185A-YURA-S)
+    Calcula un COTIN único. Formato: YY + Área + Correlativo + Versión-INICIALES-TIPO
+    Ej: 262146A-ANGQ-V
+
+    El correlativo es el máximo de las cotizaciones vivas en 5.0 para ese año+área, más uno.
+    Si se elimina el 204 y el último vivo es 196, el siguiente es 197.
+
+    El caller que persiste debe sostener _correlativo_lock alrededor de compute+save.
     """
     if not cot.id_cliente:
         return ""
-    # 1. AÑO (Últimos 2 dígitos)
+
     year_full = cot.anno or timezone.now().year
     year_str = str(year_full)[-2:]
-
-    # 2. ÁREA
     area_id = cot.id_area
     area_str = str(area_id) if area_id else ""
+    exclude_id = getattr(cot, "id_registro", None)
 
-    # 3. CORRELATIVO (Basado en año + área)
-    qs_codigos = (
-        Cotizacion.objects
-        .filter(anno=year_full, id_area=area_id, codigo__isnull=False)
-        .exclude(codigo="")
-        .values_list("codigo", flat=True)
-    )
-
-    max_corr = 0
-    prefix_len = len(year_str) + len(area_str)
-
-    for cod in qs_codigos:
-        try:
-            # Extraemos los 3 dígitos después del prefijo (año+área)
-            # Formato esperado: [YY][Area][000]...
-            corr_part = cod[prefix_len : prefix_len + 3]
-            max_corr = max(max_corr, int(corr_part))
-        except (ValueError, IndexError):
-            continue
-
+    max_corr = _max_correlativo_year_area(year_full, area_id, exclude_id=exclude_id)
     correlativo = max_corr + 1
-    correlativo_str = str(correlativo).zfill(3)
 
-    # 4. BASE DEL CÓDIGO (YY + Area + Corr)
-    base_codigo = f"{year_str}{area_str}{correlativo_str}"
-
-    # 5. VERSIÓN (A, B, C...)
-    existentes_mismo_base = (
-        Cotizacion.objects
-        .filter(codigo__startswith=base_codigo)
-        .values_list("codigo", flat=True)
-    )
-
-    if not existentes_mismo_base:
-        version = "A"
-    else:
-        # Buscamos la letra después de la base
-        letras = []
-        for c in existentes_mismo_base:
-            if len(c) > len(base_codigo):
-                letras.append(c[len(base_codigo)])
-        
-        if not letras:
-            version = "A"
-        else:
-            idx_max = ascii_uppercase.index(max(letras))
-            version = ascii_uppercase[idx_max + 1] if idx_max + 1 < len(ascii_uppercase) else "?"
-
-    # 6. CLIENTE (Iniciales)
     iniciales = "SINC"
     if cot.id_cliente:
         iniciales = cot.id_cliente.iniciales or "SINC"
 
-    # 7. TIPO (ID char de TipoCotizacion)
     tipo_char = "S"
     if cot.id_tipo:
-        tipo_char = cot.id_tipo_id # El ID es el char (ej: 'S', 'P')
+        tipo_char = cot.id_tipo_id
 
-    # 8. CONSTRUCCIÓN FINAL
-    return f"{base_codigo}{version}-{iniciales}-{tipo_char}"
+    # Cotización independiente: correlativo nuevo + versión A.
+    # Si 262146 ya existe (5.0 o 4.0, cualquier letra/iniciales/tipo),
+    # se salta a 262147A. Nunca reutiliza 262146B como cotización nueva.
+    while correlativo < 100000:
+        if _correlativo_en_uso(year_str, area_str, correlativo, exclude_id=exclude_id):
+            correlativo += 1
+            continue
+        correlativo_str = str(correlativo).zfill(3)
+        codigo_final = f"{year_str}{area_str}{correlativo_str}A-{iniciales}-{tipo_char}"
+        if not _codigo_en_uso(codigo_final, exclude_id=exclude_id):
+            if correlativo != max_corr + 1:
+                logger.warning(
+                    "Correlativo %s ocupado; se asignó %s para cotización %s",
+                    max_corr + 1,
+                    correlativo,
+                    exclude_id,
+                )
+            return codigo_final
+        correlativo += 1
+
+    raise ValueError("No se pudo generar un código de cotización único")
 
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
@@ -5486,22 +6276,27 @@ def generar_codigo_cotizacion(request, id_registro):
                 "exists": True
             }, status=status.HTTP_200_OK)
 
-        # Calculamos el código dinámico usando el helper
-        codigo_final = calcular_codigo_dinamico(cot, cot.codigo)
-
-        # 9. GUARDADO (Solo en POST y si no es un simple preview con overrides)
+        # POST persiste bajo lock (compute + save) para no chocar con 4.0 ni otra cotización 5.0.
         if request.method == "POST" and not has_overrides:
             with transaction.atomic():
-                cot.codigo = codigo_final
-                cot.save(update_fields=["codigo"])
-                
-                # Registrar hito en seguimiento
-                CotizacionSeguimiento.objects.create(
-                    id_registro=cot,
-                    detalle=f"Se generó el código comercial: {codigo_final}",
-                    id_usuario=request.user,
-                    activo='1'
-                )
+                with _correlativo_lock(cot):
+                    codigo_final = _calcular_nuevo_codigo(cot, reservar=True)
+                    if not codigo_final:
+                        return Response({
+                            "ok": False,
+                            "error": "No se pudo generar el código: falta cliente o área."
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                    cot.codigo = codigo_final
+                    cot.save(update_fields=["codigo"])
+
+                    CotizacionSeguimiento.objects.create(
+                        id_registro=cot,
+                        detalle=f"Se generó el código comercial: {codigo_final}",
+                        id_usuario=request.user,
+                        activo='1'
+                    )
+        else:
+            codigo_final = calcular_codigo_dinamico(cot, cot.codigo)
 
         return Response({
             "ok": True,
@@ -5535,15 +6330,26 @@ def eliminar_cotizacion(request, id_registro):
 
             # CASO 1: APERTURA (Borra solo la apertura y revierte cotización a estado Cotización)
             if tipo_borrado == "apertura":
-                CotizacionApertura.objects.filter(id_registro=id_registro).delete()
+                _eliminar_aperturas(id_registro=id_registro)
                 cotizacion.id_estado_id = 2  # Pendiente / Cotización
                 cotizacion.estado_envio = 1  # Editable
                 cotizacion.save()
                 return Response({"message": "Apertura eliminada correctamente"}, status=200)
 
-            # CASO 2: COTIZACIÓN (Borra cotización y apertura. Si fue originada de Oportunidad, vuelve a Oportunidad)
+            # CASO 2: COTIZACIÓN (Borra cotización y apertura. Si nació como Oportunidad, vuelve a Oportunidad)
             if tipo_borrado == "cotizacion":
-                CotizacionApertura.objects.filter(id_registro=id_registro).delete()
+                # Detectar copia/versión ANTES de borrar el seguimiento.
+                es_clon = CotizacionSeguimiento.objects.filter(
+                    id_registro=id_registro,
+                    detalle__icontains="generada a partir del registro base",
+                ).exists()
+                nacio_como_oportunidad = (
+                    not es_clon
+                    and cotizacion.estado_oportunidad is not None
+                    and int(cotizacion.estado_oportunidad) != 0
+                )
+
+                _eliminar_aperturas(id_registro=id_registro)
                 CotizacionSuministro.objects.filter(id_registro=id_registro).delete()
                 CotizacionServicio.objects.filter(id_registro=id_registro).delete()
                 CotizacionMensaje.objects.filter(id_registro=id_registro).delete()
@@ -5551,7 +6357,7 @@ def eliminar_cotizacion(request, id_registro):
                 CotizacionAdjunto.objects.filter(id_registro=id_registro).delete()
                 CotizacionCondicionGeneral.objects.filter(id_registro=id_registro).delete()
 
-                if cotizacion.estado_oportunidad is not None and int(cotizacion.estado_oportunidad) != 0:
+                if nacio_como_oportunidad:
                     cotizacion.id_estado_id = 11  # Oportunidad
                     cotizacion.estado_oportunidad = 1  # Pendiente
                     cotizacion.estado_envio = 0
@@ -5559,6 +6365,8 @@ def eliminar_cotizacion(request, id_registro):
                     return Response({"message": "Cotización y apertura eliminadas. El registro retornó a Oportunidad."}, status=200)
                 else:
                     cotizacion.delete()
+                    from .services.legacy_sync import _ejecutar_eliminacion_legada
+                    _ejecutar_eliminacion_legada(id_registro, close_connections=False)
                     return Response({"message": "Cotización y apertura eliminadas correctamente."}, status=200)
 
             # CASO 3: OPORTUNIDAD (Borra oportunidad, cotización y apertura completamente de la BD)
@@ -5591,13 +6399,16 @@ def eliminar_cotizacion(request, id_registro):
             CotizacionSeguimiento.objects.filter(id_registro=id_registro).delete()
             CotizacionAdjunto.objects.filter(id_registro=id_registro).delete()
             CotizacionCondicionGeneral.objects.filter(id_registro=id_registro).delete()
-            CotizacionApertura.objects.filter(id_registro=id_registro).delete()
+            _eliminar_aperturas(id_registro=id_registro)
 
             cotizacion.delete()
+            from .services.legacy_sync import _ejecutar_eliminacion_legada
+            _ejecutar_eliminacion_legada(id_registro, close_connections=False)
 
         return Response({"message": "Oportunidad, cotización y apertura eliminadas completamente"}, status=200)
 
     except Exception as e:
+        logger.exception("Error en eliminar_cotizacion (%s)", id_registro)
         return Response({"error": str(e)}, status=500)
 
 @csrf_exempt
@@ -5990,7 +6801,8 @@ def build_cotizacion_pdf_context(num_reg):
         "cliente": nombre_cliente_final,
         "atencion": {
             "nombre": cotizacion.representante_nombre,
-            "cargo": cotizacion.representante_cargo,
+            "cargo": (cotizacion.representante_cargo or "").strip()
+                or ((cotizacion.id_representante.cargo or "").strip() if cotizacion.id_representante else ""),
             "telefono": cotizacion.representante_telefono or cotizacion.representante_movil,
             "correo": cotizacion.representante_correo,
         },
@@ -6487,6 +7299,20 @@ def descargar_cotizacion_word(request, num_reg):
                             r'{% if item.numero %}{{\1}}{% endif %}',
                             doc_xml
                         )
+
+                        # 4. Total por grupo: mantener cabeceras Unitario/Total y unir filas (como 4.0)
+                        doc_xml = doc_xml.replace(
+                            "{{ ('Unitario (' ~ totales.moneda_simbolo ~ ')') if not grupo.total_por_grupo else '' }}",
+                            "Unitario ({{ totales.moneda_simbolo }})",
+                        )
+                        doc_xml = doc_xml.replace(
+                            "{% cellbg grupo.bg_color %} {{ item.precio_f if not grupo.total_por_grupo else '' }}",
+                            "{% cellbg grupo.bg_color %} {{ item.precio_f }}",
+                        )
+                        doc_xml = doc_xml.replace(
+                            "{% cellbg grupo.bg_color %} {{ item.total_f if not grupo.total_por_grupo else '' }}",
+                            "{% cellbg grupo.bg_color %} {{ item.total_f }}",
+                        )
                         
                         data = doc_xml.encode('utf-8')
                     z_out.writestr(item, data)
@@ -6514,17 +7340,29 @@ def descargar_cotizacion_word(request, num_reg):
             g['cant_f'] = f"{g.get('cantidad', 0):,.0f}"
             
             g['filas'] = g.get('items', [])
-            for item in g['filas']:
+            total_por_grupo = bool(g.get('total_por_grupo'))
+            precio_unitario_grupo = g.get('subtotal_pu_items', 0) or 0
+            precio_total_grupo = g.get('subtotal_tot_items', 0) or 0
+            g['precio_unitario_grupo_f'] = formatear_moneda(precio_unitario_grupo)
+            g['precio_total_grupo_f'] = formatear_moneda(precio_total_grupo)
+            for idx_item, item in enumerate(g['filas']):
                 ent_val = item.get('entrega') or 0
                 uni_val = item.get('unidad_entrega') or 'Días'
                 item['entrega'] = ent_val
                 item['unidad_entrega'] = uni_val
                 desc = item.get('descripcion', '') or ''
-                # Limpieza de HTML básico para descripciones de items
                 item['desc_f'] = RichText(desc.replace('<br>', '\n').replace('<br/>', '\n'))
-                item['precio_f'] = formatear_moneda(item.get('precio_unitario', 0))
-                item['total_f'] = formatear_moneda(item.get('total', 0))
                 item['cant_f'] = f"{item.get('cantidad', 0):,.0f}"
+                if total_por_grupo:
+                    if idx_item == 0:
+                        item['precio_f'] = formatear_moneda(precio_unitario_grupo)
+                        item['total_f'] = formatear_moneda(precio_total_grupo)
+                    else:
+                        item['precio_f'] = ""
+                        item['total_f'] = ""
+                else:
+                    item['precio_f'] = formatear_moneda(item.get('precio_unitario', 0))
+                    item['total_f'] = formatear_moneda(item.get('total', 0))
 
         # 2. Procesamiento de servicios
         for s in context.get('servicios', []):
@@ -6568,6 +7406,7 @@ def descargar_cotizacion_word(request, num_reg):
         doc.render(context)
         apply_section_keep_together(doc.docx)
         apply_rich_text_line_spacing(doc.docx)
+        apply_total_por_grupo_merge(doc.docx, context.get("suministros", []))
 
         # Preparación de la respuesta de descarga
         buffer = io.BytesIO()
@@ -6628,6 +7467,8 @@ def cotizacion_pdf(request, num_reg):
     
     response = HttpResponse(content_type="application/pdf")
     response["Content-Disposition"] = f'inline; filename="{nro}_{ref}.pdf"'
+    response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response["Pragma"] = "no-cache"
 
     # Nota: Usamos optimización de imágenes para evitar que el PDF pese demasiado
     html.write_pdf(response)
@@ -6683,6 +7524,31 @@ def asignar_regus(request, num_reg):
         status=200
     )
 
+
+def _clonar_fila(model, source, extra=None):
+    """Clona una fila hija sin PK y convierte FK=0 a NULL (bulk_create no llama save())."""
+    datos = {k: v for k, v in source.__dict__.items() if not k.startswith("_")}
+    datos.pop(model._meta.pk.attname, None)
+    datos.pop("id", None)
+    if extra:
+        datos.update(extra)
+
+    for field in model._meta.fields:
+        if not (field.is_relation and field.many_to_one):
+            continue
+        att = field.attname
+        if datos.get(att) in (0, "0", ""):
+            datos[att] = None
+            rel_name = field.name
+            if rel_name in datos:
+                datos.pop(rel_name, None)
+
+    obj = model(**datos)
+    if hasattr(obj, "clean_fk_fields"):
+        obj.clean_fk_fields()
+    return obj
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def crear_nueva_version_cotizacion(request, id_registro):
@@ -6709,44 +7575,50 @@ def crear_nueva_version_cotizacion(request, id_registro):
 
             fase_actual = "GENERACION_CORRELATIVO"
             logger.info("[%s] Generando version correlativa para: %s", fase_actual, base.codigo)
-            nuevo_codigo_version = siguiente_version(base.codigo)
+            with _correlativo_lock(base):
+                try:
+                    nuevo_codigo_version = siguiente_version_disponible(
+                        base.codigo, exclude_id=base.id_registro
+                    )
+                except ValueError as exc:
+                    raise ValidationError(str(exc))
 
-            fase_actual = "LECTURA_TOKEN"
-            logger.info("Extrayendo usuario desde el Token JWT")
-            jwt_auth = JWTAuthentication()
-            header = jwt_auth.get_header(request)
-            raw_token = jwt_auth.get_raw_token(header)
-            validated_token = jwt_auth.get_validated_token(raw_token)
-            usuario_codigo = validated_token.get("user_id")
+                fase_actual = "LECTURA_TOKEN"
+                logger.info("Extrayendo usuario desde el Token JWT")
+                jwt_auth = JWTAuthentication()
+                header = jwt_auth.get_header(request)
+                raw_token = jwt_auth.get_raw_token(header)
+                validated_token = jwt_auth.get_validated_token(raw_token)
+                usuario_codigo = validated_token.get("user_id")
 
-            fase_actual = "INSERTAR_CABECERA_COTIZACION"
-            logger.info("[%s] Clonando cabecera principal", fase_actual)
-            
-            # Para la cabecera limpiamos la PK explícitamente usando diccionarios limpios
-            datos_cabecera = {k: v for k, v in base.__dict__.items() if not k.startswith('_')}
-            datos_cabecera.pop('id_registro', None) # Forzar AutoIncrement nativo
-            
-            nueva_coti = Cotizacion(**datos_cabecera)
-            nueva_coti.id_registro = obtener_siguiente_num_reg()
-            nueva_coti.codigo = nuevo_codigo_version
-            nueva_coti.id_estado_id = 2  # Estado inicial: Cotización (Pendiente)
-            nueva_coti.estado_oportunidad = 4  # Cotizado
-            nueva_coti.envio = 0
-            nueva_coti.estado_envio = 1  # Forzar estado a Pendiente de Envío (editable)
-            
-            # El responsable comercial de la nueva versión cambia al comercial que la está generando
-            usuario_generador = Usuario.objects.using("default").filter(usuario=usuario_codigo).first()
-            if usuario_generador:
-                nueva_coti.id_comercial = usuario_generador
-                nueva_coti.id_comercial_id = usuario_generador.id_usuario
-            
-            nueva_coti.regus = usuario_codigo
-            nueva_coti.fecha = now()
-            
-            try:
-                nueva_coti.save()
-            except IntegrityError as e:
-                raise IntegrityError(f"Error de integridad en el modelo [Cotizacion]: {str(e)}")
+                fase_actual = "INSERTAR_CABECERA_COTIZACION"
+                logger.info("[%s] Clonando cabecera principal", fase_actual)
+
+                # Para la cabecera limpiamos la PK explícitamente usando diccionarios limpios
+                datos_cabecera = {k: v for k, v in base.__dict__.items() if not k.startswith('_')}
+                datos_cabecera.pop('id_registro', None) # Forzar AutoIncrement nativo
+
+                nueva_coti = Cotizacion(**datos_cabecera)
+                nueva_coti.id_registro = obtener_siguiente_num_reg()
+                nueva_coti.codigo = nuevo_codigo_version
+                nueva_coti.id_estado_id = 2  # Estado inicial: Cotización (Pendiente)
+                nueva_coti.estado_oportunidad = 0
+                nueva_coti.envio = 0
+                nueva_coti.estado_envio = 1  # Forzar estado a Pendiente de Envío (editable)
+
+                # El responsable comercial de la nueva versión cambia al comercial que la está generando
+                usuario_generador = Usuario.objects.using("default").filter(usuario=usuario_codigo).first()
+                if usuario_generador:
+                    nueva_coti.id_comercial = usuario_generador
+                    nueva_coti.id_comercial_id = usuario_generador.id_usuario
+
+                nueva_coti.regus = usuario_codigo
+                nueva_coti.fecha = now()
+
+                try:
+                    nueva_coti.save()
+                except IntegrityError as e:
+                    raise IntegrityError(f"Error de integridad en el modelo [Cotizacion]: {str(e)}")
 
             # =====================================================
             # 🔹 1. REPLICAR SUMINISTROS
@@ -6757,12 +7629,11 @@ def crear_nueva_version_cotizacion(request, id_registro):
             nuevos_suministros = []
 
             for s in suministros_origen:
-                datos = {k: v for k, v in s.__dict__.items() if not k.startswith('_')}
-                # Quitamos cualquier posible nombre de llave primaria
-                datos.pop('id_suministro', None)
-                datos.pop('id', None)
-                datos['id_registro_id'] = nueva_coti.id_registro  # Asociamos al nuevo ID parent
-                nuevos_suministros.append(CotizacionSuministro(**datos))
+                nuevos_suministros.append(_clonar_fila(
+                    CotizacionSuministro,
+                    s,
+                    extra={"id_registro_id": nueva_coti.id_registro},
+                ))
 
             if nuevos_suministros:
                 try:
@@ -6779,11 +7650,11 @@ def crear_nueva_version_cotizacion(request, id_registro):
             nuevos_servicios = []
 
             for s in servicios_origen:
-                datos = {k: v for k, v in s.__dict__.items() if not k.startswith('_')}
-                datos.pop('id_servicio', None)
-                datos.pop('id', None)
-                datos['id_registro_id'] = nueva_coti.id_registro
-                nuevos_servicios.append(CotizacionServicio(**datos))
+                nuevos_servicios.append(_clonar_fila(
+                    CotizacionServicio,
+                    s,
+                    extra={"id_registro_id": nueva_coti.id_registro},
+                ))
 
             if nuevos_servicios:
                 try:
@@ -6800,13 +7671,11 @@ def crear_nueva_version_cotizacion(request, id_registro):
             nuevos_adjuntos = []
 
             for a in adjuntos_origen:
-                datos = {k: v for k, v in a.__dict__.items() if not k.startswith('_')}
-                
-                # 🌟 AQUÍ ESTABA EL DETALLE: El campo real es en plural 'id_adjuntos'
-                datos.pop('id_adjuntos', None) 
-                
-                datos['id_registro_id'] = nueva_coti.id_registro
-                nuevos_adjuntos.append(CotizacionAdjunto(**datos))
+                nuevos_adjuntos.append(_clonar_fila(
+                    CotizacionAdjunto,
+                    a,
+                    extra={"id_registro_id": nueva_coti.id_registro},
+                ))
 
             if nuevos_adjuntos:
                 try:
@@ -6825,12 +7694,14 @@ def crear_nueva_version_cotizacion(request, id_registro):
             offset_ms = 0
 
             for m in mensajes_origen:
-                datos = {k: v for k, v in m.__dict__.items() if not k.startswith('_')}
-                datos.pop('id_mensaje', None)
-                datos.pop('id', None)
-                datos['id_registro_id'] = nueva_coti.id_registro
-                datos['fecha'] = now() + timedelta(milliseconds=offset_ms)
-                nuevos_mensajes.append(CotizacionMensaje(**datos))
+                nuevos_mensajes.append(_clonar_fila(
+                    CotizacionMensaje,
+                    m,
+                    extra={
+                        "id_registro_id": nueva_coti.id_registro,
+                        "fecha": now() + timedelta(milliseconds=offset_ms),
+                    },
+                ))
                 offset_ms += 1
 
             if nuevos_mensajes:
@@ -6850,12 +7721,14 @@ def crear_nueva_version_cotizacion(request, id_registro):
             offset_ms = 0
 
             for seg in seguimiento_origen:
-                datos = {k: v for k, v in seg.__dict__.items() if not k.startswith('_')}
-                datos.pop('id_seguimiento', None)
-                datos.pop('id', None)
-                datos['id_registro_id'] = nueva_coti.id_registro
-                datos['fecha'] = now() + timedelta(milliseconds=offset_ms)
-                nuevos_seguimientos.append(CotizacionSeguimiento(**datos))
+                nuevos_seguimientos.append(_clonar_fila(
+                    CotizacionSeguimiento,
+                    seg,
+                    extra={
+                        "id_registro_id": nueva_coti.id_registro,
+                        "fecha": now() + timedelta(milliseconds=offset_ms),
+                    },
+                ))
                 offset_ms += 1
 
             # Añadimos un hito de auditoría indicando la creación de la nueva versión
@@ -6943,7 +7816,7 @@ def generar_copiar_cotizacion(request, id_registro):
             nueva_coti.id_registro = obtener_siguiente_num_reg()
             nueva_coti.codigo = None # Temporalmente None
             nueva_coti.id_estado_id = 2  # Estado inicial: Cotización (Pendiente)
-            nueva_coti.estado_oportunidad = 4  # Cotizado
+            nueva_coti.estado_oportunidad = 0  # Independiente: al borrar se elimina, no vuelve a oportunidad
             nueva_coti.estado_envio = 1
             
             # El responsable comercial de la copia cambia al comercial que la está generando
@@ -6986,9 +7859,10 @@ def generar_copiar_cotizacion(request, id_registro):
             # =====================================================
             fase_actual = "GENERAR_CODIGO_AUTOMATICO"
             try:
-                codigo_generado = _calcular_nuevo_codigo(nueva_coti)
-                nueva_coti.codigo = codigo_generado
-                nueva_coti.save(update_fields=["codigo"])
+                with _correlativo_lock(nueva_coti):
+                    codigo_generado = _calcular_nuevo_codigo(nueva_coti, reservar=True)
+                    nueva_coti.codigo = codigo_generado
+                    nueva_coti.save(update_fields=["codigo"])
                 logger.info("Codigo generado para la copia: %s", codigo_generado)
             except Exception as e:
                 logger.warning("No se pudo generar el codigo automatico: %s", e)
@@ -7002,12 +7876,11 @@ def generar_copiar_cotizacion(request, id_registro):
             nuevos_suministros = []
 
             for idx, s in enumerate(suministros_origen, 1):
-                datos = {k: v for k, v in s.__dict__.items() if not k.startswith('_')}
-                datos.pop('id_suministro', None)
-                datos.pop('id', None)
-                datos['id_registro_id'] = nueva_coti.id_registro
-                datos['orden'] = idx
-                nuevos_suministros.append(CotizacionSuministro(**datos))
+                nuevos_suministros.append(_clonar_fila(
+                    CotizacionSuministro,
+                    s,
+                    extra={"id_registro_id": nueva_coti.id_registro, "orden": idx},
+                ))
 
             if nuevos_suministros:
                 CotizacionSuministro.objects.bulk_create(nuevos_suministros)
@@ -7020,12 +7893,11 @@ def generar_copiar_cotizacion(request, id_registro):
             nuevos_servicios = []
 
             for idx, s in enumerate(servicios_origen, 1):
-                datos = {k: v for k, v in s.__dict__.items() if not k.startswith('_')}
-                datos.pop('id_servicio', None)
-                datos.pop('id', None)
-                datos['id_registro_id'] = nueva_coti.id_registro
-                datos['orden'] = idx
-                nuevos_servicios.append(CotizacionServicio(**datos))
+                nuevos_servicios.append(_clonar_fila(
+                    CotizacionServicio,
+                    s,
+                    extra={"id_registro_id": nueva_coti.id_registro, "orden": idx},
+                ))
 
             if nuevos_servicios:
                 CotizacionServicio.objects.bulk_create(nuevos_servicios)
@@ -7038,10 +7910,11 @@ def generar_copiar_cotizacion(request, id_registro):
             nuevos_adjuntos = []
 
             for a in adjuntos_origen:
-                datos = {k: v for k, v in a.__dict__.items() if not k.startswith('_')}
-                datos.pop('id_adjuntos', None) 
-                datos['id_registro_id'] = nueva_coti.id_registro
-                nuevos_adjuntos.append(CotizacionAdjunto(**datos))
+                nuevos_adjuntos.append(_clonar_fila(
+                    CotizacionAdjunto,
+                    a,
+                    extra={"id_registro_id": nueva_coti.id_registro},
+                ))
 
             if nuevos_adjuntos:
                 CotizacionAdjunto.objects.bulk_create(nuevos_adjuntos)
@@ -7054,12 +7927,14 @@ def generar_copiar_cotizacion(request, id_registro):
             nuevos_mensajes = []
             offset_ms = 0
             for m in mensajes_origen:
-                datos = {k: v for k, v in m.__dict__.items() if not k.startswith('_')}
-                datos.pop('id_mensaje', None)
-                datos.pop('id', None)
-                datos['id_registro_id'] = nueva_coti.id_registro
-                datos['fecha'] = now() + timedelta(milliseconds=offset_ms)
-                nuevos_mensajes.append(CotizacionMensaje(**datos))
+                nuevos_mensajes.append(_clonar_fila(
+                    CotizacionMensaje,
+                    m,
+                    extra={
+                        "id_registro_id": nueva_coti.id_registro,
+                        "fecha": now() + timedelta(milliseconds=offset_ms),
+                    },
+                ))
                 offset_ms += 1
 
             if nuevos_mensajes:
@@ -7073,12 +7948,14 @@ def generar_copiar_cotizacion(request, id_registro):
             nuevos_seguimientos = []
             offset_ms = 0
             for seg in seguimiento_origen:
-                datos = {k: v for k, v in seg.__dict__.items() if not k.startswith('_')}
-                datos.pop('id_seguimiento', None)
-                datos.pop('id', None)
-                datos['id_registro_id'] = nueva_coti.id_registro
-                datos['fecha'] = now() + timedelta(milliseconds=offset_ms)
-                nuevos_seguimientos.append(CotizacionSeguimiento(**datos))
+                nuevos_seguimientos.append(_clonar_fila(
+                    CotizacionSeguimiento,
+                    seg,
+                    extra={
+                        "id_registro_id": nueva_coti.id_registro,
+                        "fecha": now() + timedelta(milliseconds=offset_ms),
+                    },
+                ))
                 offset_ms += 1
 
             # Hito de auditoría
@@ -7206,9 +8083,10 @@ def pasar_a_cotizacion(request, id_registro):
             cotizacion.año_apertura = hoy.year
             cotizacion.save()
             
-            # Recalcular el código si es necesario
-            cotizacion.codigo = calcular_codigo_dinamico(cotizacion, cotizacion.codigo)
-            cotizacion.save()
+            # Recalcular el código si es necesario (lock hasta persistir)
+            with _correlativo_lock(cotizacion):
+                cotizacion.codigo = calcular_codigo_dinamico(cotizacion, cotizacion.codigo, reservar=True)
+                cotizacion.save(update_fields=["codigo"])
             
             # Registrar en la trazabilidad (Seguimiento)
             CotizacionSeguimiento.objects.create(
@@ -7232,7 +8110,7 @@ def pasar_a_cotizacion(request, id_registro):
 def pasar_a_apertura(request, id_registro):
     try:
         with transaction.atomic():
-            cotizacion = Cotizacion.objects.filter(id_registro=id_registro).first()
+            cotizacion = Cotizacion.objects.select_related("id_creador", "id_comercial").filter(id_registro=id_registro).first()
             if not cotizacion:
                 return Response({"error": "Cotización no encontrada"}, status=404)
             
@@ -7249,29 +8127,6 @@ def pasar_a_apertura(request, id_registro):
             cotizacion.id_estado_id = 1
             cotizacion.estado_envio = 2
             cotizacion.save()
-            
-            # Crear la apertura inicial si no existe
-            apertura = CotizacionApertura.objects.filter(id_registro=cotizacion).first()
-            if not apertura:
-                apertura = CotizacionApertura.objects.create(
-                    id_registro=cotizacion,
-                    anno=timezone.now().year,
-                    mes=timezone.now().month,
-                    envio=1, # Pendiente
-                    prio='0', # Normal
-                    estado_orden=1,
-                    total_orden=cotizacion.total_cotizacion or 0,
-                    presupuesto=cotizacion.total_cotizacion or 0,
-                    doc=None,
-                    ti1=None,
-                    responsables=""
-                )
-                recalculate_apertura_costs(apertura, preserve_total=True)
-                apertura.save()
-                try:
-                    repartir_descuento_aperturas(cotizacion.id_registro)
-                except Exception:
-                    pass
             
             # Crear la notificación de Adjudicado para el usuario comercial
             try:
@@ -7296,13 +8151,19 @@ def pasar_a_apertura(request, id_registro):
                 id_usuario=request.user,
                 activo='1'
             )
-                
+        from .services.legacy_sync import _ejecutar_sincronizacion_legada
+        _ejecutar_sincronizacion_legada(id_registro)
+        defaults = _merge_responsables("", _defaults_responsables_cotizacion(cotizacion))
+        if defaults:
+            _guardar_responsables_cotizacion(cotizacion, defaults, "")
+
         return Response({
             "message": "Pasado a apertura con éxito",
             "id_estado": cotizacion.id_estado_id,
             "estado_envio": cotizacion.estado_envio
         }, status=200)
     except Exception as e:
+        logger.exception("Error en pasar_a_apertura (%s)", id_registro)
         return Response({"error": str(e)}, status=500)
 
 @api_view(["PATCH"])
@@ -7497,6 +8358,8 @@ def reporte_cotizaciones_dashboard_html(request):
 
     resultados = []
     total_general = Decimal("0.00")
+    es_aperturas = False
+    totales_ap = {}
 
     if tipo_reporte == "aperturas":
         # ==========================================
@@ -7529,6 +8392,12 @@ def reporte_cotizaciones_dashboard_html(request):
 
         if id_cliente and id_cliente != "%":
             qs = qs.filter(id_registro__id_cliente_id=id_cliente)
+        id_area_ap = request.GET.get("area", "%")
+        if id_area_ap and id_area_ap != "%":
+            try:
+                qs = qs.filter(id_registro__id_area=int(id_area_ap))
+            except (TypeError, ValueError):
+                pass
         if id_estado_orden and id_estado_orden != "%":
             qs = qs.filter(estado_orden=int(id_estado_orden))
         if prio and prio != "%":
@@ -7564,34 +8433,95 @@ def reporte_cotizaciones_dashboard_html(request):
                 if campo_real:
                     qs = qs.filter(**{f"{campo_real}__icontains": valor})
 
-        # Agrupación por área de la cotización asociada
-        data = (
-            qs.values("id_registro__id_area")
-            .annotate(
-                cantidad=Count("id_apertura"),
-                importe=Sum("total_orden")
-            )
-            .order_by("id_registro__id_area")
-        )
+        # Agrupación por área (misma estructura que SIGECOM 4.0: RELACIÓN DE APERTURAS)
+        qs = qs.select_related("id_registro")
+        from collections import defaultdict
 
-        for row in data:
-            id_area_val = row["id_registro__id_area"]
-            importe = row["importe"] or Decimal("0.00")
-            total_general += importe
-            
+        def _d(val):
+            return val if isinstance(val, Decimal) else Decimal(str(val or 0))
+
+        buckets = defaultdict(lambda: {
+            "cantidad": 0,
+            "equipos": Decimal("0.00"),
+            "materiales": Decimal("0.00"),
+            "hh": Decimal("0.00"),
+            "hh_oarea": Decimal("0.00"),
+            "entrega": Decimal("0.00"),
+            "servicios": Decimal("0.00"),
+            "otros": Decimal("0.00"),
+            "utilidad": Decimal("0.00"),
+            "importe": Decimal("0.00"),
+        })
+
+        for ap in qs:
+            cot = ap.id_registro
             try:
-                area_key = int(id_area_val) if id_area_val is not None else None
-            except (ValueError, TypeError):
-                area_key = id_area_val
+                area_key = int(cot.id_area) if cot and cot.id_area is not None else None
+            except (TypeError, ValueError):
+                area_key = None
+            b = buckets[area_key]
+            b["cantidad"] += 1
+            if _es_anulado(ap.estado_orden_id):
+                continue
+            equipos = _d(ap.orden_compra_equipos)
+            materiales = _d(ap.orden_compra_materiales)
+            hh = _d(ap.orden_compra_hh)
+            hh_oarea = _d(ap.orden_compra_entrega)
+            entrega = Decimal("0.00")
+            servicios = _d(ap.orden_compra_costo_servicios)
+            otros = _d(ap.orden_compra_otros)
+            importe = _d(ap.total_orden)
+            utilidad = importe - (equipos + materiales + hh + hh_oarea + entrega + servicios + otros)
+            b["equipos"] += equipos
+            b["materiales"] += materiales
+            b["hh"] += hh
+            b["hh_oarea"] += hh_oarea
+            b["entrega"] += entrega
+            b["servicios"] += servicios
+            b["otros"] += otros
+            b["utilidad"] += utilidad
+            b["importe"] += importe
 
-            resultados.append({
-                "area": AREA_MAP.get(area_key, "Sin Área"),
-                "cantidad": row["cantidad"],
-                "importe": round(importe, 2),
-            })
+        totales_ap = {
+            "cantidad": 0,
+            "equipos": Decimal("0.00"),
+            "materiales": Decimal("0.00"),
+            "hh": Decimal("0.00"),
+            "hh_oarea": Decimal("0.00"),
+            "entrega": Decimal("0.00"),
+            "servicios": Decimal("0.00"),
+            "otros": Decimal("0.00"),
+            "utilidad": Decimal("0.00"),
+            "importe": Decimal("0.00"),
+        }
+        for area_key in sorted(buckets.keys(), key=lambda k: (k is None, k or 0)):
+            b = buckets[area_key]
+            area_nombre = AREA_MAP.get(area_key, "Sin Área")
+            row = {
+                "area": area_nombre.upper(),
+                "cantidad": b["cantidad"],
+                "equipos": b["equipos"].quantize(Decimal("0.01")),
+                "materiales": b["materiales"].quantize(Decimal("0.01")),
+                "hh": b["hh"].quantize(Decimal("0.01")),
+                "hh_oarea": b["hh_oarea"].quantize(Decimal("0.01")),
+                "entrega": b["entrega"].quantize(Decimal("0.01")),
+                "servicios": b["servicios"].quantize(Decimal("0.01")),
+                "otros": b["otros"].quantize(Decimal("0.01")),
+                "utilidad": b["utilidad"].quantize(Decimal("0.01")),
+                "importe": b["importe"].quantize(Decimal("0.01")),
+            }
+            resultados.append(row)
+            for k in totales_ap:
+                totales_ap[k] += row[k] if k != "cantidad" else row["cantidad"]
+            total_general += row["importe"]
 
-        titulo = "Reporte de Aperturas"
+        for k, v in list(totales_ap.items()):
+            if k != "cantidad":
+                totales_ap[k] = v.quantize(Decimal("0.01")) if isinstance(v, Decimal) else v
+
+        titulo = "RELACIÓN DE APERTURAS"
         tipo_registro_label = "APERTURAS"
+        es_aperturas = True
 
     else:
         # ==========================================
@@ -7759,6 +8689,8 @@ def reporte_cotizaciones_dashboard_html(request):
         "total_general": round(total_general, 2),
         "titulo": titulo,
         "tipo_registro_label": tipo_registro_label,
+        "es_aperturas": es_aperturas,
+        "totales_ap": totales_ap,
         "filtros": {
             "anno": anno,
             "mes": mes,
@@ -7773,6 +8705,24 @@ def reporte_cotizaciones_dashboard_html(request):
         del response['X-Frame-Options']
     response['X-Frame-Options'] = 'ALLOWALL'
     return response
+
+def _slug_nombre_archivo(texto, fallback=""):
+    raw = unicodedata.normalize("NFKD", str(texto or "")).encode("ascii", "ignore").decode("ascii")
+    raw = re.sub(r"[^\w.\-]+", "_", raw).strip("._")
+    return raw or fallback
+
+
+def _nombre_archivo_reporte(prefijo, cotizacion):
+    """Nombre tipo reporte_detallado_262188A-YURA-S_Referencia."""
+    codigo = _slug_nombre_archivo(
+        getattr(cotizacion, "codigo", None),
+        fallback=f"REG-{getattr(cotizacion, 'id_registro', '')}",
+    )
+    ref = _slug_nombre_archivo(getattr(cotizacion, "referencia", None))
+    if ref:
+        return f"{prefijo}_{codigo}_{ref}"
+    return f"{prefijo}_{codigo}"
+
 
 @csrf_exempt
 @xframe_options_exempt
@@ -7849,7 +8799,11 @@ def reporte_suministros_html(request, id_registro):
             })
 
     context = {
-        "id_registro": id_registro,  # <--- Alineado con el nuevo parámetro
+        "id_registro": id_registro,
+        "num_reg": cotizacion.codigo or id_registro,
+        "codigo_cotizacion": cotizacion.codigo or f"REG-{id_registro}",
+        "referencia": cotizacion.referencia or "",
+        "nombre_excel": _nombre_archivo_reporte("reporte_suministros", cotizacion),
         "grupos": grupos,
         "moneda": moneda_simbolo,
     }
@@ -7990,7 +8944,10 @@ def reporte_servicios_html(request, id_registro):
 
     # Ajustado al nuevo parámetro id_registro para que el HTML renderice el título
     context = {
-        "num_reg": id_registro,
+        "num_reg": cotizacion.codigo or id_registro,
+        "codigo_cotizacion": cotizacion.codigo or f"REG-{id_registro}",
+        "referencia": cotizacion.referencia or "",
+        "nombre_excel": _nombre_archivo_reporte("reporte_servicios", cotizacion),
         "grupos": grupos,
         "moneda": moneda_simbolo
     }
@@ -8215,6 +9172,9 @@ def reporte_detallado_cotizacion(request, id_registro):
     context = {
         "id_registro": id_registro,
         "codigo_cotizacion": cotizacion.codigo,
+        "referencia": cotizacion.referencia or "",
+        "proyecto": cotizacion.referencia or "",
+        "nombre_excel": _nombre_archivo_reporte("reporte_detallado", cotizacion),
         "titulo": "REPORTE DETALLADO",
         "datos": datos,
         "total_costo": total_costo_final,
@@ -8344,6 +9304,9 @@ def reporte_resumen_cotizacion(request, id_registro):
     context = {
         "id_registro": id_registro,
         "codigo_cotizacion": codigo_cotizacion,
+        "referencia": cotizacion.referencia or "",
+        "proyecto": cotizacion.referencia or "",
+        "nombre_excel": _nombre_archivo_reporte("reporte_resumen", cotizacion),
         "titulo": "REPORTE RESUMEN",
         "resumen": resumen,
         "total_final": total_final,
@@ -8413,7 +9376,8 @@ def reporte_venta_total_html(request, num_reg):
             })
 
     context = {
-        "num_reg": num_reg,
+        "num_reg": cotizacion.codigo or num_reg,
+        "nombre_excel": _nombre_archivo_reporte("reporte_suministros", cotizacion),
         "titulo": "REPORTE DETALLADO DE SUMINISTROS (VENTA TOTAL)",
         "grupos": grupos,
         "fecha": datetime.now(),
@@ -8478,7 +9442,8 @@ def reporte_venta_parcial_html(request, num_reg):
             })
 
     context = {
-        "num_reg": num_reg,
+        "num_reg": cotizacion.codigo or num_reg,
+        "nombre_excel": _nombre_archivo_reporte("reporte_suministros", cotizacion),
         "titulo": "REPORTE DE SUMINISTROS (VENTA PARCIAL)",
         "grupos": grupos,
         "fecha": datetime.now(),

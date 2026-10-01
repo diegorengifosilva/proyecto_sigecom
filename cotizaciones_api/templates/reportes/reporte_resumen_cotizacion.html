@@ -292,7 +292,7 @@ function descargarExcel(tablaHTML){
 
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = "REPORTE_DETALLE_COTIZACION_{{ proyecto }}.xls";
+    link.download = "{{ nombre_excel|default:'reporte_resumen' }}.xls";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
